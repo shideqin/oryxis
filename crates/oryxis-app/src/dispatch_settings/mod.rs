@@ -195,6 +195,7 @@ impl Oryxis {
             | SettingsMessage::ToggleHostListView
             | SettingsMessage::ToggleCardAccentGlass
             | SettingsMessage::ToggleShowHostAddress
+            | SettingsMessage::ToggleShowTabHostAddress
             | SettingsMessage::SettingToggleTabAccentLine
             | SettingsMessage::SettingToggleTabAccentWash
             | SettingsMessage::SettingToggleTabAccentText
