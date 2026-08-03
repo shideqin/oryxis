@@ -637,12 +637,32 @@ impl Oryxis {
         }
 
         // Import-a-scheme modal (Settings -> Terminal "Import" card).
+        // AHEAD of the gallery below, because the gallery is where the
+        // Import card now lives: this chain returns on the first match,
+        // so with the gallery first the import modal opened into a state
+        // nothing rendered (field report: "Import stopped working").
+        // `ESC_ORDER` carries the same order so Esc answers what is
+        // actually on screen.
         if self.show_theme_import {
             return wrap_with_resize(
                 crate::widgets::modal_overlay(
                     base,
                     self.view_theme_import_modal(),
                     Some(Message::Settings(SettingsMessage::ThemeImportClose)),
+                    0.0,
+                ),
+                resize_overlay,
+            );
+        }
+
+        // Global terminal-theme gallery (Settings -> Terminal). The grid
+        // it holds used to sit inline and dominate the page.
+        if self.show_terminal_theme_gallery {
+            return wrap_with_resize(
+                crate::widgets::modal_overlay(
+                    base,
+                    self.terminal_theme_gallery(),
+                    Some(Message::Settings(SettingsMessage::CloseTerminalThemeGallery)),
                     0.0,
                 ),
                 resize_overlay,
@@ -678,6 +698,21 @@ impl Oryxis {
             );
         }
 
+        // App-theme gallery (Settings -> Interface). Last of the theme
+        // modals: the UI editor and the UI import above are both opened
+        // FROM it, so they have to win the chain.
+        if self.show_ui_theme_gallery {
+            return wrap_with_resize(
+                crate::widgets::modal_overlay(
+                    base,
+                    self.ui_theme_gallery(),
+                    Some(Message::Settings(SettingsMessage::CloseUiThemeGallery)),
+                    0.0,
+                ),
+                resize_overlay,
+            );
+        }
+
         // Note: the update modal is rendered at the top-level `view()`
         // dispatcher (see `Oryxis::view`) so it overlays the lock screen
         // too. Don't re-render it here.
@@ -701,6 +736,14 @@ impl Oryxis {
             && drag.active
         {
             return self.layer_sftp_drag_ghost(base, resize_overlay, drag);
+        }
+
+        // A tab dragged off the strip and over the content area: the
+        // split anchor it proposes, plus its ghost chip (issue #112).
+        // The strip stops drawing the chip at the same boundary, so
+        // exactly one of the two is up at any moment.
+        if self.tab_drag.is_some_and(|d| d.active) && !self.cursor_in_tab_strip() {
+            return self.layer_tab_drop(base, resize_overlay);
         }
 
         // No modal open. Wrap `base` in a single-child Stack so it sits

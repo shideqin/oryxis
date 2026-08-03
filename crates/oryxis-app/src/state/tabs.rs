@@ -193,6 +193,11 @@ pub(crate) struct PaneFiles {
     /// sibling). Feeds the path combo-box dropdown. In-memory and
     /// host-scoped: `reset_for_disconnect` clears it.
     pub path_history: Vec<String>,
+    /// Back / forward stacks; see `PaneState`'s for why they are not the
+    /// recency list.
+    pub nav_back: Vec<String>,
+    pub nav_fwd: Vec<String>,
+    pub nav_replay: bool,
     /// Whether the path combo-box dropdown is open.
     pub path_history_open: bool,
 }
@@ -219,7 +224,11 @@ impl PaneFiles {
         self.loading = false;
         self.req_seq += 1;
         self.error = None;
-        // Host-scoped: a reconnect may land on another host's tree.
+        // Host-scoped: a reconnect may land on another host's tree, so the
+        // in-memory list goes. It is no longer a loss: the history is
+        // persisted per host and `hydrate_files_recent` refills this on the
+        // next mount (issue #114). Before that, closing the host was the
+        // end of it.
         self.path_history.clear();
         self.path_history_open = false;
     }
@@ -227,6 +236,42 @@ impl PaneFiles {
     /// Record an adopted directory in the combo-box history: most
     /// recent first, a revisit moves the entry to the top, capped so
     /// the dropdown stays scannable (issue #85, the SFTP pane's rule).
+    /// Record leaving `previous` for a new directory. Clears the forward
+    /// stack, because branching off mid-history is a new future.
+    pub fn push_nav(&mut self, previous: String) {
+        const NAV_CAP: usize = 100;
+        // A back / forward step consumes the flag instead of recording:
+        // its arrival is the history being replayed, not a new visit.
+        if std::mem::take(&mut self.nav_replay) {
+            return;
+        }
+        if previous.is_empty() {
+            return;
+        }
+        self.nav_back.push(previous);
+        self.nav_fwd.clear();
+        if self.nav_back.len() > NAV_CAP {
+            self.nav_back.remove(0);
+        }
+    }
+
+    /// Pop the previous directory, remembering `current` so Forward can
+    /// come back to it. `None` when there is nowhere to go.
+    pub fn nav_go_back(&mut self, current: String) -> Option<String> {
+        let target = self.nav_back.pop()?;
+        self.nav_fwd.push(current);
+        self.nav_replay = true;
+        Some(target)
+    }
+
+    /// The mirror of [`Self::nav_go_back`].
+    pub fn nav_go_forward(&mut self, current: String) -> Option<String> {
+        let target = self.nav_fwd.pop()?;
+        self.nav_back.push(current);
+        self.nav_replay = true;
+        Some(target)
+    }
+
     pub fn push_path_history(&mut self, path: String) {
         const PATH_HISTORY_CAP: usize = 20;
         if path.is_empty() {
@@ -760,6 +805,29 @@ pub(crate) struct TerminalTab {
 pub(crate) enum TabRef {
     Terminal(Uuid),
     Sftp(Uuid),
+    /// The Settings tab (issue #120). Carries no id because there is at
+    /// most one: Settings is a single global surface, so a second entry
+    /// would be the same screen twice. `Oryxis::settings_tab_open` says
+    /// whether it is in the strip; `tab_order` says where.
+    Settings,
+}
+
+/// Stable synthetic id the Settings tab answers with inside the
+/// uuid-keyed strip machinery (drag / live-slide / reorder). `TabRef`
+/// itself keeps no id, because there is only ever one Settings tab; this
+/// constant is what lets it ride the same reorder code as every other
+/// tab instead of needing a parallel path.
+pub(crate) const SETTINGS_TAB_ID: Uuid = Uuid::from_u128(0x5E11_1465_0000_0000_0000_0000_0000_0001);
+
+impl TabRef {
+    /// Id used by the reorder machinery. Real for terminal / SFTP tabs,
+    /// the synthetic `SETTINGS_TAB_ID` for Settings.
+    pub(crate) fn strip_id(&self) -> Uuid {
+        match self {
+            TabRef::Terminal(id) | TabRef::Sftp(id) => *id,
+            TabRef::Settings => SETTINGS_TAB_ID,
+        }
+    }
 }
 
 /// An SFTP browser tab. Unlike terminal tabs, the **active** SFTP tab's
@@ -1007,6 +1075,41 @@ impl TerminalTab {
         }
     }
 
+    /// Move focus to the adjacent pane in `dir`, carrying the zoom with
+    /// it. Returns whether focus moved.
+    ///
+    /// The zoom is the reason this is a method rather than three lines in
+    /// the dispatcher: while a pane is maximized the grid renders only
+    /// that one, so moving focus without moving the zoom would put the
+    /// caret on a pane nobody can see. Carrying it means the directional
+    /// keys stay the way to walk the panes whether or not one is zoomed,
+    /// which is what makes a separate pane list unnecessary (#113). The
+    /// harness cannot reach arrow chords (its grammar takes a single
+    /// character after the modifiers), so this is covered by the tests
+    /// below rather than by an `.ice`.
+    pub fn focus_adjacent(&mut self, dir: pane_grid::Direction) -> bool {
+        let Some(adj) = self.pane_grid.adjacent(self.focused, dir) else {
+            return false;
+        };
+        self.focused = adj;
+        if self.pane_grid.maximized().is_some() {
+            self.pane_grid.maximize(adj);
+        }
+        true
+    }
+
+    /// Zoom the focused pane to the whole tab, or restore the split.
+    ///
+    /// A lone pane already fills the tab, so zooming it would change
+    /// nothing except hide the affordance that undoes it.
+    pub fn toggle_maximize(&mut self) {
+        if self.pane_grid.maximized().is_some() {
+            self.pane_grid.restore();
+        } else if self.pane_grid.panes.len() > 1 {
+            self.pane_grid.maximize(self.focused);
+        }
+    }
+
     /// Currently focused pane. Falls back to the first pane if `focused`
     /// is stale (e.g. just after a close), so this never panics.
     pub fn active(&self) -> &Pane {
@@ -1157,6 +1260,66 @@ mod terminal_tab_tests {
             .expect("split");
         tab.focused = handle;
         handle
+    }
+
+    /// Zooming a lone pane is refused: it already fills the tab, so the
+    /// only thing it would change is hiding the way back.
+    #[test]
+    fn a_single_pane_tab_does_not_zoom() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        tab.toggle_maximize();
+        assert!(tab.pane_grid.maximized().is_none());
+    }
+
+    /// The toggle is a real toggle, and restoring puts the split back
+    /// untouched: `maximize` only changes what is DRAWN, never the layout.
+    #[test]
+    fn zoom_toggles_and_restores_the_same_layout() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let second = split(&mut tab, pane_grid::Axis::Vertical);
+        tab.toggle_maximize();
+        assert_eq!(tab.pane_grid.maximized(), Some(second));
+        tab.toggle_maximize();
+        assert!(tab.pane_grid.maximized().is_none());
+        assert_eq!(tab.pane_grid.panes.len(), 2, "both panes survive the round trip");
+    }
+
+    /// The zoom follows the focus. Without this, walking the panes while
+    /// one is zoomed would move the caret to a pane the grid is not
+    /// drawing, and the user would be typing into something invisible.
+    #[test]
+    fn zoom_follows_focus_across_panes() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let second = split(&mut tab, pane_grid::Axis::Vertical);
+        tab.toggle_maximize();
+        assert_eq!(tab.pane_grid.maximized(), Some(second));
+
+        assert!(tab.focus_adjacent(pane_grid::Direction::Left));
+        assert_ne!(tab.focused, second, "focus moved to the other pane");
+        assert_eq!(
+            tab.pane_grid.maximized(),
+            Some(tab.focused),
+            "the zoom must land on whichever pane now has focus"
+        );
+    }
+
+    /// And with nothing zoomed, moving focus must not start a zoom.
+    #[test]
+    fn moving_focus_alone_never_zooms() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let _ = split(&mut tab, pane_grid::Axis::Vertical);
+        assert!(tab.focus_adjacent(pane_grid::Direction::Left));
+        assert!(tab.pane_grid.maximized().is_none());
+    }
+
+    /// A direction with no neighbour reports that nothing moved, so the
+    /// caller can tell a no-op from a walk.
+    #[test]
+    fn focus_does_not_move_past_the_edge() {
+        let mut tab = TerminalTab::new_single("a".into(), dummy_terminal());
+        let second = split(&mut tab, pane_grid::Axis::Vertical);
+        assert!(!tab.focus_adjacent(pane_grid::Direction::Right));
+        assert_eq!(tab.focused, second);
     }
 
     /// Split a tab named after its first pane, add a second pane for a

@@ -136,6 +136,7 @@ impl Oryxis {
                     self.sftp.selection_anchor = Some(target);
                 }
                 self.sftp.row_menu = Some(crate::state::SftpRowMenu {
+                    open_group: false,
                     side,
                     path,
                     is_dir,
@@ -154,6 +155,7 @@ impl Oryxis {
                     pane.local_path.to_string_lossy().into_owned()
                 };
                 self.sftp.row_menu = Some(crate::state::SftpRowMenu {
+                    open_group: false,
                     side,
                     path: dir,
                     is_dir: true,
@@ -217,8 +219,24 @@ impl Oryxis {
                     drag.active = true;
                 }
             }
-            SftpMessage::SftpRowExit => {
-                self.sftp.hovered_row = None;
+            SftpMessage::SftpRowExit(side, path) => {
+                // Only if this row is still the one recorded. Moving the
+                // pointer between rows delivers `enter` for the new row and
+                // `exit` for the old one in TREE order, not in the order
+                // they happened, so walking UP the list used to publish
+                // enter(above) then exit(below) and the unconditional clear
+                // wiped the row that had just been entered. `hovered_row`
+                // is what the left-press reads to arm a drag, so that lost
+                // value is a drag that never starts: the reported "works
+                // maybe one time in ten" when grabbing a row.
+                if self
+                    .sftp
+                    .hovered_row
+                    .as_ref()
+                    .is_some_and(|(s, p, _)| *s == side && *p == path)
+                {
+                    self.sftp.hovered_row = None;
+                }
             }
             SftpMessage::SftpNameHovered(side, path) => {
                 // Same menu guard as SftpRowEnter: the gaps between the open
@@ -268,15 +286,11 @@ impl Oryxis {
                 // actual dock: a hard-coded top `y <= BAR_HEIGHT` guard
                 // silently disabled reorder on every non-top dock (issue
                 // #87, "can't move tabs on the left side").
-                let in_tab_strip = crate::views::tab_bar::cursor_in_tab_strip_band(
-                    crate::views::tab_bar::tab_bar_pos(),
-                    self.mouse_position,
-                    self.window_size,
-                    self.setting_pinned_tabs_top_bar && !self.setting_side_hide_top_bar,
-                );
+                let in_tab_strip = self.cursor_in_tab_strip();
                 if !in_tab_strip {
                     self.hovered_tab = None;
                     self.hovered_sftp_tab = None;
+                    self.hovered_settings_tab = false;
                 }
                 if let Some(idx) = self.hovered_tab.filter(|_| in_tab_strip)
                     && let Some(tab) = self.tabs.get(idx)
@@ -292,6 +306,15 @@ impl Oryxis {
                     // SFTP tabs arm the same unified reorder drag.
                     self.tab_drag = Some(crate::state::TabDrag {
                         from_id: tab.id,
+                        start: self.mouse_position,
+                        active: false,
+                    });
+                } else if self.hovered_settings_tab && in_tab_strip {
+                    // So does the Settings tab, under its synthetic id
+                    // (issue #120): the reorder machinery is uuid-keyed
+                    // and `TabRef::strip_id` answers with the same value.
+                    self.tab_drag = Some(crate::state::TabDrag {
+                        from_id: crate::state::SETTINGS_TAB_ID,
                         start: self.mouse_position,
                         active: false,
                     });
@@ -342,7 +365,31 @@ impl Oryxis {
                         return Ok(self.commit_rename());
                     }
                 }
-                if let Some((side, path, is_dir)) = self.sftp.hovered_row.clone() {
+                // Which row the press landed on, by GEOMETRY. `hovered_row`
+                // is only the fallback now: it is hover state, so a
+                // truncated name's tooltip overlay drops it (the reason an
+                // arm was once bolted onto the row button's on_press, which
+                // fires on RELEASE and so can never help a drag), and iced
+                // publishes enter / exit in tree order, which reorders it.
+                // The rects come from the same `bounds_reporter` cells the
+                // OS-drop router hit-tests, so this answer does not depend
+                // on hover at all.
+                let hit = self
+                    .sftp
+                    .row_hits
+                    .borrow()
+                    .iter()
+                    .find(|h| {
+                        let r = h.bounds.get();
+                        r.width > 0.0
+                            && r.height > 0.0
+                            && self.mouse_position.x >= r.x
+                            && self.mouse_position.x <= r.x + r.width
+                            && self.mouse_position.y >= r.y
+                            && self.mouse_position.y <= r.y + r.height
+                    })
+                    .map(|h| (h.side, h.path.clone(), h.is_dir));
+                if let Some((side, path, is_dir)) = hit.or_else(|| self.sftp.hovered_row.clone()) {
                     self.arm_sftp_row_drag(side, path, is_dir);
                 }
             }

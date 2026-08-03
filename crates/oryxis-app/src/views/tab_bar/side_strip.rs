@@ -100,12 +100,12 @@ impl Oryxis {
         let mut items: Vec<Element<'_, Message>> = Vec::new();
         let mut chip_row: Vec<Element<'_, Message>> = Vec::new();
         let mut row_count = 0usize;
-        for (is_sftp, idx) in self.strip_order() {
-            let pinned = self.strip_entry_pinned(is_sftp, idx);
+        for entry in self.strip_order() {
+            let pinned = self.strip_entry_pinned(entry);
             if pins_top && pinned {
                 continue;
             }
-            let el = self.strip_tab_element(&ctx, is_sftp, idx);
+            let el = self.strip_tab_element(&ctx, entry);
             if compact_pins && pinned {
                 chip_row.push(el);
                 if chip_row.len() == chips_per_row {
@@ -271,7 +271,11 @@ impl Oryxis {
         // keep receiving the hover events that drive the live-slide.
         // With the pins docked in the (visible) top bar, that bar draws
         // the pinned ghosts instead.
-        let ghost_elsewhere = pins_top && !hide_top_bar && self.dragged_tab_pinned();
+        // Leaving the strip hands the ghost to the window-level layer,
+        // which is the only one that can follow the cursor into the
+        // content area (issue #112).
+        let ghost_elsewhere = (pins_top && !hide_top_bar && self.dragged_tab_pinned())
+            || !self.cursor_in_tab_strip();
         if !ghost_elsewhere
             && let Some((ghost, _ghost_w)) =
                 self.strip_drag_ghost_el(SIDE_TAB_WIDTH, compact_pins, &ctx.privacy_terms)
@@ -308,11 +312,11 @@ impl Oryxis {
     ) -> Vec<Element<'_, Message>> {
         let mut rows: Vec<Element<'_, Message>> = Vec::new();
         let mut chip_row: Vec<Element<'_, Message>> = Vec::new();
-        for (is_sftp, idx) in self.strip_order() {
-            if !self.strip_entry_pinned(is_sftp, idx) {
+        for entry in self.strip_order() {
+            if !self.strip_entry_pinned(entry) {
                 continue;
             }
-            let el = self.strip_tab_element(ctx, is_sftp, idx);
+            let el = self.strip_tab_element(ctx, entry);
             if compact_pins {
                 chip_row.push(el);
                 if chip_row.len() == chips_per_row {

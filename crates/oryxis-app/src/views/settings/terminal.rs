@@ -119,7 +119,153 @@ impl Oryxis {
     /// Row for the ZMODEM download folder: the resolved path (default or
     /// configured) plus a Browse button, and a Reset when a custom folder
     /// is set. Always shown (transfers work regardless of other toggles).
-    fn zmodem_download_dir_row(&self) -> Element<'_, Message> {
+    /// The terminal-theme gallery: every built-in and custom palette as a
+    /// card, plus the create / import entries. Lives behind a modal
+    /// rather than inline in Settings, where 17 built-ins plus the user's
+    /// own pushed every group below it off the page.
+    ///
+    /// The cards record themselves as keyboard rows in RENDER order, same
+    /// as any settings row, so the modal is walkable the moment it opens.
+    pub(crate) fn terminal_theme_gallery(&self) -> Element<'_, Message> {
+        let mut theme_cards: Vec<Element<'_, Message>> = Vec::new();
+        // The sentinel renders as a real palette card previewing
+        // the app-theme-derived palette (every app theme has a
+        // same-named terminal palette), instead of the old
+        // input-looking box that read as a text field.
+        let app_theme_name = crate::theme::AppTheme::active().name();
+        let follow_palette = self
+            .terminal_palette_for_name(app_theme_name)
+            .unwrap_or_default();
+        let follow_label =
+            format!("{} ({})", t("terminal_theme_follow_app"), app_theme_name);
+        theme_cards.push(self.settings_nav_slot(
+            crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::TerminalThemeChanged(String::new()))),
+            10.0,
+            crate::widgets::terminal_theme_card(
+                follow_palette,
+                &follow_label,
+                self.terminal_theme_override.is_none(),
+                Message::Settings(SettingsMessage::TerminalThemeChanged(String::new())),
+            ),
+        ));
+        for (bidx, theme) in oryxis_terminal::TerminalTheme::ALL.iter().enumerate() {
+            let is_selected = self
+                .terminal_theme_override
+                .as_deref()
+                == Some(theme.name());
+            theme_cards.push(self.settings_nav_slot(
+                crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::TerminalThemeChanged(
+                    theme.name().to_string(),
+                ))),
+                10.0,
+                // Hover reveals a clone icon (duplicate the preset into an
+                // editable custom theme); Enter still applies the theme.
+                self.terminal_builtin_theme_card(bidx, theme, is_selected),
+            ));
+        }
+        // User-defined themes after the built-ins, each with the
+        // hover edit / delete affordances. Enter applies the theme
+        // (the card's own click action); edit / delete stay
+        // hover-only.
+        for (idx, ct) in self.custom_terminal_themes.iter().enumerate() {
+            let is_selected =
+                self.terminal_theme_override.as_deref() == Some(ct.name.as_str());
+            let palette = self
+                .terminal_palette_for_name(&ct.name)
+                .unwrap_or_default();
+            theme_cards.push(self.settings_nav_slot(
+                crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::TerminalThemeChanged(
+                    ct.name.clone(),
+                ))),
+                10.0,
+                self.terminal_custom_theme_card(
+                    idx,
+                    &ct.name,
+                    palette,
+                    is_selected,
+                ),
+            ));
+        }
+        // "+ New custom theme" + "Import" cards last.
+        theme_cards.push(self.settings_nav_slot_labeled(
+            t("theme_new_custom"),
+            crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::ThemeEditorNew)),
+            10.0,
+            crate::views::settings_themes::terminal_theme_add_card(),
+        ));
+        theme_cards.push(self.settings_nav_slot_labeled(
+            t("theme_import"),
+            crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::ThemeImportOpen)),
+            10.0,
+            crate::views::settings_themes::terminal_theme_import_card(),
+        ));
+        theme_cards.push(self.settings_nav_slot_labeled(
+            t("theme_community"),
+            crate::keynav::RowAction::activate(Message::OpenUrl(
+                "https://oryxis.app/themes".to_string(),
+            )),
+            10.0,
+            crate::views::settings_themes::terminal_theme_community_card(),
+        ));
+        // 2-column responsive grid for theme cards. Cards still
+        // use the existing swatch-+-name layout (the "bolinhas"
+        // style); only the row arrangement changes from a single
+        // tall column to a side-by-side pair so the picker
+        // doesn't dominate the settings panel vertically.
+        // Built here (the cards need this view's locals) and handed to
+        // the gallery modal.
+        let theme_grid = crate::widgets::distribute_card_grid(
+            theme_cards,
+            2,
+            8.0,
+            8.0,
+        );
+        // Bare card, same shape as the theme-import modal:
+        // `widgets::modal_overlay` (the caller) owns the scrim, the
+        // centering and the click-trap. Scrollable because the list grows
+        // with every custom theme, which is exactly why it stopped being
+        // inline.
+        let footer: Element<'_, Message> = crate::widgets::dir_row(vec![
+            Space::new().width(Length::Fill).into(),
+            crate::widgets::form_cancel_button(Message::Settings(
+                SettingsMessage::CloseTerminalThemeGallery,
+            )),
+        ])
+        .align_y(iced::Alignment::Center)
+        .into();
+        let card = container(
+            column![
+                text(t("terminal_theme")).size(18).color(OryxisColors::t().text_primary),
+                Space::new().height(6),
+                text(t("terminal_theme_desc")).size(12).color(OryxisColors::t().text_muted),
+                Space::new().height(16),
+                // The scrollbar is drawn INSIDE the viewport, so a grid
+                // that fills the full width gets a bar painted over its
+                // right-hand cards. The padding is the bar's own gutter.
+                scrollable(
+                    container(theme_grid)
+                        .padding(Padding { top: 0.0, right: 14.0, bottom: 0.0, left: 0.0 }),
+                )
+                .height(Length::Fixed(460.0)),
+                Space::new().height(12),
+                footer,
+            ],
+        )
+        .padding(24)
+        .width(Length::Fixed(720.0))
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_primary)),
+            border: Border {
+                radius: Radius::from(12.0),
+                color: OryxisColors::t().border,
+                width: 1.0,
+            },
+            ..Default::default()
+        });
+        card.into()
+    }
+
+    fn default_download_dir_row(&self) -> Element<'_, Message> {
         let configured = self.setting_zmodem_download_dir.trim();
         let shown = if configured.is_empty() {
             dirs::download_dir()
@@ -129,7 +275,7 @@ impl Oryxis {
             configured.to_string()
         };
         let browse = self.settings_nav_slot_labeled(
-            t("zmodem_download_dir"),
+            t("default_download_dir"),
             crate::keynav::RowAction::activate(Message::Zmodem(ZmodemMessage::PickZmodemDownloadDir)),
             8.0,
             crate::widgets::styled_button_opt(
@@ -140,9 +286,9 @@ impl Oryxis {
         );
         let mut row = crate::widgets::dir_row(vec![
             column![
-                text(crate::i18n::t("zmodem_download_dir"))
+                text(crate::i18n::t("default_download_dir"))
                     .size(13)
-                    .color(crate::theme::OryxisColors::t().text_secondary),
+                    .color(crate::theme::OryxisColors::t().text_primary),
                 Space::new().height(2),
                 text(shown)
                     .size(11)
@@ -220,11 +366,15 @@ impl Oryxis {
         // gesture, so it sits outside the copy-on-select bundle; the
         // paste still routes through the careful-paste / paste-guard
         // checks like every other paste path.
+        //
+        // State comes from the binding table, not a setting: the gesture
+        // IS a chord on `TerminalPasteSelection`, editable in Settings >
+        // Shortcuts like any other, and this toggle adds / removes it.
         toggles_col = toggles_col
             .push(Space::new().height(10))
             .push(self.nav_toggle_row(
                 crate::i18n::t("middle_click_paste"),
-                self.setting_middle_click_paste,
+                self.middle_click_pastes(),
                 Message::Settings(SettingsMessage::ToggleMiddleClickPaste),
             ));
         // Careful paste: the multi-line paste guard (line-count preview
@@ -331,32 +481,43 @@ impl Oryxis {
                 Message::Settings(SettingsMessage::ToggleScrollbackResetOutput),
             ),
         ];
+        // Where downloads land is behaviour, not appearance: it sat under
+        // the Appearance header only because ZMODEM shipped alongside the
+        // rendering toggles. The label lost its "ZMODEM" prefix too, since
+        // the folder is the app's download destination and nothing about
+        // it is protocol-specific. The SETTING key stays
+        // `zmodem_download_dir`: renaming it would silently drop the
+        // folder anyone had already configured.
         let behavior_section = panel_section(
             toggles_col
                 .push(word_delimiters_block)
                 .push(Space::new().height(16))
-                .push(scrollback_block),
+                .push(scrollback_block)
+                .push(Space::new().height(6))
+                .push(self.default_download_dir_row()),
         );
 
-        // Text rendering toggles open the Appearance card (under the
-        // Appearance group header, not mixed with clipboard
-        // behaviour); the font sub-blocks follow in the same card.
-        let text_render_col = column![
+        // Settings > Terminal used to have one "Appearance" card holding
+        // everything that was not clipboard behaviour: the bell, OSC 52,
+        // OSC 9, smart tabs, the sidebar dock, command-history capture.
+        // None of that is appearance. Split into four cards, each named
+        // after what the settings inside it actually govern.
+
+        // Appearance: what the grid LOOKS like. Font blocks and the theme
+        // picker join this card below.
+        let appearance_col = column![
             self.nav_toggle_row(crate::i18n::t("bold_bright"), self.setting_bold_is_bright, Message::Settings(SettingsMessage::ToggleBoldIsBright)),
             Space::new().height(10),
             self.nav_toggle_row(crate::i18n::t("keyword_highlight"), self.setting_keyword_highlight, Message::Settings(SettingsMessage::ToggleKeywordHighlight)),
             Space::new().height(10),
-            self.nav_toggle_row(crate::i18n::t("command_history_capture"), self.setting_command_history, Message::Settings(SettingsMessage::ToggleCommandHistory)),
-            Space::new().height(10),
-            self.nav_toggle_row(crate::i18n::t("cmd_history_file"), self.setting_command_history_file, Message::CommandHistory(CommandHistoryMessage::ToggleCommandHistoryFile)),
-            self.command_history_dir_row(),
-            Space::new().height(10),
-            self.zmodem_download_dir_row(),
-            Space::new().height(10),
             self.nav_toggle_row(crate::i18n::t("smart_contrast"), self.setting_smart_contrast, Message::Settings(SettingsMessage::ToggleSmartContrast)),
-            Space::new().height(10),
-            self.nav_toggle_row(crate::i18n::t("terminal_auto_title"), crate::state::auto_title_enabled(), Message::Settings(SettingsMessage::ToggleTerminalAutoTitle)),
-            Space::new().height(10),
+        ];
+
+        // Notifications: everything whose job is to GET YOUR ATTENTION.
+        // Smart tabs and its threshold live here rather than with the tab
+        // settings because the threshold is "tell me when a command has
+        // run this long", which is the same promise as the bell.
+        let notifications_col = column![
             self.nav_pick_row(
                 crate::i18n::t("terminal_bell"),
                 crate::util::BellMode::ALL
@@ -367,18 +528,6 @@ impl Oryxis {
                 |s: &String| s.clone(),
                 200.0,
                 |v| Message::Settings(SettingsMessage::BellModeChanged(v)),
-            ),
-            Space::new().height(10),
-            self.nav_pick_row(
-                crate::i18n::t("terminal_clipboard"),
-                crate::util::ClipboardAccess::ALL
-                    .iter()
-                    .map(|m| crate::i18n::t(m.label_key()).to_string())
-                    .collect::<Vec<_>>(),
-                crate::i18n::t(self.setting_clipboard_access.label_key()).to_string(),
-                |s: &String| s.clone(),
-                200.0,
-                |v| Message::Settings(SettingsMessage::ClipboardAccessChanged(v)),
             ),
             Space::new().height(10),
             self.nav_pick_row(
@@ -395,7 +544,35 @@ impl Oryxis {
             Space::new().height(10),
             self.nav_toggle_row(crate::i18n::t("smart_tabs"), self.setting_smart_tabs, Message::Settings(SettingsMessage::SettingToggleSmartTabs)),
             self.smart_tabs_threshold_row(),
+        ];
+
+        // Integration: what the REMOTE END is allowed to drive, and what
+        // we record off the session. Every row here is a channel between
+        // the shell and the app rather than a preference about drawing.
+        let integration_col = column![
+            self.nav_pick_row(
+                crate::i18n::t("terminal_clipboard"),
+                crate::util::ClipboardAccess::ALL
+                    .iter()
+                    .map(|m| crate::i18n::t(m.label_key()).to_string())
+                    .collect::<Vec<_>>(),
+                crate::i18n::t(self.setting_clipboard_access.label_key()).to_string(),
+                |s: &String| s.clone(),
+                200.0,
+                |v| Message::Settings(SettingsMessage::ClipboardAccessChanged(v)),
+            ),
             Space::new().height(10),
+            self.nav_toggle_row(crate::i18n::t("terminal_auto_title"), crate::state::auto_title_enabled(), Message::Settings(SettingsMessage::ToggleTerminalAutoTitle)),
+            Space::new().height(10),
+            self.nav_toggle_row(crate::i18n::t("command_history_capture"), self.setting_command_history, Message::Settings(SettingsMessage::ToggleCommandHistory)),
+            Space::new().height(10),
+            self.nav_toggle_row(crate::i18n::t("cmd_history_file"), self.setting_command_history_file, Message::CommandHistory(CommandHistoryMessage::ToggleCommandHistoryFile)),
+            self.command_history_dir_row(),
+        ];
+
+        // Sidebar: where the Chat / Snippets / Files panel sits and how it
+        // opens.
+        let sidebar_col = column![
             self.nav_toggle_row(
                 crate::i18n::t("terminal_sidebar_left"),
                 self.setting_terminal_sidebar_left,
@@ -573,7 +750,7 @@ impl Oryxis {
         // sub-theme, and a grid that large reads better boxed
         // separately).
         let appearance_section = panel_section(
-            text_render_col
+            appearance_col
                 .push(Space::new().height(16))
                 .push(font_size_block)
                 .push(Space::new().height(16))
@@ -588,102 +765,78 @@ impl Oryxis {
         // over this global pick. Each card is a keyboard row (Enter
         // applies / opens it); built after the font picker so the
         // recording matches the render order.
-        let mut theme_cards: Vec<Element<'_, Message>> = Vec::new();
-        // The sentinel renders as a real palette card previewing
-        // the app-theme-derived palette (every app theme has a
-        // same-named terminal palette), instead of the old
-        // input-looking box that read as a text field.
         let app_theme_name = crate::theme::AppTheme::active().name();
         let follow_palette = self
             .terminal_palette_for_name(app_theme_name)
             .unwrap_or_default();
         let follow_label =
             format!("{} ({})", t("terminal_theme_follow_app"), app_theme_name);
-        theme_cards.push(self.settings_nav_slot(
-            crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::TerminalThemeChanged(String::new()))),
-            10.0,
-            crate::widgets::terminal_theme_card(
-                follow_palette,
-                &follow_label,
-                self.terminal_theme_override.is_none(),
-                Message::Settings(SettingsMessage::TerminalThemeChanged(String::new())),
-            ),
-        ));
-        for (bidx, theme) in oryxis_terminal::TerminalTheme::ALL.iter().enumerate() {
-            let is_selected = self
-                .terminal_theme_override
-                .as_deref()
-                == Some(theme.name());
-            theme_cards.push(self.settings_nav_slot(
-                crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::TerminalThemeChanged(
-                    theme.name().to_string(),
-                ))),
-                10.0,
-                // Hover reveals a clone icon (duplicate the preset into an
-                // editable custom theme); Enter still applies the theme.
-                self.terminal_builtin_theme_card(bidx, theme, is_selected),
-            ));
-        }
-        // User-defined themes after the built-ins, each with the
-        // hover edit / delete affordances. Enter applies the theme
-        // (the card's own click action); edit / delete stay
-        // hover-only.
-        for (idx, ct) in self.custom_terminal_themes.iter().enumerate() {
-            let is_selected =
-                self.terminal_theme_override.as_deref() == Some(ct.name.as_str());
-            let palette = self
-                .terminal_palette_for_name(&ct.name)
-                .unwrap_or_default();
-            theme_cards.push(self.settings_nav_slot(
-                crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::TerminalThemeChanged(
-                    ct.name.clone(),
-                ))),
-                10.0,
-                self.terminal_custom_theme_card(
-                    idx,
-                    &ct.name,
-                    palette,
-                    is_selected,
-                ),
-            ));
-        }
-        // "+ New custom theme" + "Import" cards last.
-        theme_cards.push(self.settings_nav_slot_labeled(
-            t("theme_new_custom"),
-            crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::ThemeEditorNew)),
-            10.0,
-            crate::views::settings_themes::terminal_theme_add_card(),
-        ));
-        theme_cards.push(self.settings_nav_slot_labeled(
-            t("theme_import"),
-            crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::ThemeImportOpen)),
-            10.0,
-            crate::views::settings_themes::terminal_theme_import_card(),
-        ));
-        // 2-column responsive grid for theme cards. Cards still
-        // use the existing swatch-+-name layout (the "bolinhas"
-        // style); only the row arrangement changes from a single
-        // tall column to a side-by-side pair so the picker
-        // doesn't dominate the settings panel vertically.
-        let theme_grid = crate::widgets::distribute_card_grid(
-            theme_cards,
-            2,
-            8.0,
-            8.0,
-        );
+        // The grid lives in a modal now, not inline (owner ask): with 17
+        // built-ins plus every custom theme it was the tallest thing in
+        // Settings by a wide margin, and it pushed every group below it
+        // out of reach. The row shows the palette in force as a real
+        // card, so the preview survives the move; clicking it opens the
+        // gallery, the same shape the host editor's picker already has.
+        let current_theme_name = self
+            .terminal_theme_override
+            .clone()
+            .unwrap_or_else(|| follow_label.clone());
+        let current_palette = self
+            .terminal_theme_override
+            .as_deref()
+            .and_then(|n| self.terminal_palette_for_name(n))
+            .unwrap_or(follow_palette);
         let theme_picker_section = panel_section(column![
             text(t("terminal_theme")).size(13).color(OryxisColors::t().text_primary),
             Space::new().height(4),
             text(t("terminal_theme_desc"))
                 .size(11).color(OryxisColors::t().text_muted),
             Space::new().height(10),
-            theme_grid,
+            self.settings_nav_slot_labeled(
+                t("terminal_theme"),
+                crate::keynav::RowAction::activate(Message::Settings(
+                    SettingsMessage::OpenTerminalThemeGallery,
+                )),
+                10.0,
+                crate::widgets::terminal_theme_card(
+                    current_palette,
+                    &current_theme_name,
+                    true,
+                    Message::Settings(SettingsMessage::OpenTerminalThemeGallery),
+                ),
+            ),
         ]);
 
         // Grouped under "h2" headers, same pattern as Interface:
         // Behavior (selection, delimiters, scrollback) then
         // Appearance (rendering, font, theme). Connection + logging
         // knobs live in their own sections.
+        // Split panes get their own block: they are the only settings
+        // that do nothing at all until a tab is split, so mixing them
+        // into Appearance made them read as global terminal knobs.
+        let split_panes_section = panel_section(column![
+            self.nav_pick_row(
+                crate::i18n::t("pane_gap"),
+                vec!["0".into(), "4".into(), "8".into(), "12".into()],
+                self.setting_pane_gap.clone(),
+                |v| {
+                    if v == "0" {
+                        crate::i18n::t("pane_gap_none").to_string()
+                    } else {
+                        format!("{v} px")
+                    }
+                },
+                140.0,
+                |v| Message::Settings(SettingsMessage::PaneGapChanged(v)),
+            ),
+            Space::new().height(10),
+            self.nav_toggle_row(
+                crate::i18n::t("pane_border_inactive"),
+                self.setting_pane_border_inactive,
+                Message::Settings(SettingsMessage::TogglePaneBorderInactive),
+            ),
+        ]);
+
         use crate::widgets::settings_group_header as gh;
         scrollable(
             container(
@@ -698,6 +851,22 @@ impl Oryxis {
                     Space::new().height(12),
                     theme_picker_section,
                     Space::new().height(18),
+                    gh(crate::i18n::t("terminal_group_split_panes")),
+                    Space::new().height(8),
+                    split_panes_section,
+                    Space::new().height(18),
+                    gh(crate::i18n::t("terminal_group_notifications")),
+                    Space::new().height(8),
+                    panel_section(notifications_col),
+                    Space::new().height(18),
+                    gh(crate::i18n::t("terminal_group_integration")),
+                    Space::new().height(8),
+                    panel_section(integration_col),
+                    Space::new().height(18),
+                    gh(crate::i18n::t("terminal_group_sidebar")),
+                    Space::new().height(8),
+                    panel_section(sidebar_col),
+                    Space::new().height(18),
                     gh(crate::i18n::t("local_terminals")),
                     Space::new().height(8),
                     self.local_terminals_card(),
@@ -711,6 +880,7 @@ impl Oryxis {
         // Stable id so the keyboard router can keep the selected row
         // in view.
         .id(iced::widget::Id::new("settings-terminal-scroll"))
+        .on_scroll(|v| Message::Settings(SettingsMessage::SectionScrolled(v.relative_offset().y)))
         .height(Length::Fill)
         .into()
     }

@@ -69,55 +69,96 @@ impl Oryxis {
                 // wires click-to-focus + drag-to-resize.
                 let focused = tab.focused;
                 let multipane = tab.pane_grid.panes.len() > 1;
+                // Which edges of each pane border a sibling. The panes sit
+                // flush (no gutter), so the only way to grab a divider is
+                // for the pane to hand that strip back to the grid; doing
+                // it only on shared edges keeps the grid's outer border
+                // fully selectable. Relative coordinates are enough, so
+                // the regions are laid out at an arbitrary size.
+                // A visible gutter belongs to no pane, so it IS the handle
+                // and the panes keep all their pixels. Only when the panes
+                // sit flush does each one have to hand a strip back.
+                let gap = self.setting_pane_gap.parse::<f32>().unwrap_or(0.0).clamp(0.0, 24.0);
+                let neighbours: std::collections::HashMap<_, _> = if multipane && gap <= 0.0 {
+                    const UNIT: f32 = 1000.0;
+                    let regions = tab.pane_grid.layout().pane_regions(
+                        0.0,
+                        0.0,
+                        iced::Size::new(UNIT, UNIT),
+                    );
+                    regions
+                        .iter()
+                        .map(|(handle, r)| {
+                            const EPS: f32 = 0.5;
+                            const GRAB: f32 = 4.0;
+                            let edge = |touching: bool| if touching { 0.0 } else { GRAB };
+                            (
+                                *handle,
+                                (
+                                    edge(r.y <= EPS),
+                                    edge(r.x + r.width >= UNIT - EPS),
+                                    edge(r.y + r.height >= UNIT - EPS),
+                                    edge(r.x <= EPS),
+                                ),
+                            )
+                        })
+                        .collect()
+                } else {
+                    std::collections::HashMap::new()
+                };
                 // Broadcast input (C2): while armed, every participating pane
                 // wears a 2px warning-tinted border so it is unmistakable that
                 // keystrokes fan out to all of them at once.
                 let broadcast = tab.broadcast;
                 let grid = iced::widget::pane_grid(&tab.pane_grid, move |pane, pane_data, _max| {
                     let is_focused = pane == focused;
-                    let participating = broadcast && !pane_data.broadcast_opt_out;
-                    // The focus border only shows when there's more than one
-                    // pane; the mouse-report gate uses real focus regardless.
-                    // A broadcasting pane's warning border overrides the focus
-                    // accent (the louder signal wins) and shows on every
-                    // participating pane, not just the focused one. Gated on
-                    // `multipane`: broadcast is inert on a lone pane (nothing
-                    // to fan out to), so the heavy border would misread as a
-                    // warning; the chip + status segment carry the armed
-                    // state there until the tab is split.
-                    let (border_color, border_width) = if participating && multipane {
-                        (OryxisColors::t().warning, 2.0)
-                    } else if multipane && is_focused {
-                        (OryxisColors::t().accent, 1.0)
-                    } else if multipane {
-                        (OryxisColors::t().border, 1.0)
-                    } else {
-                        (OryxisColors::t().border, 0.0)
-                    };
+                    // The outline (focus accent, or the warning tint while
+                    // broadcasting) is drawn INSIDE `render_pane_canvas`, as a
+                    // layer above the terminal canvas. It used to live here as
+                    // this container's border and was invisible: the canvas
+                    // fills the container and paints over it (#113). Gated on
+                    // `multipane` there, since a lone pane has nothing to be
+                    // distinguished from and broadcast is inert on it.
                     iced::widget::pane_grid::Content::new(
-                        container(self.render_pane_canvas(pane_data, is_focused, broadcast))
-                            .width(Length::Fill)
-                            .height(Length::Fill)
-                            .style(move |_| container::Style {
-                                border: Border {
-                                    color: border_color,
-                                    width: border_width,
-                                    radius: Radius::from(0.0),
-                                },
-                                ..Default::default()
-                            }),
+                        container(self.render_pane_canvas(
+                            pane_data,
+                            is_focused,
+                            broadcast,
+                            multipane,
+                            neighbours.get(&pane).copied().unwrap_or((0.0, 0.0, 0.0, 0.0)),
+                        ))
+                        .width(Length::Fill)
+                        .height(Length::Fill),
                     )
                 })
                 .on_click(|v| Message::Terminal(TerminalMessage::FocusPane(v)))
+                // The panes sit FLUSH: no gutter at all (owner call). The
+                // divider stays grabbable because each pane declines
+                // presses in a 4 px strip along the edges it shares with a
+                // sibling (`with_resize_margins`), so the grid gets them
+                // and no text selection starts. The leeway is back at 8
+                // now that nothing competes for those pixels.
                 .on_resize(8, |v| Message::Terminal(TerminalMessage::ResizePane(v)))
-                .spacing(if multipane { 4 } else { 0 })
+                .spacing(if multipane { gap } else { 0.0 })
                 .width(Length::Fill)
                 .height(Length::Fill);
 
                 // The AI/sidebar toggle now lives in the tab bar (panel
                 // button right of `+`), so the terminal canvas no longer
                 // carries its own floating sparkle overlay.
-                let term_with_toggle: Element<'_, Message> = grid.into();
+                //
+                // `spacing` only puts air BETWEEN panes, so a gap alone
+                // left the outer panes flush against the window while
+                // their shared edges breathed. Matching the outer padding
+                // to the gap makes every boundary the same width, which
+                // is what "gap" reads as; without it the setting looks
+                // half-applied (field report).
+                let term_with_toggle: Element<'_, Message> =
+                    if multipane && gap > 0.0 {
+                        container(grid).padding(gap).into()
+                    } else {
+                        grid.into()
+                    };
 
                 // The session-group editor renders here, as a sibling of the
                 // grid inside the terminal area, the same way the chat sidebar
@@ -393,11 +434,70 @@ impl Oryxis {
         })
     }
 
+    /// The user's MOUSE bindings for the terminal canvas (middle-click
+    /// paste out of the box).
+    ///
+    /// Same contract as `terminal_chord_resolver`: the widget gets a
+    /// matcher, not a table, so `HotkeyBinding::match_mouse` stays the
+    /// single implementation.
+    ///
+    /// Which pairs belong here is `HotkeyAction::mouse_binding_owner`,
+    /// shared with `shortcuts::dispatch_mouse_binding` so the two can't
+    /// both claim a press (it would fire twice) or both decline it.
+    /// Declining here leaves the press uncaptured, which is exactly
+    /// what lets the global handler pick it up.
+    pub(crate) fn terminal_mouse_resolver(&self) -> oryxis_terminal::widget::MouseResolver<Message> {
+        use crate::hotkeys::{HotkeyAction, HotkeyBinding, MouseButton};
+        use oryxis_terminal::widget::{MouseGesture, TerminalChordAction};
+        // Flattened at build time so the closure does one linear scan of
+        // (usually) a single entry per press instead of walking the whole
+        // action table.
+        let bound: Vec<(HotkeyBinding, HotkeyAction)> = HotkeyAction::all()
+            .iter()
+            .filter_map(|a| self.hotkey_bindings.get(a).map(|binds| (*a, binds)))
+            .flat_map(|(a, binds)| binds.mouse_chords().map(move |b| (*b, a)))
+            .collect();
+        Box::new(move |button, mods| {
+            let button = MouseButton::from_iced(button)?;
+            let action = bound
+                .iter()
+                .find(|(b, _)| b.match_mouse(button, mods))
+                .map(|(_, a)| *a)?;
+            if action.mouse_binding_owner(button) != crate::hotkeys::MouseBindingOwner::Widget {
+                return None;
+            }
+            // The split is `HotkeyAction::widget_dispatched`: those five
+            // need canvas state, everything else is the app's to run.
+            Some(match action {
+                HotkeyAction::TerminalCopy => MouseGesture::Widget(TerminalChordAction::Copy),
+                HotkeyAction::TerminalPasteSelection => {
+                    MouseGesture::Widget(TerminalChordAction::PasteSelection)
+                }
+                HotkeyAction::TerminalSelectAll => {
+                    MouseGesture::Widget(TerminalChordAction::SelectAll)
+                }
+                HotkeyAction::ScrollbackPageUp => {
+                    MouseGesture::Widget(TerminalChordAction::ScrollPageUp)
+                }
+                HotkeyAction::ScrollbackPageDown => {
+                    MouseGesture::Widget(TerminalChordAction::ScrollPageDown)
+                }
+                other => MouseGesture::Publish(Message::Tabs(
+                    crate::messages::TabsMessage::RunHotkeyAction(other),
+                )),
+            })
+        })
+    }
+
     fn render_pane_canvas<'a>(
         &'a self,
         pane: &'a crate::state::Pane,
         is_focused: bool,
         tab_broadcast: bool,
+        multipane: bool,
+        // `(top, right, bottom, left)` strips handed back to the grid so
+        // its dividers stay grabbable with the panes flush.
+        resize_margins: (f32, f32, f32, f32),
     ) -> Element<'a, Message> {
         let mut term_view = TerminalView::new(Arc::clone(&pane.terminal))
             .focused(is_focused)
@@ -406,8 +506,8 @@ impl Oryxis {
             .with_font_name(&self.terminal_font_name)
             .with_copy_on_select(self.setting_copy_on_select)
             .with_right_click_copy(self.setting_right_click_copy)
-            .with_middle_click_paste(self.setting_middle_click_paste)
             .with_terminal_chords(self.terminal_chord_resolver())
+            .with_mouse_bindings(self.terminal_mouse_resolver())
             .with_right_click_action(self.setting_terminal_right_click.to_widget())
             // The keypress half of the pair is queued on the input funnel
             // (`write_bytes_to_pane`), not here: see issue #111.
@@ -424,6 +524,7 @@ impl Oryxis {
             // even when the remote turns on mouse tracking.
             .with_mouse_reporting(!pane.quirks.disable_mouse_reporting)
             .with_word_delimiters(&self.setting_word_delimiters)
+            .with_resize_margins(resize_margins)
             .on_font_size_increase(Message::Settings(SettingsMessage::TerminalFontSizeIncrease))
             .on_font_size_decrease(Message::Settings(SettingsMessage::TerminalFontSizeDecrease))
             .on_paste_request(Message::Terminal(TerminalMessage::TerminalPasteFromClipboard))
@@ -513,10 +614,56 @@ impl Oryxis {
             .ok()
             .and_then(|s| s.hovered_link.clone())
             .map(|link| self.link_reveal_chip(&pane.label, link));
-        if overlay.is_none() && link_chip.is_none() {
+        // Pane outline (#113). It has to be drawn ON TOP of the canvas,
+        // not as the enclosing container's border: the canvas fills its
+        // parent and paints its own background across the whole rect, so
+        // a border on the container underneath is painted over and the
+        // focused pane ends up with no marking at all, which is exactly
+        // what the report says. Padding the container instead would
+        // inset the canvas, and that recomputes the terminal's rows and
+        // columns, so merely FOCUSING a pane would resize the PTY.
+        //
+        // Non-interactive (a plain container over a Space), so it cannot
+        // eat the press that moves focus to this pane.
+        // Off means the FOCUSED pane still draws (it is the only marker
+        // left once the panes sit flush); only the siblings go bare, so
+        // the ring is still built whenever the tab is split.
+        let ring: Option<Element<'a, Message>> = multipane.then(|| {
+            let participating = tab_broadcast && !pane.broadcast_opt_out;
+            // Broadcast is the louder signal and wins: keystrokes going
+            // to several hosts at once matters more than which pane the
+            // caret is in.
+            let (color, width) = if participating {
+                (OryxisColors::t().warning, 2.0)
+            } else if is_focused {
+                (OryxisColors::t().accent, 2.0)
+            } else if self.setting_pane_border_inactive {
+                (OryxisColors::t().border, 1.0)
+            } else {
+                // Setting off: the focused pane still gets its accent
+                // (with the panes flush, nothing else says where the
+                // focused one ends), the rest go bare.
+                (Color::TRANSPARENT, 0.0)
+            };
+            container(Space::new())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(move |_| container::Style {
+                    border: Border { color, width, radius: Radius::from(0.0) },
+                    ..Default::default()
+                })
+                .into()
+        });
+        if overlay.is_none() && link_chip.is_none() && ring.is_none() {
             return host;
         }
         let mut stack = iced::widget::Stack::new().push(host);
+        // Under the chips: a 2 px ring at the edges and a padded chip in
+        // the corner do not overlap, and keeping the chips last means a
+        // future wider ring can never cover the find bar.
+        if let Some(ring) = ring {
+            stack = stack.push(ring);
+        }
         if let Some(top) = overlay {
             stack = stack.push(
                 container(top)
@@ -642,36 +789,66 @@ impl Oryxis {
             Some(_) if !pane.search_query.is_empty() => t("terminal_search_no_matches").to_string(),
             _ => String::new(),
         };
+        // Fit the bar to the pane it floats in. It used to be all fixed
+        // widths, so a narrow pane clipped it from the trailing edge and
+        // took the step arrows and the CLOSE button with it, leaving the
+        // search stuck open with no way out but the hotkey (field report).
+        //
+        // The pane's real width comes from the same `bounds` cell the
+        // OS-drop router reads, so this needs no layout guessing. Order of
+        // sacrifice, least useful first: the match counter, then the step
+        // arrows, then the input shrinks to a stub. Close is never dropped
+        // -- it is the way out.
+        const BTN: f32 = 32.0;
+        const COUNTER_W: f32 = 70.0;
+        const CHROME: f32 = 44.0; // overlay padding + container padding + gaps
+        let pane_w = pane.bounds.get().width;
+        // A pane that has never drawn reports 0; assume there is room
+        // rather than rendering a stub on the first frame.
+        let budget = if pane_w > 0.0 { pane_w - CHROME } else { f32::MAX };
+        let show_steps = budget >= 80.0 + COUNTER_W + BTN * 3.0;
+        let show_counter = budget >= 120.0 + COUNTER_W + BTN * 3.0;
+        let buttons_w = if show_steps { BTN * 3.0 } else { BTN };
+        let input_w = (budget - buttons_w - if show_counter { COUNTER_W } else { 0.0 })
+            .clamp(60.0, 200.0);
         let input = text_input(t("terminal_search_placeholder"), &pane.search_query)
             .id(iced::widget::Id::new("terminal-buffer-search"))
             .on_input(|v| Message::Terminal(TerminalMessage::TerminalSearchInput(v)))
-            .width(Length::Fixed(200.0))
+            .width(Length::Fixed(input_w))
             .padding(6);
-        let counter = text(count_label)
-            .size(12)
-            .color(colors.text_muted)
-            .width(Length::Fixed(70.0));
-        let controls = dir_row(vec![
-            input.into(),
-            container(counter).center_y(Length::Fixed(28.0)).into(),
-            icon_tooltip(
+        let mut items: Vec<Element<'_, Message>> = vec![input.into()];
+        if show_counter {
+            items.push(
+                container(
+                    text(count_label)
+                        .size(12)
+                        .color(colors.text_muted)
+                        .width(Length::Fixed(COUNTER_W)),
+                )
+                .center_y(Length::Fixed(28.0))
+                .into(),
+            );
+        }
+        if show_steps {
+            items.push(icon_tooltip(
                 chat_header_btn(iced_fonts::lucide::chevron_up(), Message::Terminal(TerminalMessage::TerminalSearchStep(false))),
                 t("terminal_search_prev"),
-            ),
-            icon_tooltip(
+            ));
+            items.push(icon_tooltip(
                 chat_header_btn(
                     iced_fonts::lucide::chevron_down(),
                     Message::Terminal(TerminalMessage::TerminalSearchStep(true)),
                 ),
                 t("terminal_search_next"),
-            ),
-            icon_tooltip(
-                chat_header_btn(iced_fonts::lucide::x(), Message::Terminal(TerminalMessage::TerminalSearchClose)),
-                t("terminal_search_close"),
-            ),
-        ])
-        .spacing(4)
-        .align_y(iced::Alignment::Center);
+            ));
+        }
+        items.push(icon_tooltip(
+            chat_header_btn(iced_fonts::lucide::x(), Message::Terminal(TerminalMessage::TerminalSearchClose)),
+            t("terminal_search_close"),
+        ));
+        let controls = dir_row(items)
+            .spacing(4)
+            .align_y(iced::Alignment::Center);
         container(controls)
             .padding(6)
             .style(move |_| container::Style {

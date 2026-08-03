@@ -189,7 +189,11 @@ pub enum SftpMessage {
         Result<Vec<crate::state::LocalEntry>, String>,
     ),
     SftpRowEnter(crate::state::SftpPaneSide, String, bool),
-    SftpRowExit,
+    /// Carries the row being LEFT. The hovered row is cleared only when
+    /// it matches: iced publishes enter / exit in tree order, so moving up
+    /// the list delivers the new row's `enter` BEFORE the old row's
+    /// `exit`, and an unconditional clear threw the fresh value away.
+    SftpRowExit(crate::state::SftpPaneSide, String),
     SftpMouseLeftPressed,
     SftpSelectRow(crate::state::SftpPaneSide, String, bool),
     /// "Open / Edit" on a remote row: download a temp copy, hand it to the
@@ -212,6 +216,15 @@ pub enum SftpMessage {
         String,
         crate::state::SftpEditOpener,
     ),
+    /// "Other application..." on a remote row (issue #114): raise the OS
+    /// file picker, then run `SftpStartEditWith` with the chosen
+    /// executable as a one-time opener. The counterpart to the configured
+    /// editor, and the only "open with" that works on Linux, where the
+    /// OS application picker has no stable cross-desktop CLI.
+    SftpPickEditorFor(crate::state::SftpPaneSide, String),
+    /// Expand / collapse the row menu's "Open with" family. Deliberately
+    /// does NOT close the menu, like the Columns toggles.
+    SftpToggleOpenGroup,
     /// The temp copy is written and the opener spawned: register the
     /// background watch.
     SftpEditWatchReady(crate::state::EditSession),
@@ -283,6 +296,13 @@ pub enum SftpMessage {
     SftpTransferTick,
     SftpUpload(std::path::PathBuf),
     SftpDownload(String),
+    /// Pick the destination folder for `then` (any of the three download
+    /// entry points), then run it. The picked folder rides in
+    /// `download_dest_override`, which those handlers already consume, so
+    /// the inner action needs no destination-aware variant of its own.
+    SftpDownloadTo(Box<SftpMessage>),
+    /// The folder picker answered; `None` means the user cancelled.
+    SftpDownloadDestPicked(Option<std::path::PathBuf>, Box<SftpMessage>),
     SftpDuplicate(crate::state::SftpPaneSide, String),
     SftpFileHovered,
     SftpFilesHoveredLeft,
@@ -316,4 +336,10 @@ pub enum SftpMessage {
     /// Relay a remote folder tree from the `from` side's host to the
     /// other side's host.
     SftpRelayFolder(crate::state::SftpPaneSide, String),
+    /// Like [`SftpRelay`](Self::SftpRelay) but removes the source once
+    /// the copy is verified. The removal never runs unless every queue
+    /// item landed at the right size.
+    SftpRelayMove(crate::state::SftpPaneSide, String),
+    /// Folder counterpart of [`SftpRelayMove`](Self::SftpRelayMove).
+    SftpRelayMoveFolder(crate::state::SftpPaneSide, String),
 }

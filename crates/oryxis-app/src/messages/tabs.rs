@@ -8,6 +8,9 @@ use super::Message;
 pub enum TabsMessage {
     SelectTab(usize),
     CloseTab(usize),
+    /// Second step of closing a GROUPED tab: the confirmation said yes,
+    /// so tear it down without asking again (issue #112).
+    ConfirmCloseGroupedTab(usize),
     TabHovered(usize),
     TabUnhovered,
     /// Cursor entered the trailing drop zone (the `+` button area) during an
@@ -146,6 +149,15 @@ pub enum TabsMessage {
     /// size so the SSM idle timer resets and a long alt-tab away doesn't
     /// drop the session.
     SsmKeepaliveTick,
+    /// Cursor entered / left the Settings tab. Drives the hover-revealed
+    /// close X, and the flag the press handler reads to arm a reorder
+    /// drag, exactly like `TabHovered` does for a session tab.
+    SettingsTabHovered,
+    SettingsTabUnhovered,
+    /// Close the Settings tab (issue #120). Selecting it goes through
+    /// `NavigationMessage::ChangeView(View::Settings)` instead, so there
+    /// is no matching Select variant.
+    CloseSettingsTab,
     WindowDrag,
     WindowResizeDrag(iced::window::Direction),
     /// Double-click on a N/S edge, fill the full monitor height while

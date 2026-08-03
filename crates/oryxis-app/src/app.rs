@@ -955,6 +955,9 @@ pub struct Oryxis {
     pub(crate) show_port_forward_panel: bool,
     pub(crate) port_forward_form: crate::state::PortForwardRuleForm,
     pub(crate) hovered_port_forward_card: Option<usize>,
+    /// Index of the port-forward card whose kebab menu is open. Keeps the
+    /// kebab mounted while the pointer travels to the menu.
+    pub(crate) port_forward_context_menu: Option<usize>,
     pub(crate) port_forward_search: String,
     /// Toolbar search needles for the Cloud Accounts and Proxies views.
     pub(crate) cloud_search: String,
@@ -1016,6 +1019,22 @@ pub struct Oryxis {
 
     // Settings
     pub(crate) settings_section: SettingsSection,
+    /// The Settings tab is in the strip (issue #120). Materialized on the
+    /// first visit to Settings, exactly like `ensure_sftp_tab` does for
+    /// the SFTP surface, so leaving Settings and coming back is one click
+    /// instead of a hunt through the menus. Transient by design: never
+    /// persisted, so a restart opens on real work.
+    pub(crate) settings_tab_open: bool,
+    /// The cursor is over the Settings tab. Mirrors `hovered_tab` /
+    /// `hovered_sftp_tab` for the single-instance chip, which is what
+    /// gives it the same hover-revealed close X and the same
+    /// press-to-reorder arming as every other tab.
+    pub(crate) hovered_settings_tab: bool,
+    /// Last scroll offset of each section, so returning to Settings lands
+    /// where you left instead of at the top. Keyed by section because the
+    /// sections are separate scrollables; the value is a relative offset
+    /// (0.0..=1.0) fed straight back to `scroll_to`.
+    pub(crate) settings_scroll: std::collections::HashMap<SettingsSection, f32>,
     /// Live query of the Settings sidebar search. Non-empty highlights
     /// every matching row in the open section (JetBrains style), tags
     /// the sections that contain matches, and auto-opens the best one;
@@ -1050,11 +1069,6 @@ pub struct Oryxis {
     /// copies on right-click instead of on release. Ignored when
     /// `setting_copy_on_select` is off.
     pub(crate) setting_right_click_copy: bool,
-    /// X11-style middle-click paste in the terminal (xterm / PuTTY
-    /// tradition). Independent of `setting_copy_on_select`; the paste
-    /// still routes through the careful-paste / paste-guard checks.
-    /// Persisted as `middle_click_paste`; default on.
-    pub(crate) setting_middle_click_paste: bool,
     /// What a terminal right-click does (Menu / Paste / Extend, PuTTY's
     /// three schemes). Persisted as `terminal_right_click`; default
     /// Paste (the prior behavior). `setting_right_click_copy` applies
@@ -1108,6 +1122,29 @@ pub struct Oryxis {
     /// independently).
     pub(crate) sidebar_snippet_group: Option<String>,
     pub(crate) setting_bold_is_bright: bool,
+    /// Draw the thin separator outline on UNFOCUSED panes. The focused
+    /// pane's accent outline is not affected: with the panes flush there
+    /// would otherwise be nothing at all marking where one ends.
+    pub(crate) setting_pane_border_inactive: bool,
+    /// Gutter between split panes, in pixels, as a string ("0" = flush).
+    /// Flush is the default: the seam is grabbable either way, because a
+    /// pane hands a strip back to the grid on the edges it shares.
+    pub(crate) setting_pane_gap: String,
+    /// Global terminal-theme gallery (Settings > Terminal) is open.
+    pub(crate) show_terminal_theme_gallery: bool,
+    /// The app-theme gallery is open (Settings > Interface). Same reason
+    /// as its terminal sibling: the grid was the tallest thing on the
+    /// page and buried every group under it.
+    pub(crate) show_ui_theme_gallery: bool,
+    /// Recently visited Files-sidebar folders, keyed by saved-host id.
+    ///
+    /// The per-pane list is deliberately wiped on disconnect, because a
+    /// reconnect can land on a different tree; keeping the history HERE,
+    /// scoped to the host it belongs to, is what makes that wipe harmless
+    /// and lets the list survive closing the tab (issue #114 / #85).
+    /// Only `PaneOrigin::Host` panes qualify: a quick-connect id is
+    /// in-memory and a local shell has no host to key on.
+    pub(crate) files_recent_folders: std::collections::HashMap<uuid::Uuid, Vec<String>>,
     pub(crate) setting_keyword_highlight: bool,
     /// Performance mode: trade visual niceties for CPU on weak / software
     /// render paths. When on, the terminal skips the per-frame keyword /
@@ -1319,6 +1356,16 @@ pub struct Oryxis {
     /// `underline`. Mirrored into the process-wide `INACTIVE_TAB_STYLE`
     /// gate read by the tab renderer.
     pub(crate) setting_inactive_tab_style: String,
+    /// Tab sizing in the horizontal strip (issue #112): `adaptive`
+    /// (default, active tab fattens) or `uniform` (one width for all,
+    /// labels ellipsize). Uniform exists so selecting a tab stops
+    /// relaying the whole bar under the pointer.
+    pub(crate) setting_tab_width_mode: String,
+    /// Width ceiling for the uniform mode: `small` / `medium` / `large`.
+    /// Only consulted when `setting_tab_width_mode == "uniform"`; the
+    /// widest label still sets the width, this is how far it may go
+    /// before every tab starts truncating instead.
+    pub(crate) setting_tab_uniform_size: String,
     /// Side dock only: pinned tabs live with the window chrome instead
     /// of scrolling inside the strip. Top bar visible: they dock next
     /// to Home up there; top bar hidden: they become a fixed group at
@@ -1445,6 +1492,12 @@ pub struct Oryxis {
     /// echoes one setup line); the title fallback covers the common
     /// case without it.
     pub(crate) setting_sftp_force_osc7: bool,
+    /// Ask for the destination folder on every download instead of using
+    /// the local pane's current directory. Off by default: in the
+    /// dual-pane surface the destination is already on screen, so asking
+    /// every time would be noise for most users. The row menu's "Download
+    /// to..." asks regardless.
+    pub(crate) setting_sftp_ask_download_dir: bool,
     /// TCP connect + SSH transport handshake timeout, in seconds.
     pub(crate) setting_sftp_connect_timeout: String,
     /// Authentication phase timeout, in seconds.

@@ -41,6 +41,7 @@ impl Oryxis {
                 TabRef::Sftp(id) => {
                     self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
                 }
+                TabRef::Settings => false,
             }
         };
         let mut refs: Vec<TabRef> =
@@ -63,6 +64,11 @@ impl Oryxis {
                 }
                 self.sftp_tabs.iter().position(|t| t.id == *id).map(|v| Message::Sftp(SftpMessage::SelectSftpTab(v)))
             }
+            // Selecting it IS navigating to Settings; `ensure_settings_tab`
+            // makes that idempotent, so this never opens a second one.
+            TabRef::Settings => self.settings_tab_open.then(|| {
+                Message::Navigation(crate::app::NavigationMessage::ChangeView(View::Settings))
+            }),
         }
     }
 
@@ -82,6 +88,12 @@ impl Oryxis {
         }
         if let Some(i) = self.active_tab {
             return self.tabs.get(i).map(|t| TabRef::Terminal(t._id));
+        }
+        // Same rule as the SFTP arm above: Settings owns the strip slot
+        // only while its own surface is the one showing, so Ctrl+Tab can
+        // come back to whatever was open before it.
+        if self.settings_tab_open && self.active_view == View::Settings {
+            return Some(TabRef::Settings);
         }
         None
     }
@@ -165,6 +177,8 @@ impl Oryxis {
             // gated separately by `connecting.is_none()` at the render site.
             Modal::HostKey => self.pending_host_key.is_some(),
             Modal::AgentConfirm => self.agent.pending_confirm.is_some(),
+            Modal::TerminalThemeGallery => self.show_terminal_theme_gallery,
+            Modal::UiThemeGallery => self.show_ui_theme_gallery,
             Modal::ThemeEditor => self.theme_editor.is_some(),
             Modal::ThemeImport => self.show_theme_import,
             Modal::UiThemeEditor => self.ui_theme_editor.is_some(),
@@ -257,6 +271,8 @@ impl Oryxis {
                 self.theme_editor = None;
                 self.theme_color_popover = None;
             }
+            Modal::TerminalThemeGallery => self.show_terminal_theme_gallery = false,
+            Modal::UiThemeGallery => self.show_ui_theme_gallery = false,
             Modal::ThemeImport => self.show_theme_import = false,
             Modal::UiThemeEditor => {
                 self.ui_theme_editor = None;
@@ -887,6 +903,237 @@ impl Oryxis {
             new_binding.primary = existing.primary;
         }
 
+        Some(self.commit_captured_binding(action, slot, new_binding))
+    }
+
+    /// Whether a bare middle click pastes the selection.
+    ///
+    /// DERIVED from the binding table rather than kept as a setting of
+    /// its own: the gesture is an ordinary chord on
+    /// `TerminalPasteSelection`, so two sources of truth would let the
+    /// Shortcuts editor and the Terminal toggle disagree. Settings >
+    /// Terminal's toggle is a shortcut for adding / removing this one
+    /// chord, which is why binding middle-click to something else reads
+    /// as the toggle going off: it did.
+    pub(crate) fn middle_click_pastes(&self) -> bool {
+        self.hotkey_bindings
+            .get(&HotkeyAction::TerminalPasteSelection)
+            .is_some_and(|b| b.contains(&crate::hotkeys::middle_click_chord()))
+    }
+
+    /// Add / remove the bare middle-click chord on
+    /// `TerminalPasteSelection`. Adding goes through the same
+    /// conflict resolution as a recorded binding, so turning the toggle
+    /// on while another action holds middle-click takes it from that
+    /// action and says so, instead of minting a duplicate that would
+    /// make the first match win silently.
+    pub(crate) fn set_middle_click_paste(&mut self, on: bool) -> Task<Message> {
+        let chord = crate::hotkeys::middle_click_chord();
+        let action = HotkeyAction::TerminalPasteSelection;
+        if on {
+            return self.commit_captured_binding(action, crate::hotkeys::HotkeySlot::Add, chord);
+        }
+        let mut binds = self.hotkey_bindings.get(&action).cloned().unwrap_or_default();
+        if !binds.remove(&chord) {
+            return Task::none();
+        }
+        self.persist_setting(&format!("hotkey_{}", action.id()), &binds.serialize());
+        // Same invariant the capture's Delete branch and the boot
+        // migration hold: an emptied list drops out of the map rather
+        // than sitting there empty.
+        if binds.is_empty() {
+            self.hotkey_bindings.remove(&action);
+        } else {
+            self.hotkey_bindings.insert(action, binds);
+        }
+        Task::none()
+    }
+
+    /// A bindable mouse button was pressed anywhere in the window.
+    /// Either records it (a Shortcuts capture is armed) or fires
+    /// whatever it is bound to.
+    ///
+    /// Left / Right never get here (the subscription filters them out
+    /// with `MouseButton::from_iced`); they belong to the canvas.
+    pub(crate) fn handle_mouse_button_press(
+        &mut self,
+        button: iced::mouse::Button,
+    ) -> Task<Message> {
+        if self.editing_hotkey.is_some() {
+            return self.handle_hotkey_mouse_capture(button);
+        }
+        // Directory back / forward first, when a file surface is what the
+        // buttons are over. These are what the OS itself calls them
+        // (Windows sends APPCOMMAND_BROWSER_BACKWARD / FORWARD for
+        // XBUTTON1 / XBUTTON2), so every browser and file manager answers
+        // them this way and a user's hand already expects it.
+        //
+        // It runs before the bindable actions rather than after because
+        // those are terminal-only (`accepts_mouse` requires
+        // `terminal_only`), so nothing bindable is being shadowed here.
+        if let Some(task) = self.file_surface_nav(button) {
+            return task;
+        }
+        self.dispatch_mouse_binding(button)
+    }
+
+    /// Fire the action bound to a SIDE button, from anywhere in the
+    /// window.
+    ///
+    /// Which pairs belong here is `HotkeyAction::mouse_binding_owner`,
+    /// shared with `views::terminal::terminal_mouse_resolver`. In
+    /// practice: side buttons, minus the five gestures that need canvas
+    /// state. The wheel click never reaches this path, so a middle
+    /// click over a list can't fire an action the way it would over the
+    /// canvas.
+    ///
+    /// The view gates mirror the keyboard router's exactly, for the same
+    /// reasons: a terminal action outside a terminal tab (and a vault
+    /// one outside the vault) is skipped rather than dispatched into a
+    /// no-op.
+    /// Walk the visited directories of whichever file surface is on
+    /// screen. `None` when neither is, so the press falls through to the
+    /// bindable actions.
+    ///
+    /// "Up one level" deliberately does NOT live on these buttons, even
+    /// though some clients put it there: after a jump through the path bar
+    /// or the recents dropdown, back and up point at different places, and
+    /// a button labelled back must go back. Up stays on the `..` row.
+    fn file_surface_nav(&mut self, button: iced::mouse::Button) -> Option<Task<Message>> {
+        let back = match button {
+            iced::mouse::Button::Back => true,
+            iced::mouse::Button::Forward => false,
+            _ => return None,
+        };
+        // The SFTP surface (standalone tab or a hybrid tab in Files mode)
+        // owns the buttons whenever it is up; otherwise the terminal
+        // sidebar's Files tab does, and only while it is the visible tab.
+        if self.sftp_surface_visible() {
+            let side = self.sftp.focused_side;
+            let pane = self.sftp.pane(side);
+            let current = if pane.is_remote {
+                pane.remote_path.clone()
+            } else {
+                pane.local_path.display().to_string()
+            };
+            let pane = self.sftp.pane_mut(side);
+            let target = if back {
+                pane.nav_go_back(current)
+            } else {
+                pane.nav_go_forward(current)
+            }?;
+            let is_remote = self.sftp.pane(side).is_remote;
+            return Some(Task::done(if is_remote {
+                Message::Sftp(SftpMessage::SftpNavigateRemote(side, target))
+            } else {
+                Message::Sftp(SftpMessage::SftpNavigateLocal(
+                    side,
+                    std::path::PathBuf::from(target),
+                ))
+            }));
+        }
+        if self.effective_sidebar_tab() != Some(crate::state::TerminalSidebarTab::Files) {
+            return None;
+        }
+        let pane = self.active_pane_mut()?;
+        let current = pane.files.path.clone();
+        let target = if back {
+            pane.files.nav_go_back(current)
+        } else {
+            pane.files.nav_go_forward(current)
+        }?;
+        Some(Task::done(Message::SidebarFiles(
+            crate::app::SidebarFilesMessage::SidebarFilesNavigate(target),
+        )))
+    }
+
+    fn dispatch_mouse_binding(&mut self, button: iced::mouse::Button) -> Task<Message> {
+        let Some(button) = crate::hotkeys::MouseButton::from_iced(button) else {
+            return Task::none();
+        };
+        if !button.is_side_button() {
+            return Task::none();
+        }
+        // A blocking modal owns input, same as for chords.
+        if self.any_modal_blocks_input() {
+            return Task::none();
+        }
+        // "In a terminal" is a FOCUSED TERMINAL TAB, not
+        // `active_view == Terminal`: workspace-mode tabs run under the
+        // Dashboard view (see the keyboard router's note).
+        let in_terminal = self.active_view == View::Terminal || self.active_tab.is_some();
+        let mods = self.modifiers;
+        let mut hit: Option<HotkeyAction> = None;
+        for &action in HotkeyAction::all() {
+            if action.mouse_binding_owner(button) != crate::hotkeys::MouseBindingOwner::App {
+                continue;
+            }
+            if action.terminal_only() && !in_terminal {
+                continue;
+            }
+            if action.vault_only() && !self.in_vault_area() {
+                continue;
+            }
+            if self
+                .hotkey_bindings
+                .get(&action)
+                .is_some_and(|b| b.match_mouse(button, &mods))
+            {
+                hit = Some(action);
+                break;
+            }
+        }
+        let Some(action) = hit else {
+            return Task::none();
+        };
+        tracing::debug!(action = action.id(), "mouse binding matched");
+        self.dispatch_hotkey_action(action, FamilyMatch::Plain)
+    }
+
+    /// Mouse branch of the Shortcuts capture. Reached only with a
+    /// capture armed, so it just has to prove the editor is still the
+    /// visible surface before it writes.
+    fn handle_hotkey_mouse_capture(
+        &mut self,
+        button: iced::mouse::Button,
+    ) -> Task<Message> {
+        let Some((action, slot)) = self.editing_hotkey else {
+            return Task::none();
+        };
+        // Same belt-and-suspenders gate as the keyboard path: a capture
+        // left armed on another screen must not silently rebind.
+        if self.active_view != View::Settings
+            || self.settings_section != crate::state::SettingsSection::Shortcuts
+        {
+            self.editing_hotkey = None;
+            return Task::none();
+        }
+        let Some(binding) = crate::hotkeys::binding_from_mouse(button, &self.modifiers) else {
+            return Task::none();
+        };
+        // The wheel click is terminal-only (it is the one bindable
+        // button the app doesn't own window-wide). Say so rather than
+        // swallowing the press, which would read as a dead button.
+        let crate::hotkeys::PrimaryKey::Mouse(pressed) = binding.primary else {
+            return Task::none();
+        };
+        if !action.accepts_mouse_button(pressed) {
+            self.set_toast(crate::i18n::t("hotkey_mouse_terminal_only").to_string());
+            return toast_clear_after_secs(3);
+        }
+        self.commit_captured_binding(action, slot, binding)
+    }
+
+    /// Write a captured binding into `slot`, resolving conflicts and
+    /// persisting. Shared by the keyboard and mouse capture paths so a
+    /// mouse binding is subject to exactly the same conflict rules as a
+    /// chord.
+    fn commit_captured_binding(
+        &mut self,
+        action: HotkeyAction,
+        slot: crate::hotkeys::HotkeySlot,
+        new_binding: crate::hotkeys::HotkeyBinding,
+    ) -> Task<Message> {
         // Conflict resolution: take the chord away from whichever other
         // action holds it, and surface a toast that names *the action*
         // (not the key combo) so the family case reads "Switch to
@@ -936,7 +1183,7 @@ impl Oryxis {
         self.hotkey_bindings.insert(action, binds);
         self.editing_hotkey = None;
 
-        Some(conflict_toast.unwrap_or_else(Task::none))
+        conflict_toast.unwrap_or_else(Task::none)
     }
 
     /// Translates a matched `(HotkeyAction, FamilyMatch)` into the
@@ -1163,6 +1410,11 @@ impl Oryxis {
                 Some(idx) => Task::done(Message::Tabs(TabsMessage::ToggleTabFilesMode(idx))),
                 None => Task::none(),
             },
+            // Zoom the focused pane to the whole tab, and back. The
+            // handler no-ops on a single-pane tab (already full size).
+            ToggleMaximizePane => {
+                Task::done(Message::Terminal(TerminalMessage::ToggleMaximizePane(None)))
+            }
             // Broadcast input: arm / disarm fan-out across the focused
             // tab's panes.
             ToggleBroadcastInput => match self.active_tab {

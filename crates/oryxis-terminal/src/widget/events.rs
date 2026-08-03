@@ -337,6 +337,41 @@ where
         let hover_changed = widget_state.hover != new_hover;
         widget_state.hover = new_hover;
 
+        // Presses inside a resize strip belong to whatever contains this
+        // pane, not to the terminal: they are how a `pane_grid` divider is
+        // grabbed. Declining here (rather than handling and forwarding) is
+        // what stops the drag from also painting a text selection, and it
+        // is why the panes can sit flush with no gutter and still be
+        // resizable. Only edges that border a sibling carry a margin, so
+        // selecting from column 0 at the grid's outer edge still works.
+        if matches!(
+            event,
+            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+        ) && self.cursor_in_resize_margin(bounds, cursor)
+        {
+            return None;
+        }
+
+        // A pane that no longer has focus drops its highlight. The
+        // selection lives in this widget's own tree state, so nothing
+        // outside can reach it, and without this every pane you ever
+        // selected in keeps its block lit: split a tab three ways and you
+        // are looking at three highlights with no way to tell which one
+        // the next copy would take (field report).
+        //
+        // Only the HIGHLIGHT goes. `primary_selection` is deliberately
+        // kept, so middle-click paste and the paste-selection action
+        // still hand back the last thing selected, in whichever pane it
+        // was selected; copy-on-select has already copied by now anyway.
+        // Events are broadcast to every widget, so the click that moves
+        // focus is itself what clears the pane being left, and the same
+        // holds when the whole tab changes.
+        if !self.focused && (widget_state.selection.is_some() || widget_state.selecting) {
+            widget_state.selection = None;
+            widget_state.selecting = false;
+            return Some(CanvasAction::request_redraw());
+        }
+
         // A left press on the perf HUD toggles its compact <-> full-name
         // metric labels, the canvas overlay's stand-in for tooltips
         // (issue #69). Checked before mouse reporting and selection: the
@@ -901,54 +936,44 @@ where
                 }
                 return None;
             }
-            // Right-click, paste from clipboard. When the host wired an
-            // X11-style middle-click paste (xterm / PuTTY tradition). Its
-            // own gesture, so it isn't gated on `copy_on_select`; when
-            // the remote app holds mouse tracking, the report path above
-            // already consumed the press (Shift bypasses, as everywhere).
-            // Same delegation as right-click below: `on_paste_request`
-            // routes through the dispatcher (paste guard + SSH routing),
-            // with a local-PTY fallback for callers without the hook.
-            iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Middle))
-                if cursor.position_in(bounds).is_some() && self.middle_click_paste =>
+            // A mouse button the user bound to a terminal gesture (the app
+            // owns the binding model and hands the matcher down, see
+            // [`MouseResolver`]). The factory case is the X11 middle-click
+            // paste (xterm / PuTTY tradition), which is why the gesture
+            // isn't gated on `copy_on_select`.
+            //
+            // The POSITION of this arm is load-bearing: it sits after the
+            // mouse-report path, so when the remote app holds mouse
+            // tracking the report has already consumed the press (Shift
+            // bypasses, as everywhere) and a binding can never take a
+            // button away from a TUI. Left and Right never resolve to a
+            // gesture (the bindable set excludes them), so their own arms
+            // below still own those buttons.
+            iced::Event::Mouse(mouse::Event::ButtonPressed(button))
+                if cursor.position_in(bounds).is_some()
+                    && self
+                        .mouse_bindings
+                        .as_ref()
+                        .and_then(|f| f(*button, &widget_state.modifiers))
+                        .is_some() =>
             {
-                // X11 semantics: the middle button pastes the PRIMARY
-                // selection, which is a different buffer from the
-                // clipboard. That is what the gesture means everywhere it
-                // exists, and it is why selecting is enough to make text
-                // pasteable without Ctrl+Shift+C.
-                //
-                // NOT under `copy_on_select`: that setting is the PuTTY
-                // single-buffer model, where selecting IS the copy and
-                // every paste gesture reads the clipboard, external copies
-                // included. Serving PRIMARY there would ignore the user's
-                // newer clipboard content.
-                //
-                // Fall back to the clipboard when nothing has been selected
-                // in this pane yet: that was this gesture's only behaviour
-                // before PRIMARY existed, so the fallback keeps a
-                // never-selected pane working the way it used to instead of
-                // turning the button into a no-op.
-                // Pasting consumes the live highlight (owner call): the
-                // band stays put over the target text otherwise, reading
-                // as a selection that refused to move, and the paste is
-                // about to echo under it anyway. The stored PRIMARY (and
-                // its ghost band) survive, this only demotes the live
-                // visual, whichever buffer the paste below reads.
-                widget_state.selection = None;
-                widget_state.select_anchor = None;
-                widget_state.selecting = false;
-                if !self.copy_on_select
-                    && let Some(text) = widget_state.primary_selection.clone()
-                    && let Some(to_message) = self.on_paste_selection.as_ref()
-                {
-                    return Some(CanvasAction::publish(to_message(text)).and_capture());
-                }
-                if let Some(msg) = self.on_paste_request.clone() {
-                    return Some(CanvasAction::publish(msg).and_capture());
-                }
-                crate::host_clipboard::paste_into(Arc::clone(&self.state));
-                return Some(CanvasAction::capture());
+                // Re-resolve without unwrapping, same shape as the chord
+                // arm: the guard already proved this is Some.
+                let gesture = self
+                    .mouse_bindings
+                    .as_ref()
+                    .and_then(|f| f(*button, &widget_state.modifiers))?;
+                return match gesture {
+                    MouseGesture::Widget(action) => {
+                        self.perform_chord_action(action, widget_state)
+                    }
+                    // Everything the app owns (paste into an SSH session,
+                    // split a pane, ...). Captured either way: the button
+                    // was spoken for.
+                    MouseGesture::Publish(msg) => {
+                        Some(CanvasAction::publish(msg).and_capture())
+                    }
+                };
             }
             // `on_paste_request` callback we delegate the actual paste to
             // the app dispatcher so it can target the SSH session (the
@@ -1184,122 +1209,7 @@ where
                 // Re-resolve without unwrapping: the guard above already
                 // proved this is Some, so the `?` never fires.
                 let action = self.chords.as_ref().and_then(|f| f(key, modifiers))?;
-                return match action {
-                    TerminalChordAction::Copy => {
-                        if let Some(ref sel) = widget_state.selection
-                            && !sel.is_empty()
-                            && let Ok(state) = self.state.lock()
-                        {
-                            let text = state.get_selection_text(sel);
-                            if !text.is_empty() {
-                                set_clipboard_text(&text);
-                            }
-                        }
-                        Some(CanvasAction::capture())
-                    }
-                    // Keyboard twin of middle-click: paste the PRIMARY
-                    // selection (Shift+Insert by default, the xterm / kitty
-                    // `paste_from_selection` / Alacritty `PasteSelection`
-                    // convention). Reads the remembered text, not the live
-                    // highlight, so it still works after the keystrokes that
-                    // cleared the highlight ("select a path, type `cd `,
-                    // paste it"). Leaves the highlight alone, because in X11
-                    // a PRIMARY paste does not consume the selection, and
-                    // never touches the clipboard.
-                    //
-                    // Same fallbacks as middle-click, and for the same
-                    // reasons: under `copy_on_select` (the PuTTY
-                    // single-buffer model) every paste gesture reads the
-                    // clipboard, and a pane where nothing was ever selected
-                    // pastes the clipboard rather than dead-keying, which is
-                    // exactly what Shift+Insert did before this action
-                    // owned the chord.
-                    TerminalChordAction::PasteSelection => {
-                        // Same demote as middle-click: pasting consumes
-                        // the live highlight, the ghost carries on.
-                        widget_state.selection = None;
-                        widget_state.select_anchor = None;
-                        widget_state.selecting = false;
-                        if !self.copy_on_select
-                            && let Some(text) = widget_state.primary_selection.clone()
-                            && let Some(to_message) = self.on_paste_selection.as_ref()
-                        {
-                            return Some(CanvasAction::publish(to_message(text)).and_capture());
-                        }
-                        if let Some(msg) = self.on_paste_request.clone() {
-                            return Some(CanvasAction::publish(msg).and_capture());
-                        }
-                        crate::host_clipboard::paste_into(Arc::clone(&self.state));
-                        Some(CanvasAction::capture())
-                    }
-                    // Selects the entire buffer (scrollback + screen); copy
-                    // stays a separate gesture (the copy chord, or
-                    // copy-on-select on the next release).
-                    TerminalChordAction::SelectAll => {
-                        if let Ok(state) = self.state.lock() {
-                            use alacritty_terminal::grid::Dimensions;
-                            let grid = state.backend.term.grid();
-                            let top = grid.topmost_line().0;
-                            let bot = grid.bottommost_line().0;
-                            let last_col = grid.columns().saturating_sub(1) as u16;
-                            widget_state.selection = Some(Selection {
-                                start: (0, top),
-                                end: (last_col, bot),
-                                block: false,
-                            });
-                            widget_state.select_anchor = None;
-                        }
-                        Some(CanvasAction::request_redraw().and_capture())
-                    }
-                    TerminalChordAction::ScrollPageUp | TerminalChordAction::ScrollPageDown => {
-                        // One lock for the alt-screen test and the clamp,
-                        // like the wheel handler above.
-                        let (in_alt_screen, max_scroll, page) = match self.state.lock() {
-                            Ok(s) => {
-                                use alacritty_terminal::grid::Dimensions;
-                                let in_alt = s
-                                    .backend
-                                    .term
-                                    .mode()
-                                    .contains(alacritty_terminal::term::TermMode::ALT_SCREEN);
-                                let grid = s.backend.term.grid();
-                                let screen = grid.screen_lines();
-                                (
-                                    in_alt,
-                                    grid.total_lines().saturating_sub(screen) as i32,
-                                    // A page is a screen minus one row of
-                                    // overlap, the convention every terminal
-                                    // uses so a line stays visible across the
-                                    // jump. Never zero, or a short pane would
-                                    // stop paging.
-                                    (screen.saturating_sub(1)).max(1) as i32,
-                                )
-                            }
-                            Err(_) => (false, i32::MAX, 1),
-                        };
-                        // No scrollback on the alternate screen: vim / less /
-                        // htop page themselves, so the key belongs to them.
-                        // The app's router skips these actions under the same
-                        // condition, which is what lets the key fall through
-                        // to the PTY writer. Both sides must agree: if only
-                        // one gated, PageUp would either be eaten with nothing
-                        // to show for it or fire twice.
-                        if in_alt_screen {
-                            return None;
-                        }
-                        let lines = if matches!(action, TerminalChordAction::ScrollPageUp) {
-                            page
-                        } else {
-                            -page
-                        };
-                        widget_state.scroll_offset.set(
-                            (widget_state.scroll_offset.get() + lines)
-                                .max(0)
-                                .min(max_scroll),
-                        );
-                        Some(CanvasAction::request_redraw().and_capture())
-                    }
-                };
+                return self.perform_chord_action(action, widget_state);
             }
             // Any other key press dismisses a live selection, matching
             // xterm / iTerm where typing or navigating clears the highlight
@@ -1348,6 +1258,149 @@ where
         None
     }
 
+    /// Run one of the widget-side gestures. Shared by the keyboard
+    /// chord arm and the mouse-binding arm below, so a gesture behaves
+    /// identically whichever input the user bound it to.
+    fn perform_chord_action(
+        &self,
+        action: TerminalChordAction,
+        widget_state: &mut TerminalWidgetState,
+    ) -> Option<CanvasAction<Message>> {
+        match action {
+            TerminalChordAction::Copy => {
+                if let Some(ref sel) = widget_state.selection
+                    && !sel.is_empty()
+                    && let Ok(state) = self.state.lock()
+                {
+                    let text = state.get_selection_text(sel);
+                    if !text.is_empty() {
+                        set_clipboard_text(&text);
+                    }
+                }
+                Some(CanvasAction::capture())
+            }
+            // Keyboard twin of middle-click: paste the PRIMARY
+            // selection (Shift+Insert by default, the xterm / kitty
+            // `paste_from_selection` / Alacritty `PasteSelection`
+            // convention). Reads the remembered text, not the live
+            // highlight, so it still works after the keystrokes that
+            // cleared the highlight ("select a path, type `cd `,
+            // paste it"). Leaves the highlight alone, because in X11
+            // a PRIMARY paste does not consume the selection, and
+            // never touches the clipboard.
+            //
+            // Same fallbacks as middle-click, and for the same
+            // reasons: under `copy_on_select` (the PuTTY
+            // single-buffer model) every paste gesture reads the
+            // clipboard, and a pane where nothing was ever selected
+            // pastes the clipboard rather than dead-keying, which is
+            // exactly what Shift+Insert did before this action
+            // owned the chord.
+            TerminalChordAction::PasteSelection => {
+                // Same demote as middle-click: pasting consumes
+                // the live highlight, the ghost carries on.
+                widget_state.selection = None;
+                widget_state.select_anchor = None;
+                widget_state.selecting = false;
+                if !self.copy_on_select
+                    && let Some(text) = widget_state.primary_selection.clone()
+                    && let Some(to_message) = self.on_paste_selection.as_ref()
+                {
+                    return Some(CanvasAction::publish(to_message(text)).and_capture());
+                }
+                if let Some(msg) = self.on_paste_request.clone() {
+                    return Some(CanvasAction::publish(msg).and_capture());
+                }
+                crate::host_clipboard::paste_into(Arc::clone(&self.state));
+                Some(CanvasAction::capture())
+            }
+            // Selects the entire buffer (scrollback + screen); copy
+            // stays a separate gesture (the copy chord, or
+            // copy-on-select on the next release).
+            TerminalChordAction::SelectAll => {
+                if let Ok(state) = self.state.lock() {
+                    use alacritty_terminal::grid::Dimensions;
+                    let grid = state.backend.term.grid();
+                    let top = grid.topmost_line().0;
+                    let bot = grid.bottommost_line().0;
+                    let last_col = grid.columns().saturating_sub(1) as u16;
+                    widget_state.selection = Some(Selection {
+                        start: (0, top),
+                        end: (last_col, bot),
+                        block: false,
+                    });
+                    widget_state.select_anchor = None;
+                }
+                Some(CanvasAction::request_redraw().and_capture())
+            }
+            TerminalChordAction::ScrollPageUp | TerminalChordAction::ScrollPageDown => {
+                // One lock for the alt-screen test and the clamp,
+                // like the wheel handler above.
+                let (in_alt_screen, max_scroll, page) = match self.state.lock() {
+                    Ok(s) => {
+                        use alacritty_terminal::grid::Dimensions;
+                        let in_alt = s
+                            .backend
+                            .term
+                            .mode()
+                            .contains(alacritty_terminal::term::TermMode::ALT_SCREEN);
+                        let grid = s.backend.term.grid();
+                        let screen = grid.screen_lines();
+                        (
+                            in_alt,
+                            grid.total_lines().saturating_sub(screen) as i32,
+                            // A page is a screen minus one row of
+                            // overlap, the convention every terminal
+                            // uses so a line stays visible across the
+                            // jump. Never zero, or a short pane would
+                            // stop paging.
+                            (screen.saturating_sub(1)).max(1) as i32,
+                        )
+                    }
+                    Err(_) => (false, i32::MAX, 1),
+                };
+                // No scrollback on the alternate screen: vim / less /
+                // htop page themselves, so the key belongs to them.
+                // The app's router skips these actions under the same
+                // condition, which is what lets the key fall through
+                // to the PTY writer. Both sides must agree: if only
+                // one gated, PageUp would either be eaten with nothing
+                // to show for it or fire twice.
+                if in_alt_screen {
+                    return None;
+                }
+                let lines = if matches!(action, TerminalChordAction::ScrollPageUp) {
+                    page
+                } else {
+                    -page
+                };
+                widget_state.scroll_offset.set(
+                    (widget_state.scroll_offset.get() + lines)
+                        .max(0)
+                        .min(max_scroll),
+                );
+                Some(CanvasAction::request_redraw().and_capture())
+            }
+        }
+    }
+
+    /// Whether the cursor sits in one of the strips this pane hands back
+    /// to its container (see `resize_margins`).
+    pub(super) fn cursor_in_resize_margin(
+        &self,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> bool {
+        let (top, right, bottom, left) = self.resize_margins;
+        let Some(p) = cursor.position_in(bounds) else {
+            return false;
+        };
+        (top > 0.0 && p.y <= top)
+            || (bottom > 0.0 && p.y >= bounds.height - bottom)
+            || (left > 0.0 && p.x <= left)
+            || (right > 0.0 && p.x >= bounds.width - right)
+    }
+
     pub(super) fn mouse_interaction_impl(
         &self,
         state: &TerminalWidgetState,
@@ -1355,6 +1408,12 @@ where
         cursor: mouse::Cursor,
     ) -> mouse::Interaction {
         if !cursor.is_over(bounds) {
+            return mouse::Interaction::default();
+        }
+        // Same handover for the cursor shape: staying neutral in the strip
+        // lets the container's own resize cursor show through, which is
+        // the only hint that the seam between two panes can be dragged.
+        if self.cursor_in_resize_margin(bounds, cursor) {
             return mouse::Interaction::default();
         }
         // Pointer over the perf HUD panel: it's clickable (toggles the

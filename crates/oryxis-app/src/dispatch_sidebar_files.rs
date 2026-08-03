@@ -81,7 +81,68 @@ fn expand_cwd(cwd: &str, home: Option<&str>) -> Option<String> {
     cwd.strip_prefix("~/").map(|rest| format!("{home}/{rest}"))
 }
 
+/// Cap per host, matching the per-pane dropdown's own cap: the list is
+/// there to be scanned, not archived.
+const FILES_RECENT_CAP: usize = 20;
+
 impl Oryxis {
+    /// Record a visited folder in the persistent, host-keyed history and
+    /// write it back. No-op for panes with no saved host (quick-connect,
+    /// local, cloud), which have no stable key to file it under.
+    fn record_files_recent(&mut self, pane_id: uuid::Uuid, path: &str) {
+        if path.is_empty() {
+            return;
+        }
+        let host = self
+            .tabs
+            .iter()
+            .flat_map(|t| t.pane_grid.panes.values())
+            .find(|p| p.id == pane_id)
+            .and_then(|p| match p.origin {
+                crate::state::PaneOrigin::Host(id) => Some(id),
+                _ => None,
+            });
+        let Some(host) = host else {
+            return;
+        };
+        let list = self.files_recent_folders.entry(host).or_default();
+        if list.first().is_some_and(|p| p == path) {
+            // Already on top: the optimistic navigate records the same
+            // path twice (mount then listing), so this is the common case
+            // and it must not cost a vault write.
+            return;
+        }
+        list.retain(|p| p != path);
+        list.insert(0, path.to_string());
+        list.truncate(FILES_RECENT_CAP);
+        if let Ok(json) = serde_json::to_string(&self.files_recent_folders) {
+            self.persist_setting("files_recent_folders", &json);
+        }
+    }
+
+    /// Refill a pane's dropdown from the stored history for its host.
+    /// Called when the Files sidebar mounts, which is what makes the
+    /// disconnect-time wipe harmless.
+    fn hydrate_files_recent(&mut self, pane_id: uuid::Uuid) {
+        let host = self
+            .tabs
+            .iter()
+            .flat_map(|t| t.pane_grid.panes.values())
+            .find(|p| p.id == pane_id)
+            .and_then(|p| match p.origin {
+                crate::state::PaneOrigin::Host(id) => Some(id),
+                _ => None,
+            });
+        let Some(stored) = host.and_then(|h| self.files_recent_folders.get(&h)).cloned() else {
+            return;
+        };
+        if let Some(pane) = self.pane_by_id_any_tab(pane_id)
+            && pane.files.path_history.is_empty()
+        {
+            pane.files.path_history = stored;
+        }
+    }
+
     pub(crate) fn handle_sidebar_files(
         &mut self,
         message: SidebarFilesMessage,
@@ -729,9 +790,18 @@ impl Oryxis {
                 // `files.path`, so an equality guard would skip exactly
                 // the visits that matter (the dedupe makes re-recording
                 // the current directory a no-op).
+                let previous = std::mem::take(&mut pane.files.path);
                 pane.files.push_path_history(path.clone());
-                pane.files.path = path;
+                pane.files.path = path.clone();
+                if previous != path {
+                    pane.files.push_nav(previous);
+                }
                 pane.files.entries = entries;
+                // Mount is where the stored, host-keyed history comes back
+                // (the per-pane list is wiped on disconnect on purpose),
+                // and where this visit joins it.
+                self.hydrate_files_recent(pane_id);
+                self.record_files_recent(pane_id, &path);
                 // The title-fallback cwd may be `~`-relative and only
                 // expandable now that the home is known; chase it.
                 return self.sidebar_files_sync();
@@ -750,9 +820,14 @@ impl Oryxis {
                 pane.files.error = None;
                 // Unconditional for the same optimistic-path reason as
                 // the Mounted arm above.
+                let previous = std::mem::take(&mut pane.files.path);
                 pane.files.push_path_history(path.clone());
-                pane.files.path = path;
+                pane.files.path = path.clone();
+                if previous != path {
+                    pane.files.push_nav(previous);
+                }
                 pane.files.entries = entries;
+                self.record_files_recent(pane_id, &path);
                 // The shell may have moved again while this listing was
                 // in flight; chase it so follow never sticks one step
                 // behind a fast `cd a && cd b`.
@@ -777,7 +852,7 @@ impl Oryxis {
 
     /// The active tab's focused pane, mutably. `None` outside a
     /// terminal tab.
-    fn active_pane_mut(&mut self) -> Option<&mut crate::state::Pane> {
+    pub(crate) fn active_pane_mut(&mut self) -> Option<&mut crate::state::Pane> {
         let idx = self.active_tab?;
         Some(self.tabs.get_mut(idx)?.active_mut())
     }

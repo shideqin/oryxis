@@ -17,6 +17,21 @@ pub(crate) use crate::app::{SftpMessage, TabsMessage, NavigationMessage, Message
 pub(crate) use crate::state::View;
 pub(crate) use crate::theme::{OryxisColors, SYSTEM_UI_SEMIBOLD};
 
+/// One rendered slot of the unified strip, resolved from `tab_order`
+/// against the live storage. A typed enum rather than the old
+/// `(is_sftp, index)` pair so a new tab kind is a compile error at every
+/// site that renders, measures or hit-tests the strip instead of silently
+/// falling into the terminal branch (issue #120 added the third kind).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StripEntry {
+    /// Index into `Oryxis::tabs`.
+    Terminal(usize),
+    /// Index into `Oryxis::sftp_tabs`.
+    Sftp(usize),
+    /// The single Settings tab; it has no storage vec to index.
+    Settings,
+}
+
 pub(crate) const TAB_HEIGHT: f32 = 26.0;
 /// Height a tab chip actually RENDERS at: the `TAB_HEIGHT` content box
 /// plus the button's default 5 px top/bottom padding. Anything that
@@ -158,8 +173,12 @@ impl Oryxis {
 
         // Floating ghost while a PINNED tab is being dragged: the pins
         // live on this bar, so the ghost tracks the cursor's x here;
-        // the vertical strip draws the unpinned ghosts.
+        // the vertical strip draws the unpinned ghosts. Once the cursor
+        // leaves the strip the window-level layer takes over, because
+        // this Stack is clipped to the bar and the ghost has to follow
+        // the cursor's y down into the content (issue #112).
         if let Some(ref ctx) = ghost_ctx
+            && self.cursor_in_tab_strip()
             && self.dragged_tab_pinned()
             && let Some((ghost, ghost_w)) = self.strip_drag_ghost_el(
                 ctx.drag_uniform_w,
@@ -184,6 +203,91 @@ impl Oryxis {
                 .into();
         }
         bar
+    }
+
+    /// One width for every tab in the horizontal strip, or `None` when
+    /// the adaptive default is in force.
+    ///
+    /// Adaptive sizing gives the ACTIVE tab its natural width and hugs
+    /// the rest to their labels, so selecting a differently-named tab
+    /// relays the whole bar and the chip under the pointer moves. That
+    /// reflow is what the request is about (#112), not the widths
+    /// themselves.
+    ///
+    /// The width is the widest label in the strip, so no tab ellipsizes
+    /// while there is room, then shrunk to fit when there is not (the
+    /// label truncates, the geometry stays put). Terminal AND SFTP tabs
+    /// are measured: they share one strip, so measuring half of it would
+    /// let an SFTP label clip at a width the terminal tabs agreed on.
+    /// Compact pinned chips keep `CHIP_W` and sit outside this, exactly
+    /// as they sit outside the adaptive allocation.
+    fn uniform_tab_width(
+        &self,
+        close_on_right: bool,
+        compact_pins: bool,
+        approx_strip_width: f32,
+    ) -> Option<f32> {
+        if self.setting_tab_width_mode != "uniform" {
+            return None;
+        }
+        let mut widest = TAB_MIN_WIDTH;
+        let mut flexible = 0.0f32;
+        let mut pinned_chips = 0.0f32;
+        for entry in self.strip_order() {
+            let content = match entry {
+                StripEntry::Sftp(idx) => {
+                    let Some(tab) = self.sftp_tabs.get(idx) else {
+                        continue;
+                    };
+                    if compact_pins && tab.pinned {
+                        pinned_chips += 1.0;
+                        continue;
+                    }
+                    tab_content_width(tab.display_label(), close_on_right, false)
+                }
+                StripEntry::Terminal(idx) => {
+                    let Some(tab) = self.tabs.get(idx) else {
+                        continue;
+                    };
+                    if compact_pins && tab.pinned {
+                        pinned_chips += 1.0;
+                        continue;
+                    }
+                    tab_content_width(
+                        tab.display_label(self.tab_auto_title(tab)),
+                        close_on_right,
+                        tab.pane_count() > 1,
+                    )
+                }
+                StripEntry::Settings => {
+                    settings_tab_width(crate::i18n::t("settings"))
+                }
+            };
+            widest = widest.max(content);
+            flexible += 1.0;
+        }
+        if flexible == 0.0 {
+            return None;
+        }
+        // The user's ceiling, not the natural width: uniform exists so
+        // the strip stops reshuffling, and letting one long label set 200
+        // for everyone is the complaint that asked for this. The widest
+        // label still decides below the cap.
+        let cap = match self.setting_tab_uniform_size.as_str() {
+            "small" => 140.0,
+            "large" => 260.0,
+            _ => TAB_NATURAL_WIDTH,
+        };
+        let widest = widest.clamp(TAB_MIN_WIDTH, cap);
+        // Fit check. Overflow shrinks every tab equally rather than
+        // singling any out: uniform that stops being uniform under
+        // pressure would bring back the reflow this mode exists to
+        // remove. Below the minimum the scrollable takes over, as it
+        // does for the adaptive mode.
+        let spacing = TAB_SPACING * (flexible + pinned_chips - 1.0).max(0.0);
+        let budget = approx_strip_width - pinned_chips * CHIP_W - spacing;
+        let fitted = (budget / flexible).clamp(TAB_MIN_WIDTH, widest);
+        Some(fitted)
     }
 
     /// Shared per-frame context for the pinned tabs rendered into the
@@ -225,11 +329,11 @@ impl Oryxis {
     /// the window-drag / double-click-maximize titlebar contract.
     fn chrome_bar_pins<'a>(&'a self, ctx: &StripCtx) -> Element<'a, Message> {
         let mut items: Vec<Element<'a, Message>> = Vec::new();
-        for (is_sftp, idx) in self.strip_order() {
-            if !self.strip_entry_pinned(is_sftp, idx) {
+        for entry in self.strip_order() {
+            if !self.strip_entry_pinned(entry) {
                 continue;
             }
-            items.push(self.strip_tab_element(ctx, is_sftp, idx));
+            items.push(self.strip_tab_element(ctx, entry));
         }
         let strip = scrollable(
             row(items)
@@ -478,11 +582,11 @@ impl Oryxis {
             solid_fill,
             dragging_any,
             drag_uniform_w,
-            uniform_w: None,
+            uniform_w: self.uniform_tab_width(close_on_right, compact_pins, approx_strip_width),
             session_widths,
         };
-        for (is_sftp, idx) in self.strip_order() {
-            tab_items.push(self.strip_tab_element(&ctx, is_sftp, idx));
+        for entry in self.strip_order() {
+            tab_items.push(self.strip_tab_element(&ctx, entry));
         }
         // "+" trails the last tab, browser-style (issue #38). Only when
         // the strip TRULY overflows (tabs at min width still don't fit,
@@ -647,8 +751,12 @@ impl Oryxis {
         // top-left, so window-space cursor x maps directly to bar-local x. The
         // ghost is a plain (non-interactive) container, so the tab MouseAreas
         // underneath still receive the hover events that drive the live-slide.
-        let drag_ghost_el =
-            self.strip_drag_ghost_el(drag_uniform_w, compact_pins, &ctx.privacy_terms);
+        // Only while the cursor is still on the strip: past that the
+        // window-level layer draws it, free in both axes (issue #112).
+        let drag_ghost_el = self
+            .cursor_in_tab_strip()
+            .then(|| self.strip_drag_ghost_el(drag_uniform_w, compact_pins, &ctx.privacy_terms))
+            .flatten();
         if let Some((ghost, ghost_w)) = drag_ghost_el {
             let gx = (self.mouse_position.x - ghost_w / 2.0).max(0.0);
             let positioned: Element<'_, Message> = iced::widget::Column::new()
@@ -710,7 +818,7 @@ impl Oryxis {
     /// Each entry is `(is_sftp, storage_index)`. SFTP refs are dropped when
     /// the SFTP feature is off. Shared by `view_tab_bar` (rendering) and
     /// `tab_scroll_to_active` (offset math) so the two can't drift.
-    pub(crate) fn strip_order(&self) -> Vec<(bool, usize)> {
+    pub(crate) fn strip_order(&self) -> Vec<StripEntry> {
         let pinned_of = |r: &crate::state::TabRef| -> bool {
             match r {
                 crate::state::TabRef::Terminal(id) => {
@@ -719,22 +827,26 @@ impl Oryxis {
                 crate::state::TabRef::Sftp(id) => {
                     self.sftp_tabs.iter().find(|t| t.id == *id).map(|t| t.pinned).unwrap_or(false)
                 }
+                crate::state::TabRef::Settings => false,
             }
         };
-        let to_entry = |r: &crate::state::TabRef| -> Option<(bool, usize)> {
+        let to_entry = |r: &crate::state::TabRef| -> Option<StripEntry> {
             match r {
                 crate::state::TabRef::Terminal(id) => {
-                    self.tabs.iter().position(|t| t._id == *id).map(|i| (false, i))
+                    self.tabs.iter().position(|t| t._id == *id).map(StripEntry::Terminal)
                 }
                 crate::state::TabRef::Sftp(id) => {
                     if !self.sftp_enabled {
                         return None;
                     }
-                    self.sftp_tabs.iter().position(|t| t.id == *id).map(|i| (true, i))
+                    self.sftp_tabs.iter().position(|t| t.id == *id).map(StripEntry::Sftp)
+                }
+                crate::state::TabRef::Settings => {
+                    self.settings_tab_open.then_some(StripEntry::Settings)
                 }
             }
         };
-        let mut order: Vec<(bool, usize)> = Vec::new();
+        let mut order: Vec<StripEntry> = Vec::new();
         order.extend(self.tab_order.iter().filter(|r| pinned_of(r)).filter_map(to_entry));
         order.extend(self.tab_order.iter().filter(|r| !pinned_of(r)).filter_map(to_entry));
         order
@@ -766,8 +878,8 @@ impl Oryxis {
             let preceding = self
                 .strip_order()
                 .iter()
-                .filter(|&&(is_sftp, i)| !(pins_top && self.strip_entry_pinned(is_sftp, i)))
-                .position(|&(is_sftp, i)| !is_sftp && i == active_idx)
+                .filter(|&&e| !(pins_top && self.strip_entry_pinned(e)))
+                .position(|&e| e == StripEntry::Terminal(active_idx))
                 .unwrap_or(active_idx) as f32;
             let viewport_h = (self.window_size.height - BAR_HEIGHT - 40.0).max(120.0);
             let y = (preceding * row_pitch - viewport_h / 2.0 + row_pitch / 2.0).max(0.0);
@@ -816,7 +928,7 @@ impl Oryxis {
         let preceding = self
             .strip_order()
             .iter()
-            .position(|&(is_sftp, i)| !is_sftp && i == active_idx)
+            .position(|&e| e == StripEntry::Terminal(active_idx))
             .unwrap_or(active_idx) as f32;
         let mut x = preceding * (inactive_w + TAB_SPACING);
         // Center active in viewport instead of left-aligning so the

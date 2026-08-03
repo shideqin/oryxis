@@ -10,6 +10,11 @@ pub enum SettingsMessage {
     /// next non-Esc, non-pure-modifier `KeyPressed` becomes the new
     /// binding (see `shortcuts::handle_hotkey_capture`).
     StartEditingHotkey(crate::hotkeys::HotkeyAction, crate::hotkeys::HotkeySlot),
+    /// A bindable mouse button (middle / back / forward / extra) was
+    /// pressed anywhere in the window. Fired unconditionally by the
+    /// event subscription; `shortcuts::handle_mouse_button_press`
+    /// decides whether it records a binding or fires one.
+    MouseButtonPressed(iced::mouse::Button),
     /// Settings → Shortcuts: drop a single action's user override and
     /// fall back to the factory default.
     ResetHotkey(crate::hotkeys::HotkeyAction),
@@ -131,7 +136,28 @@ pub enum SettingsMessage {
     HintModeChanged(String),
     /// Flip the reveal/eye state of a secret input field.
     ToggleSecretVisibility(crate::state::SecretField),
+    /// Trash on a custom theme card: RAISES THE CONFIRM, it does not
+    /// delete. A theme can be a long edit or an import that no longer
+    /// exists anywhere else, and the trash sits in the same hover cluster
+    /// as clone and edit. `ThemeDelete` / `UiThemeDelete` are only ever
+    /// reached by confirming.
+    /// Open / close the app-theme gallery (Settings > Interface), the
+    /// sibling of the terminal one.
+    OpenUiThemeGallery,
+    CloseUiThemeGallery,
+    ThemeDeleteRequested(usize),
+    UiThemeDeleteRequested(usize),
+    /// Uniform-mode width ceiling (small / medium / large). Ignored
+    /// while the adaptive mode is selected.
+    SettingTabUniformSizeChanged(String),
     ChangeSettingsSection(SettingsSection),
+    /// The open section's scrollable moved; carries the relative y offset
+    /// (0.0..=1.0). Recorded per section so returning to Settings lands
+    /// where you left it (issue #120).
+    SectionScrolled(f32),
+    /// Deferred half of the restore: runs once the target section's view
+    /// has rebuilt, so the scrollable it addresses actually exists.
+    SectionScrollTo(iced::widget::Id, f32),
     /// Settings sidebar search: the query text changed (live filter).
     SettingsSearchChanged(String),
     /// Enter / Shift+Enter in the search: step the find-next cursor to
@@ -161,6 +187,7 @@ pub enum SettingsMessage {
     /// Settings > Connection: seconds between host-monitor probes.
     SettingMonitorIntervalChanged(String),
     ToggleSftpForceOsc7,
+    ToggleSftpAskDownloadDir,
     /// Settings > SFTP: the single external editor used by the remote
     /// "Open with default text editor" action (issue #84).
     SettingSftpDefaultEditorChanged(String),
@@ -181,6 +208,10 @@ pub enum SettingsMessage {
     /// Flip the careful-paste guard (warn before multi-line paste).
     ToggleCarefulPaste,
     ToggleBoldIsBright,
+    TogglePaneBorderInactive,
+    PaneGapChanged(String),
+    OpenTerminalThemeGallery,
+    CloseTerminalThemeGallery,
     /// Toggle showing the shell-set window title (OSC 0/2) in the tab strip.
     ToggleTerminalAutoTitle,
     /// Terminal bell behavior changed from the settings pick (localized
@@ -289,6 +320,8 @@ pub enum SettingsMessage {
     SettingTabBarPositionChanged(String),
     /// Inactive-tab separation style: "none" / "border" / "underline".
     SettingInactiveTabStyleChanged(String),
+    /// Tab sizing in the horizontal strip: `adaptive` or `uniform`.
+    SettingTabWidthModeChanged(String),
     SettingTogglePinnedTabsTopBar,
     SettingToggleSideHideTopBar,
     SettingToggleSideFullHeight,

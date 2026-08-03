@@ -52,6 +52,11 @@ pub(crate) enum Modal {
     /// the key (the safe default: never accept an unknown / changed key by
     /// a stray keystroke).
     HostKey,
+    /// Global terminal-theme gallery, opened from the Settings row.
+    /// The per-host picker is `ThemePicker`; this one writes the global
+    /// override and carries the create / import / clone affordances.
+    TerminalThemeGallery,
+    UiThemeGallery,
     ThemeEditor,
     ThemeImport,
     UiThemeEditor,
@@ -120,6 +125,8 @@ impl Modal {
         Modal::KbiPrompt,
         Modal::HostKey,
         Modal::ThemeEditor,
+        Modal::TerminalThemeGallery,
+        Modal::UiThemeGallery,
         Modal::ThemeImport,
         Modal::UiThemeEditor,
         Modal::UiThemeImport,
@@ -179,8 +186,12 @@ impl Modal {
         Modal::SessionGroupPanel,
         Modal::ThemeEditor,
         Modal::UiThemeEditor,
+        // Import sits ON TOP of the gallery it is opened from (`layer_modals`),
+        // so Esc has to answer it first.
         Modal::ThemeImport,
+        Modal::TerminalThemeGallery,
         Modal::UiThemeImport,
+        Modal::UiThemeGallery,
         Modal::ShareDialog,
         Modal::CloudImportConfirm,
         Modal::SftpPicker,
@@ -209,6 +220,8 @@ impl Modal {
             | Modal::KbiPrompt
             | Modal::HostKey
             | Modal::ThemeEditor
+            | Modal::TerminalThemeGallery
+            | Modal::UiThemeGallery
             | Modal::ThemeImport
             | Modal::UiThemeEditor
             | Modal::UiThemeImport
@@ -256,6 +269,8 @@ mod tests {
                 | Modal::KbiPrompt
                 | Modal::HostKey
                 | Modal::ThemeEditor
+                | Modal::TerminalThemeGallery
+                | Modal::UiThemeGallery
                 | Modal::ThemeImport
                 | Modal::UiThemeEditor
                 | Modal::UiThemeImport
@@ -276,7 +291,7 @@ mod tests {
                 | Modal::MonitorKill => {}
             }
         }
-        assert_eq!(Modal::ALL.len(), 33, "add the new variant to Modal::ALL");
+        assert_eq!(Modal::ALL.len(), 35, "add the new variant to Modal::ALL");
         // Every Esc-closeable modal must also be a known modal.
         for m in Modal::ESC_ORDER {
             assert!(Modal::ALL.contains(m));

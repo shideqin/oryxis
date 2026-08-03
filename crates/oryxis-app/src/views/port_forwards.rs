@@ -14,8 +14,10 @@ use crate::i18n::t;
 use crate::theme::OryxisColors;
 use crate::widgets::{card_grid_columns, dir_align_x, dir_row, distribute_card_grid};
 
-/// Human-readable one-line summary of a rule, kind-aware.
-fn forward_summary(rule: &PortForwardRule) -> String {
+/// Human-readable one-line summary of a rule, kind-aware. Shared with the
+/// delete confirmation, which has to name the rule the way its row does or
+/// the user cannot tell whether they picked the right one.
+pub(crate) fn forward_summary(rule: &PortForwardRule) -> String {
     match rule.kind {
         ForwardKind::Local => format!(
             "{}:{} \u{2192} {}:{}",
@@ -241,27 +243,28 @@ impl Oryxis {
                 toggle = toggle.on_press(msg);
             }
 
-            // Trash kebab, hover-revealed (floating-action convention).
-            const TRASH_SLOT_W: f32 = 28.0;
-            let show_trash = self.hovered_port_forward_card == Some(idx) || kb_selected;
-            let trash: Element<'_, Message> = if show_trash {
-                button(text("\u{1F5D1}").size(13).color(OryxisColors::t().text_muted))
-                    .on_press(Message::PortForward(PortForwardMessage::DeletePortForwardRule(idx)))
-                    .padding(Padding { top: 1.0, right: 6.0, bottom: 1.0, left: 6.0 })
-                    .style(|_, st| {
-                        let bg = match st {
-                            BtnStatus::Hovered => OryxisColors::t().bg_hover,
-                            _ => Color::TRANSPARENT,
-                        };
-                        button::Style {
-                            background: Some(Background::Color(bg)),
-                            border: Border { radius: Radius::from(6.0), ..Default::default() },
-                            ..Default::default()
-                        }
-                    })
-                    .into()
+            // Hover-revealed kebab, the app-wide card affordance (host,
+            // snippet, key and session-group cards all use it). This card
+            // used to carry a bare trash glyph instead, which both broke
+            // the convention and put the one destructive action on the
+            // card's only visible control. The menu carries Edit as well,
+            // even though clicking the card already edits: a card whose
+            // menu offers only "Delete" reads like deletion is all you can
+            // do from here. Stays mounted while its menu is open so the
+            // pointer can travel to it.
+            const DOTS_SLOT_W: f32 = 22.0;
+            let show_dots = self.hovered_port_forward_card == Some(idx)
+                || self.port_forward_context_menu == Some(idx)
+                || kb_selected;
+            let dots: Element<'_, Message> = if show_dots {
+                crate::widgets::card_kebab_button(
+                    OryxisColors::t().text_muted,
+                    true,
+                    Message::PortForward(PortForwardMessage::ShowPortForwardMenu(idx)),
+                )
+                .into()
             } else {
-                Space::new().width(Length::Fixed(TRASH_SLOT_W)).height(Length::Fixed(20.0)).into()
+                Space::new().width(Length::Fixed(DOTS_SLOT_W)).height(Length::Fixed(22.0)).into()
             };
 
             let kind_badge = format!("{}  \u{00B7}  {}", rule.kind, host_label);
@@ -290,7 +293,7 @@ impl Oryxis {
                         ].width(Length::Fill).into(),
                         toggle.into(),
                         Space::new().width(4).into(),
-                        trash,
+                        dots,
                     ]).align_y(iced::Alignment::Center),
                 )
                 .padding(Padding { top: 8.0, right: 2.0, bottom: 8.0, left: 2.0 }),
@@ -310,9 +313,11 @@ impl Oryxis {
                 }
             });
 
+            // Right-click opens the same kebab menu, the app-wide rule.
             let wrapped: Element<'_, Message> = MouseArea::new(card_btn)
                 .on_enter(Message::PortForward(PortForwardMessage::PortForwardCardHovered(idx)))
                 .on_exit(Message::PortForward(PortForwardMessage::PortForwardCardUnhovered))
+                .on_right_press(Message::PortForward(PortForwardMessage::ShowPortForwardMenu(idx)))
                 .into();
             let card_el: Element<'_, Message> =
                 container(wrapped).width(Length::Fill).clip(true).into();
@@ -521,14 +526,14 @@ impl Oryxis {
             && let Some(idx) = self.port_forward_rules.iter().position(|r| r.id == edit_id)
         {
             let del_btn = self.panel_nav_slot(
-                crate::keynav::RowAction::activate(Message::PortForward(PortForwardMessage::DeletePortForwardRule(idx))),
+                crate::keynav::RowAction::activate(Message::PortForward(PortForwardMessage::RequestDeletePortForwardRule(idx))),
                 8.0,
                 button(
                     container(text(t("delete")).size(13).color(OryxisColors::t().error))
                         .padding(Padding { top: 10.0, right: 0.0, bottom: 10.0, left: 0.0 })
                         .width(Length::Fill).center_x(Length::Fill),
                 )
-                .on_press(Message::PortForward(PortForwardMessage::DeletePortForwardRule(idx)))
+                .on_press(Message::PortForward(PortForwardMessage::RequestDeletePortForwardRule(idx)))
                 .width(Length::Fill)
                 .style(|_, _| button::Style {
                     background: Some(Background::Color(Color::TRANSPARENT)),

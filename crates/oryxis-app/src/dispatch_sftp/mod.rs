@@ -143,6 +143,8 @@ impl Oryxis {
             | SftpMessage::SftpTransferTick
             | SftpMessage::SftpUpload(..)
             | SftpMessage::SftpDownload(..)
+            | SftpMessage::SftpDownloadTo(..)
+            | SftpMessage::SftpDownloadDestPicked(..)
             | SftpMessage::SftpDuplicate(..)
             | SftpMessage::SftpFileHovered
             | SftpMessage::SftpFilesHoveredLeft
@@ -165,7 +167,9 @@ impl Oryxis {
             | SftpMessage::SftpTransferError(..)
             | SftpMessage::SftpCancelTransfer
             | SftpMessage::SftpRelay(..)
-            | SftpMessage::SftpRelayFolder(..)) => self
+            | SftpMessage::SftpRelayFolder(..)
+            | SftpMessage::SftpRelayMove(..)
+            | SftpMessage::SftpRelayMoveFolder(..)) => self
                 .handle_sftp_transfers(m)
                 // Transfers legitimately decline the whole group when no
                 // SFTP tab owns the continuation: quiet drop, EXCEPT the
@@ -182,6 +186,8 @@ impl Oryxis {
             | SftpMessage::SftpRevealInExplorer(..)
             | SftpMessage::SftpEditWatchTick
             | SftpMessage::SftpStartEditWith(..)
+            | SftpMessage::SftpPickEditorFor(..)
+            | SftpMessage::SftpToggleOpenGroup
             | SftpMessage::SftpEditWatchReady(..)
             | SftpMessage::SftpEditPromptChoice(..)
             | SftpMessage::SftpEditReopenChoice(..)
@@ -291,7 +297,7 @@ impl Oryxis {
             | SftpMessage::SftpCopySelectionPaths(..)
             | SftpMessage::SftpTypeAheadFire(..)
             | SftpMessage::SftpRowEnter(..)
-            | SftpMessage::SftpRowExit
+            | SftpMessage::SftpRowExit(..)
             | SftpMessage::SftpNameHovered(..)
             | SftpMessage::SftpNameUnhovered
             | SftpMessage::SftpSlowRenameFire(..)

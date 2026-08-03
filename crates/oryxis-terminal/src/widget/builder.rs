@@ -12,7 +12,7 @@ impl<Message> TerminalView<Message> {
             font: Font::MONOSPACE,
             copy_on_select: true,
             right_click_copy: false,
-            middle_click_paste: true,
+            mouse_bindings: None,
             right_click_action: RightClickAction::default(),
             reset_scroll_on_output: false,
             bold_is_bright: true,
@@ -36,6 +36,7 @@ impl<Message> TerminalView<Message> {
             on_link_click_hint: None,
             on_link_opened: None,
             focused: true,
+            resize_margins: (0.0, 0.0, 0.0, 0.0),
             bell_flash: false,
             fixed_grid: false,
         }
@@ -45,6 +46,15 @@ impl<Message> TerminalView<Message> {
     /// mouse-tracking reports (see the `focused` field).
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Per-edge strip this pane hands back to its container, in pixels:
+    /// `(top, right, bottom, left)`. See `resize_margins` on the widget.
+    /// Only set a non-zero value on an edge that borders a sibling pane;
+    /// on an outer edge it would just eat selectable area.
+    pub fn with_resize_margins(mut self, margins: (f32, f32, f32, f32)) -> Self {
+        self.resize_margins = margins;
         self
     }
 
@@ -83,7 +93,6 @@ impl<Message> TerminalView<Message> {
         self
     }
 
-    /// X11-style middle-click paste (independent of `copy_on_select`).
     /// Wire the user's chord bindings for copy / select-all /
     /// scrollback paging. See [`ChordResolver`].
     pub fn with_terminal_chords(mut self, resolver: ChordResolver) -> Self {
@@ -91,8 +100,10 @@ impl<Message> TerminalView<Message> {
         self
     }
 
-    pub fn with_middle_click_paste(mut self, on: bool) -> Self {
-        self.middle_click_paste = on;
+    /// Wire the user's MOUSE bindings (X11-style middle-click paste out
+    /// of the box). See [`MouseResolver`].
+    pub fn with_mouse_bindings(mut self, resolver: MouseResolver<Message>) -> Self {
+        self.mouse_bindings = Some(resolver);
         self
     }
 

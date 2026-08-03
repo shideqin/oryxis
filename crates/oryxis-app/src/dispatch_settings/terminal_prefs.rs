@@ -105,11 +105,11 @@ impl Oryxis {
                 );
             }
             SettingsMessage::ToggleMiddleClickPaste => {
-                self.setting_middle_click_paste = !self.setting_middle_click_paste;
-                self.persist_setting(
-                    "middle_click_paste",
-                    if self.setting_middle_click_paste { "true" } else { "false" },
-                );
+                // Writes through the binding table, which owns the
+                // gesture; there is no `middle_click_paste` setting any
+                // more (see `set_middle_click_paste`).
+                let on = !self.middle_click_pastes();
+                return Ok(self.set_middle_click_paste(on));
             }
             SettingsMessage::SettingSftpDefaultEditorChanged(v) => {
                 self.setting_sftp_default_editor = v;
@@ -152,6 +152,13 @@ impl Oryxis {
                 self.persist_setting(
                     "sftp_edit_autosave",
                     if self.setting_sftp_edit_autosave { "true" } else { "false" },
+                );
+            }
+            SettingsMessage::ToggleSftpAskDownloadDir => {
+                self.setting_sftp_ask_download_dir = !self.setting_sftp_ask_download_dir;
+                self.persist_setting(
+                    "sftp_ask_download_dir",
+                    if self.setting_sftp_ask_download_dir { "true" } else { "false" },
                 );
             }
             SettingsMessage::ToggleSftpForceOsc7 => {
@@ -243,6 +250,29 @@ impl Oryxis {
                 let on = !crate::state::auto_title_enabled();
                 crate::state::set_auto_title(on);
                 self.persist_setting("terminal_auto_title", if on { "true" } else { "false" });
+            }
+            SettingsMessage::TogglePaneBorderInactive => {
+                self.setting_pane_border_inactive = !self.setting_pane_border_inactive;
+                self.persist_setting(
+                    "pane_border_inactive",
+                    if self.setting_pane_border_inactive { "true" } else { "false" },
+                );
+            }
+            SettingsMessage::OpenTerminalThemeGallery => {
+                self.show_terminal_theme_gallery = true;
+            }
+            SettingsMessage::CloseTerminalThemeGallery => {
+                self.show_terminal_theme_gallery = false;
+            }
+            SettingsMessage::OpenUiThemeGallery => {
+                self.show_ui_theme_gallery = true;
+            }
+            SettingsMessage::CloseUiThemeGallery => {
+                self.show_ui_theme_gallery = false;
+            }
+            SettingsMessage::PaneGapChanged(v) => {
+                self.setting_pane_gap = v.clone();
+                self.persist_setting("pane_gap", &v);
             }
             SettingsMessage::ToggleBoldIsBright => {
                 self.setting_bold_is_bright = !self.setting_bold_is_bright;

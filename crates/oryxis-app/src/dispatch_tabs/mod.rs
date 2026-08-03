@@ -9,6 +9,7 @@
 mod hybrid;
 mod icon_picker;
 mod lifecycle;
+mod merge;
 mod ordering;
 mod window;
 
@@ -123,6 +124,15 @@ impl Oryxis {
                     }
                 }
             }
+            TabsMessage::SettingsTabHovered => {
+                self.hovered_settings_tab = true;
+            }
+            TabsMessage::SettingsTabUnhovered => {
+                self.hovered_settings_tab = false;
+            }
+            TabsMessage::CloseSettingsTab => {
+                return self.close_settings_tab();
+            }
             TabsMessage::WindowDrag => {
                 if !self.consume_window_press() {
                     return Task::none();
@@ -205,6 +215,7 @@ impl Oryxis {
                 self.snippet_context_menu = None;
                 self.key_context_menu = None;
                 self.identity_context_menu = None;
+                self.port_forward_context_menu = None;
                 self.show_keychain_add_menu = false;
             }
             TabsMessage::ShowCardMenu(idx) => {
@@ -501,6 +512,7 @@ impl Oryxis {
             TabsMessage::IconPickerSave => return self.handle_icon_picker_save(),
             TabsMessage::IconPickerResetAuto => return self.handle_icon_picker_reset_auto(),
             TabsMessage::CloseTab(idx) => return self.handle_close_tab(idx),
+            TabsMessage::ConfirmCloseGroupedTab(idx) => return self.close_tab_now(idx),
             TabsMessage::ShowTabMenu(idx) => {
                 let anchor = self.keynav_take_menu_anchor();
                 self.overlay = Some(OverlayState {
@@ -671,6 +683,11 @@ impl Oryxis {
                                 tab.custom_name = new_name;
                             }
                         }
+                        // Not renameable: it has no per-tab identity to
+                        // name, and the rename entry is never offered for
+                        // it. Reachable only if some future surface starts
+                        // a rename on it, which should do nothing.
+                        crate::state::TabRef::Settings => {}
                     }
                 }
             }

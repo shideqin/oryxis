@@ -377,9 +377,6 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("right_click_copy") {
                 self.setting_right_click_copy = v == "true";
             }
-            if let Ok(Some(v)) = vault.get_setting("middle_click_paste") {
-                self.setting_middle_click_paste = v == "true";
-            }
             if let Ok(Some(v)) = vault.get_setting("terminal_right_click") {
                 self.setting_terminal_right_click =
                     crate::util::RightClickMode::from_code(&v);
@@ -392,6 +389,22 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("bold_is_bright") {
                 self.setting_bold_is_bright = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("pane_border_inactive") {
+                self.setting_pane_border_inactive = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("pane_gap") {
+                self.setting_pane_gap = v;
+            }
+            // Files-sidebar folder history, keyed by host. A malformed or
+            // stale blob is dropped rather than failing the boot: it is a
+            // convenience list, and losing it costs nothing.
+            if let Ok(Some(v)) = vault.get_setting("files_recent_folders")
+                && let Ok(map) = serde_json::from_str::<
+                    std::collections::HashMap<uuid::Uuid, Vec<String>>,
+                >(&v)
+            {
+                self.files_recent_folders = map;
             }
             if let Ok(Some(v)) = vault.get_setting("keyword_highlight") {
                 self.setting_keyword_highlight = v == "true";
@@ -656,6 +669,14 @@ impl Oryxis {
                 );
                 self.setting_inactive_tab_style = v;
             }
+            if let Ok(Some(v)) = vault.get_setting("tab_width_mode")
+                && (v == "adaptive" || v == "uniform")
+            {
+                self.setting_tab_width_mode = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("tab_uniform_size") {
+                self.setting_tab_uniform_size = v;
+            }
             if let Ok(Some(v)) = vault.get_setting("pinned_tabs_top_bar") {
                 self.setting_pinned_tabs_top_bar = v == "true";
             }
@@ -799,6 +820,52 @@ impl Oryxis {
             }
             for action in emptied {
                 self.hotkey_bindings.remove(&action);
+            }
+            // One-shot migration: middle-click paste used to be its own
+            // `middle_click_paste` setting, and is now an ordinary chord
+            // on `TerminalPasteSelection` (the binding table is the one
+            // authority for the gesture).
+            //
+            // Applied to whatever list resolved ABOVE, not only to
+            // vaults with no stored override: an override replaces the
+            // factory list wholesale, so a user who had rebound
+            // paste-selection would otherwise lose middle-click paste
+            // without ever asking to. Likewise a deliberate unbind of
+            // the keyboard chord never meant "and drop the mouse
+            // gesture too", because the two were unrelated settings.
+            if vault
+                .get_setting("middle_click_paste_migrated")
+                .ok()
+                .flatten()
+                .is_none()
+            {
+                let want = !matches!(
+                    vault.get_setting("middle_click_paste"),
+                    Ok(Some(v)) if v == "false"
+                );
+                let action = crate::hotkeys::HotkeyAction::TerminalPasteSelection;
+                let chord = crate::hotkeys::middle_click_chord();
+                let mut binds =
+                    self.hotkey_bindings.get(&action).cloned().unwrap_or_default();
+                let changed = if want {
+                    let before = binds.len();
+                    binds.push(chord);
+                    binds.len() != before
+                } else {
+                    binds.remove(&chord)
+                };
+                if changed {
+                    let _ = vault.set_setting(
+                        &format!("hotkey_{}", action.id()),
+                        &binds.serialize(),
+                    );
+                    if binds.is_empty() {
+                        self.hotkey_bindings.remove(&action);
+                    } else {
+                        self.hotkey_bindings.insert(action, binds);
+                    }
+                }
+                let _ = vault.set_setting("middle_click_paste_migrated", "true");
             }
             if let Ok(Some(v)) = vault.get_setting("default_host_icon")
                 && matches!(v.as_str(), "circular" | "square" | "rounded" | "outline" | "initials")
@@ -955,6 +1022,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_force_osc7") {
                 self.setting_sftp_force_osc7 = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("sftp_ask_download_dir") {
+                self.setting_sftp_ask_download_dir = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("sftp_default_editor") {
                 self.setting_sftp_default_editor = v;

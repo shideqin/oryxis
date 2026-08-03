@@ -87,6 +87,27 @@ impl Oryxis {
             |_| Message::Settings(SettingsMessage::RevealSettingScroll),
         )
     }
+
+    /// Put the open section back where the user left it (issue #120). The
+    /// offset is recorded by each section's `on_scroll`; scrolling to it
+    /// needs the section's view to have rebuilt first, so it rides the
+    /// same small delay the reveal scroll uses. A section never scrolled
+    /// (or scrolled back to the top) costs nothing.
+    pub(crate) fn settings_restore_scroll(&self) -> Task<Message> {
+        let Some(&y) = self.settings_scroll.get(&self.settings_section) else {
+            return Task::none();
+        };
+        if y <= 0.0 {
+            return Task::none();
+        }
+        let id = iced::widget::Id::new(self.settings_section.scroll_id());
+        Task::perform(
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(90)).await;
+            },
+            move |_| Message::Settings(SettingsMessage::SectionScrollTo(id.clone(), y)),
+        )
+    }
 }
 
 impl Oryxis {
@@ -108,6 +129,8 @@ impl Oryxis {
             | SettingsMessage::ThemeEditorColorChanged(..)
             | SettingsMessage::ThemeEditorSave
             | SettingsMessage::ThemeDelete(..)
+            | SettingsMessage::ThemeDeleteRequested(..)
+            | SettingsMessage::UiThemeDeleteRequested(..)
             | SettingsMessage::ThemeImportOpen
             | SettingsMessage::ThemeImportClose
             | SettingsMessage::ThemeImportContentAction(..)
@@ -205,6 +228,8 @@ impl Oryxis {
             | SettingsMessage::SettingTabAccentColorChanged(..)
             | SettingsMessage::SettingTabBarPositionChanged(..)
             | SettingsMessage::SettingInactiveTabStyleChanged(..)
+            | SettingsMessage::SettingTabWidthModeChanged(..)
+            | SettingsMessage::SettingTabUniformSizeChanged(..)
             | SettingsMessage::SettingTogglePinnedTabsTopBar
             | SettingsMessage::SettingToggleSideHideTopBar
             | SettingsMessage::SettingToggleSideFullHeight
@@ -226,6 +251,7 @@ impl Oryxis {
             | SettingsMessage::ToggleRightClickCopy
             | SettingsMessage::ToggleMiddleClickPaste
             | SettingsMessage::ToggleSftpForceOsc7
+            | SettingsMessage::ToggleSftpAskDownloadDir
             | SettingsMessage::SettingSftpDefaultEditorChanged(..)
             | SettingsMessage::SettingSftpDefaultEditorBrowse
             | SettingsMessage::SettingSftpDefaultEditorPicked(..)
@@ -236,6 +262,12 @@ impl Oryxis {
             | SettingsMessage::SidebarDefaultTabChanged(..)
             | SettingsMessage::ToggleCarefulPaste
             | SettingsMessage::ToggleBoldIsBright
+            | SettingsMessage::TogglePaneBorderInactive
+            | SettingsMessage::PaneGapChanged(..)
+            | SettingsMessage::OpenTerminalThemeGallery
+            | SettingsMessage::CloseTerminalThemeGallery
+            | SettingsMessage::OpenUiThemeGallery
+            | SettingsMessage::CloseUiThemeGallery
             | SettingsMessage::ToggleTerminalAutoTitle
             | SettingsMessage::BellModeChanged(..)
             | SettingsMessage::ClipboardAccessChanged(..)
@@ -536,10 +568,25 @@ impl Oryxis {
                         self.schedule_settings_scroll(),
                     ]);
                 }
-                return self.renderer_info_task();
+                // Sections remember where you left them (issue #120), so
+                // hopping out to check a change and back lands on the same
+                // row instead of at the top.
+                return Task::batch([self.renderer_info_task(), self.settings_restore_scroll()]);
+            }
+            SettingsMessage::SectionScrolled(offset) => {
+                self.settings_scroll.insert(self.settings_section, offset);
+            }
+            SettingsMessage::SectionScrollTo(id, y) => {
+                return iced::widget::operation::snap_to(
+                    id,
+                    iced::widget::operation::RelativeOffset { x: None, y: Some(y) },
+                );
             }
             SettingsMessage::StartEditingHotkey(action, slot) => {
                 self.editing_hotkey = Some((action, slot));
+            }
+            SettingsMessage::MouseButtonPressed(button) => {
+                return self.handle_mouse_button_press(button);
             }
             SettingsMessage::ResetHotkey(action) => {
                 let mut defaults = crate::hotkeys::default_bindings();

@@ -61,6 +61,20 @@ pub(crate) struct PaneState {
     /// Per-pane and in-memory only: paths are host-scoped and remounting
     /// the pane on another host must not offer the previous host's tree.
     pub path_history: Vec<String>,
+    /// Back / forward stacks for the side mouse buttons.
+    ///
+    /// Deliberately NOT the `path_history` above: that is a RECENCY list
+    /// (a revisit moves the entry to the top), so stepping back would
+    /// reorder it and the next step would bounce between two folders. A
+    /// stack answers "where was I before", which is the question the
+    /// buttons ask.
+    pub nav_back: Vec<String>,
+    pub nav_fwd: Vec<String>,
+    /// Set while a back / forward step is in flight, so its arrival is not
+    /// recorded as a fresh navigation. Without it, going back would push
+    /// the folder just left onto the back stack and the pair would cancel
+    /// each other out.
+    pub nav_replay: bool,
     /// Whether this pane's path-history dropdown is open.
     pub path_history_open: bool,
     /// Actions popover anchored to this pane's header.
@@ -115,6 +129,42 @@ pub(crate) struct PaneState {
 }
 
 impl PaneState {
+    /// Record leaving `previous` for a new directory. Clears the forward
+    /// stack, because branching off mid-history is a new future.
+    pub fn push_nav(&mut self, previous: String) {
+        const NAV_CAP: usize = 100;
+        // A back / forward step consumes the flag instead of recording:
+        // its arrival is the history being replayed, not a new visit.
+        if std::mem::take(&mut self.nav_replay) {
+            return;
+        }
+        if previous.is_empty() {
+            return;
+        }
+        self.nav_back.push(previous);
+        self.nav_fwd.clear();
+        if self.nav_back.len() > NAV_CAP {
+            self.nav_back.remove(0);
+        }
+    }
+
+    /// Pop the previous directory, remembering `current` so Forward can
+    /// come back to it. `None` when there is nowhere to go.
+    pub fn nav_go_back(&mut self, current: String) -> Option<String> {
+        let target = self.nav_back.pop()?;
+        self.nav_fwd.push(current);
+        self.nav_replay = true;
+        Some(target)
+    }
+
+    /// The mirror of [`Self::nav_go_back`].
+    pub fn nav_go_forward(&mut self, current: String) -> Option<String> {
+        let target = self.nav_fwd.pop()?;
+        self.nav_back.push(current);
+        self.nav_replay = true;
+        Some(target)
+    }
+
     /// Stamp a fresh mount generation. Called (via
     /// `spawn_archive_probe`) right after `SftpMessage::HostMounted` reset the
     /// pane for a new host: every archive completion still in flight
@@ -246,6 +296,15 @@ impl std::fmt::Debug for ZipIndexedPayload {
 /// always a remote host. When both panes are remote, a transfer between
 /// them uses the server-to-server relay primitive instead of
 /// upload/download.
+/// One rendered SFTP row's identity plus the cell its drawn rect lands in.
+#[derive(Debug, Clone)]
+pub(crate) struct SftpRowHit {
+    pub side: SftpPaneSide,
+    pub path: String,
+    pub is_dir: bool,
+    pub bounds: crate::widgets::BoundsCell,
+}
+
 pub(crate) struct SftpState {
     /// Left pane, Local by default.
     pub left: PaneState,
@@ -284,6 +343,16 @@ pub(crate) struct SftpState {
     /// consumed by both the OS drop target picker and the internal
     /// drag-drop release handler.
     pub hovered_row: Option<(SftpPaneSide, String, bool)>,
+    /// Every rendered row's rect, recorded during `view()` and filled by a
+    /// `bounds_reporter` on each draw.
+    ///
+    /// Hit-testing a press against these is what makes grabbing a row
+    /// deterministic. `hovered_row` cannot do that job: it is hover state
+    /// maintained by MouseArea enter / exit, so a truncated name's tooltip
+    /// overlay drops it and iced publishing transitions in tree order
+    /// reorders it. Geometry has neither problem, and it is the approach
+    /// the OS-drop router and the tab-to-pane drop already use.
+    pub row_hits: std::cell::RefCell<Vec<SftpRowHit>>,
     /// In-progress internal drag (file/folder being dragged from one
     /// pane to the other). Spans the press → drop window.
     pub drag: Option<SftpInternalDrag>,
@@ -454,6 +523,7 @@ impl Default for SftpState {
             drop_active: false,
             pending_drops: Vec::new(),
             hovered_row: None,
+            row_hits: std::cell::RefCell::new(Vec::new()),
             drag: None,
             transfer: None,
             upload_dest_override: None,
@@ -630,13 +700,32 @@ pub(crate) struct PropertiesView {
     pub error: Option<String>,
 }
 
+/// Which way the conflicting transfer runs. The modal reads it to map the
+/// two sizes onto its "Local · Remote" labels, and the resolve handler to
+/// pick which side it writes to (an SFTP upload or a local download).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OverwriteDirection {
+    /// `src` is a local path, `dst_dir` a remote POSIX directory.
+    Upload,
+    /// `src` is a remote POSIX path, `dst_dir` a local directory.
+    Download,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct OverwritePrompt {
-    pub src: std::path::PathBuf,
+    /// Source path, as a string on both sides: an upload's local path and
+    /// a download's remote POSIX path never survive a round trip through
+    /// `PathBuf` on every platform, and `TransferItem` already stores
+    /// both directions this way.
+    pub src: String,
     pub dst_dir: String,
     pub basename: String,
+    /// Size of the source file: local for an upload, remote for a
+    /// download. The modal labels it by `direction`, not by field name.
     pub src_size: u64,
+    /// Size of the file already sitting at the destination.
     pub dst_size: u64,
+    pub direction: OverwriteDirection,
     /// True when the prompt is part of a multi-file transfer, surfaces
     /// the "apply to remaining" checkbox so the user doesn't have to
     /// re-answer for every collision.
@@ -645,6 +734,20 @@ pub(crate) struct OverwritePrompt {
     /// the modal is open. Read on resolve; persisted as
     /// `TransferState.overwrite_default` if true.
     pub apply_to_all: bool,
+}
+
+impl OverwritePrompt {
+    /// The two sizes mapped onto the conflict modal's fixed
+    /// "Local · Remote" labels. `src_size` is the file being transferred,
+    /// so which side it sits on flips with the direction: a download's
+    /// source is the REMOTE file, and reporting it as the local one would
+    /// invert the only number the user has to decide on.
+    pub fn local_remote_sizes(&self) -> (u64, u64) {
+        match self.direction {
+            OverwriteDirection::Upload => (self.src_size, self.dst_size),
+            OverwriteDirection::Download => (self.dst_size, self.src_size),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -743,10 +846,15 @@ pub(crate) enum SftpEditReopenChoice {
 /// How "Open with..." resolves the local application for a remote file
 /// (issue #84). `OsDefault` is the file-association open the classic
 /// edit flow already used.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SftpEditOpener {
     /// The single configured editor from Settings > SFTP.
     ConfiguredEditor,
+    /// One specific application, chosen for this open only (issue #114).
+    /// It carries the path rather than re-asking, so reopening the same
+    /// file lands back in the application that already holds it instead
+    /// of raising the file picker a second time.
+    Editor(String),
     /// The OS "open with" application picker (Windows / macOS only).
     AskOs,
     /// The OS file association (`open::that`).
@@ -853,6 +961,17 @@ pub(crate) struct TransferState {
     /// parent and every upload into it dies with "No such file"
     /// (issue #63).
     pub dir_slot: Option<u8>,
+    /// Set on a `Relay` that is a MOVE: the source paths to remove once
+    /// the whole queue has drained, files first and directories after,
+    /// deepest first. `None` on a copy, which never removes anything.
+    ///
+    /// The list is captured by the same walk that built the queue, so it
+    /// describes exactly what was copied and cannot drift from it. It is
+    /// only ever consumed from the finalize arm, which is reached solely
+    /// when every item completed: any error clears `transfer` outright,
+    /// so a failed move leaves the source untouched by construction
+    /// (issue #115).
+    pub move_sources: Option<Vec<TransferItem>>,
 }
 
 impl TransferState {
@@ -886,7 +1005,17 @@ impl TransferState {
             busy_slots: vec![false; slots as usize],
             paused: false,
             dir_slot: None,
+            move_sources: None,
         }
+    }
+
+    /// Turn a freshly built relay into a MOVE by attaching the source
+    /// paths to remove after the copy is verified. Kept as a builder
+    /// step rather than another `new` parameter so a copy can never
+    /// acquire a removal list by an argument slipping one position.
+    pub fn moving(mut self, sources: Vec<TransferItem>) -> Self {
+        self.move_sources = Some(sources);
+        self
     }
 }
 
@@ -945,6 +1074,11 @@ pub(crate) struct SftpRowMenu {
     /// the pane (not a row). The view then shows only directory-level
     /// actions and `path` holds the pane's current directory.
     pub is_background: bool,
+    /// The "Open with" family is expanded (issue #114). Collapsed by
+    /// default so the common one-click "Open / Edit" stays at the top of
+    /// a menu that is already long; opening the group keeps the menu on
+    /// screen, like the Columns toggles do.
+    pub open_group: bool,
     pub x: f32,
     pub y: f32,
 }

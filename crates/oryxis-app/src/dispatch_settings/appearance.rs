@@ -273,6 +273,20 @@ impl Oryxis {
                 self.setting_inactive_tab_style = normalized.into();
                 self.persist_setting("inactive_tab_style", normalized);
             }
+            SettingsMessage::SettingTabWidthModeChanged(val) => {
+                let normalized = if val == "uniform" { "uniform" } else { "adaptive" };
+                self.setting_tab_width_mode = normalized.into();
+                self.persist_setting("tab_width_mode", normalized);
+            }
+            SettingsMessage::SettingTabUniformSizeChanged(val) => {
+                let normalized = match val.as_str() {
+                    "small" => "small",
+                    "large" => "large",
+                    _ => "medium",
+                };
+                self.setting_tab_uniform_size = normalized.into();
+                self.persist_setting("tab_uniform_size", normalized);
+            }
             SettingsMessage::SettingTogglePinnedTabsTopBar => {
                 self.setting_pinned_tabs_top_bar = !self.setting_pinned_tabs_top_bar;
                 self.persist_setting(
