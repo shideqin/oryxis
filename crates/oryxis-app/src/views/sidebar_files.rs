@@ -3,7 +3,7 @@
 //! host header, the host is the tab's own; just the current path, the
 //! follow-cwd pin, hidden/refresh/expand actions and the entry list.
 //! Rows follow the History tab's conventions: hover-revealed floating
-//! action, click = primary (folders navigate, files copy their path),
+//! Copy path action, click = select (double-click folder = enter),
 //! all recorded into the sidebar keynav layer.
 
 use iced::border::Radius;
@@ -311,14 +311,10 @@ impl Oryxis {
                     pos += 1;
                     continue;
                 }
-                let primary = if entry.is_dir {
-                    Message::SidebarFiles(SidebarFilesMessage::SidebarFilesNavigate(full.clone()))
-                } else {
-                    // Files: the row's primary is Copy path (toast
-                    // feedback); heavier actions live in the context
-                    // menu (right-click) and the full SFTP session.
-                    Message::Sftp(SftpMessage::SftpCopyPath(full.clone()))
-                };
+                let primary = Message::SidebarFiles(SidebarFilesMessage::SidebarFilesSelectRow(
+                    full.clone(),
+                    entry.is_dir,
+                ));
                 list = list.push(self.files_row(
                     &entry.name,
                     entry.is_dir,
@@ -387,6 +383,12 @@ impl Oryxis {
     ) -> Element<'a, Message> {
         let c = OryxisColors::t();
         let hovered = self.hover.files_row == Some(pos);
+        let selected = full_path.as_ref().is_some_and(|fp| {
+            self.active_tab
+                .and_then(|i| self.tabs.get(i))
+                .and_then(|t| t.active().files.selected.as_ref())
+                .is_some_and(|s| s == fp)
+        });
 
         let mut cells: Vec<Element<'a, Message>> = vec![
             crate::views::sftp::file_icon(name, is_dir, is_symlink).into(),
@@ -414,10 +416,17 @@ impl Oryxis {
         let card = container(dir_row(cells).align_y(iced::Alignment::Center))
             .padding(Padding { top: 6.0, right: 10.0, bottom: 6.0, left: 10.0 })
             .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(OryxisColors::t().bg_surface)),
-                border: Border { radius: Radius::from(6.0), ..Default::default() },
-                ..Default::default()
+            .style(move |_| {
+                let bg = if selected {
+                    Color { a: 0.20, ..OryxisColors::t().accent }
+                } else {
+                    OryxisColors::t().bg_surface
+                };
+                container::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    ..Default::default()
+                }
             });
 
         // Hover-revealed floating Copy path (the card-action convention;

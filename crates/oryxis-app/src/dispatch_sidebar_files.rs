@@ -8,12 +8,17 @@
 // Message enum by design; same allowance as the sibling dispatch modules.
 #![allow(clippy::result_large_err)]
 
+use std::time::Duration;
+
 use iced::Task;
 use uuid::Uuid;
 
 use crate::app::Oryxis;
 use crate::messages::{Message, SidebarFilesMessage, TabsMessage, SftpMessage};
 use crate::state::TerminalSidebarTab;
+
+/// Double-click window, matching the SFTP pane's constant.
+const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(500);
 
 /// Dirs first, then case-insensitive by name, the sidebar's fixed sort
 /// (the full SFTP pane has sortable columns; this browser does not).
@@ -154,6 +159,26 @@ impl Oryxis {
             SidebarFilesMessage::SidebarFilesRowUnhovered => {
                 self.hover.files_row = None;
             }
+            SidebarFilesMessage::SidebarFilesSelectRow(path, is_dir) => {
+                // Single-click selects the row (highlight); double-click
+                // on a directory enters it, matching the SFTP pane's rule.
+                let Some(pane) = self.active_pane_mut() else {
+                    return Task::none();
+                };
+                let now = std::time::Instant::now();
+                let is_double = pane.files.last_click.as_ref().is_some_and(
+                    |(t, p, _)| p == &path && now.duration_since(*t) < DOUBLE_CLICK_WINDOW,
+                );
+                pane.files.last_click = Some((now, path.clone(), is_dir));
+                pane.files.selected = Some(path.clone());
+                if is_double && is_dir {
+                    pane.files.last_click = None;
+                    pane.files.selected = None;
+                    return self.update(Message::SidebarFiles(
+                        SidebarFilesMessage::SidebarFilesNavigate(path),
+                    ));
+                }
+            }
             SidebarFilesMessage::SidebarFilesToggleFollow => {
                 if let Some(pane) = self.active_pane_mut() {
                     pane.files.follow_disabled = !pane.files.follow_disabled;
@@ -174,6 +199,8 @@ impl Oryxis {
                     return Task::none();
                 };
                 pane.files.error = None;
+                pane.files.selected = None;
+                pane.files.last_click = None;
                 match (&pane.files.client, pane.files.path.is_empty()) {
                     // Mounted: re-list the current directory.
                     (Some(client), false) => {
@@ -189,7 +216,8 @@ impl Oryxis {
                 }
             }
             SidebarFilesMessage::SidebarFilesNavigate(path) => {
-                // Also fired from the row context menu; dismiss it.
+                // Also fired from the row context menu and the
+                // ".." row; dismiss the overlay and clear selection.
                 self.overlay = None;
                 let Some(pane) = self.active_pane_mut() else {
                     return Task::none();
@@ -232,6 +260,8 @@ impl Oryxis {
                 pane.files.entries.clear();
                 pane.files.loading = true;
                 pane.files.error = None;
+                pane.files.selected = None;
+                pane.files.last_click = None;
                 // Rapid clicks race their listings; the stamp makes the
                 // LATEST navigation win regardless of completion order.
                 let seq = pane.files.next_req();
@@ -690,6 +720,8 @@ impl Oryxis {
                     files.rename = None;
                     files.new_entry = None;
                     files.path_history_open = false;
+                    files.selected = None;
+                    files.last_click = None;
                 }
             }
             SidebarFilesMessage::SidebarFilesPathHistoryToggle => {
@@ -797,6 +829,10 @@ impl Oryxis {
                     pane.files.push_nav(previous);
                 }
                 pane.files.entries = entries;
+                // The listing replaced all rows, so any old selection
+                // is stale; the ".." row is the only safe default.
+                pane.files.selected = None;
+                pane.files.last_click = None;
                 // Mount is where the stored, host-keyed history comes back
                 // (the per-pane list is wiped on disconnect on purpose),
                 // and where this visit joins it.
@@ -827,6 +863,10 @@ impl Oryxis {
                     pane.files.push_nav(previous);
                 }
                 pane.files.entries = entries;
+                // The listing replaced all rows, so any old selection
+                // is stale; the ".." row is the only safe default.
+                pane.files.selected = None;
+                pane.files.last_click = None;
                 self.record_files_recent(pane_id, &path);
                 // The shell may have moved again while this listing was
                 // in flight; chase it so follow never sticks one step
