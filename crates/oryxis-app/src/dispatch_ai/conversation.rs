@@ -223,13 +223,25 @@ impl Oryxis {
                         return Task::none();
                     }
                 }
+                // Reconcile the saved copy with the shorter history BEFORE
+                // the new answer arrives. `flush_chat_history` tracks what
+                // it stored as a COUNT, so it only notices a rewrite is due
+                // while the live history is shorter than that count: let the
+                // stream fill the gap first and the counts match again, the
+                // flush reports "nothing new", and the conversation stays
+                // saved with the error bubble the user just retried away,
+                // permanently missing the answer that replaced it. (Reaching
+                // that needs the error to have been saved, which opening the
+                // History screen mid-conversation does.) Cheap and
+                // idempotent, and a no-op when saving is off.
+                self.flush_chat_history(idx);
                 self.chat_ui.scroll_at_bottom = true;
                 let stream_task = self.spawn_chat_stream_for(idx);
                 return Task::batch(vec![chat_scroll_to_end(), stream_task]);
             }
             // Routed here by `handle_ai`; anything else is a
             // grouping mistake rather than a runtime case.
-            _ => {}
+            m => return crate::dispatch::unrouted(m),
         }
         Task::none()
     }
