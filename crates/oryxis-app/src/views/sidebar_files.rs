@@ -4,7 +4,9 @@
 //! follow-cwd pin, hidden/refresh/expand actions and the entry list.
 //! Rows follow the History tab's conventions: hover-revealed floating
 //! Copy path action, click = select (double-click folder = enter),
-//! all recorded into the sidebar keynav layer.
+//! all recorded into the sidebar keynav layer. The keynav slot keeps
+//! the direct action (folders navigate, files copy their path): the
+//! ring has no double-press gesture, so Enter must not need one.
 
 use iced::border::Radius;
 use iced::widget::{column, container, text, MouseArea, Space};
@@ -250,14 +252,18 @@ impl Oryxis {
                 ));
                 pos += 1;
             }
-            // ".." row, hidden at the root.
+            // ".." row, hidden at the root. Going up stays a single
+            // click (and a single Enter): there is nothing on the
+            // parent row worth selecting first.
             if let Some(parent) = files_parent_dir(&files.path) {
+                let up = Message::SidebarFiles(SidebarFilesMessage::SidebarFilesNavigate(parent));
                 list = list.push(self.files_row(
                     "..",
                     true,
                     false,
                     0,
-                    Message::SidebarFiles(SidebarFilesMessage::SidebarFilesNavigate(parent)),
+                    up.clone(),
+                    up,
                     None,
                     pos,
                 ));
@@ -311,16 +317,25 @@ impl Oryxis {
                     pos += 1;
                     continue;
                 }
-                let primary = Message::SidebarFiles(SidebarFilesMessage::SidebarFilesSelectRow(
+                let press = Message::SidebarFiles(SidebarFilesMessage::SidebarFilesSelectRow(
                     full.clone(),
                     entry.is_dir,
                 ));
+                // The ring's Enter skips the selection step: folders
+                // navigate, files copy their path (with the toast as
+                // feedback), as before click-select existed.
+                let key_activate = if entry.is_dir {
+                    Message::SidebarFiles(SidebarFilesMessage::SidebarFilesNavigate(full.clone()))
+                } else {
+                    Message::Sftp(SftpMessage::SftpCopyPath(full.clone()))
+                };
                 list = list.push(self.files_row(
                     &entry.name,
                     entry.is_dir,
                     entry.is_symlink,
                     entry.size,
-                    primary,
+                    press,
+                    key_activate,
                     Some(full),
                     pos,
                 ));
@@ -366,10 +381,11 @@ impl Oryxis {
         }
     }
 
-    /// One browser row, recorded into the sidebar keynav layer (Enter =
-    /// the row's primary: folders navigate, files copy their path).
-    /// `full_path` enables the hover-revealed Copy path action; the
-    /// ".." row has none.
+    /// One browser row. A mouse press fires `press` (select; a quick
+    /// second press on a folder enters it), while the keynav slot
+    /// records `key_activate` (Enter = the direct action: folders
+    /// navigate, files copy their path). `full_path` enables the
+    /// hover-revealed Copy path action; the ".." row has none.
     #[allow(clippy::too_many_arguments)]
     fn files_row<'a>(
         &'a self,
@@ -377,7 +393,8 @@ impl Oryxis {
         is_dir: bool,
         is_symlink: bool,
         size: u64,
-        primary: Message,
+        press: Message,
+        key_activate: Message,
         full_path: Option<String>,
         pos: usize,
     ) -> Element<'a, Message> {
@@ -458,7 +475,7 @@ impl Oryxis {
         let mut area = MouseArea::new(row_el)
             .on_enter(Message::SidebarFiles(SidebarFilesMessage::SidebarFilesRowHovered(pos)))
             .on_exit(Message::SidebarFiles(SidebarFilesMessage::SidebarFilesRowUnhovered))
-            .on_press(primary.clone())
+            .on_press(press)
             .interaction(iced::mouse::Interaction::Pointer);
         // Right-click opens the row's context menu (Open / Open SFTP
         // session here / Copy path / Copy name); the ".." row has none.
@@ -468,7 +485,7 @@ impl Oryxis {
         }
 
         self.sidebar_nav_slot(
-            crate::keynav::SidebarRow::list_button(primary),
+            crate::keynav::SidebarRow::list_button(key_activate),
             TerminalSidebarTab::Files,
             6.0,
             area.into(),
