@@ -47,10 +47,7 @@ impl Oryxis {
                     pane.files.push_nav(previous);
                 }
                 pane.files.entries = entries;
-                // The listing replaced all rows, so any old selection
-                // is stale; the ".." row is the only safe default.
-                pane.files.selected = None;
-                pane.files.last_click = None;
+                prune_selection(&mut pane.files, &path);
                 // Mount is where the stored, host-keyed history comes back
                 // (the per-pane list is wiped on disconnect on purpose),
                 // and where this visit joins it.
@@ -81,10 +78,7 @@ impl Oryxis {
                     pane.files.push_nav(previous);
                 }
                 pane.files.entries = entries;
-                // The listing replaced all rows, so any old selection
-                // is stale; the ".." row is the only safe default.
-                pane.files.selected = None;
-                pane.files.last_click = None;
+                prune_selection(&mut pane.files, &path);
                 self.record_files_recent(pane_id, &path);
                 // The shell may have moved again while this listing was
                 // in flight; chase it so follow never sticks one step
@@ -109,5 +103,20 @@ impl Oryxis {
             m => return crate::dispatch::unrouted(m),
         }
         Task::none()
+    }
+}
+
+/// A listing replaced the rows: the double-click stamp is stale by
+/// definition, and the selection survives only when its entry is
+/// still present (a same-directory refresh, an op_then_list
+/// completion); a listing of any other directory drops it.
+fn prune_selection(files: &mut crate::state::PaneFiles, path: &str) {
+    files.last_click = None;
+    let keep = files
+        .selected
+        .as_deref()
+        .is_some_and(|s| files.entries.iter().any(|e| files_join(path, &e.name) == s));
+    if !keep {
+        files.selected = None;
     }
 }

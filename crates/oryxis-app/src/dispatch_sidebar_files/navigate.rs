@@ -64,8 +64,9 @@ impl Oryxis {
                     return Task::none();
                 };
                 pane.files.error = None;
-                pane.files.selected = None;
-                pane.files.last_click = None;
+                // The selection is deliberately kept: the rows stay on
+                // screen while the re-list is in flight, and the prune
+                // on arrival keeps it only if its entry survived.
                 match (&pane.files.client, pane.files.path.is_empty()) {
                     // Mounted: re-list the current directory.
                     (Some(client), false) => {
