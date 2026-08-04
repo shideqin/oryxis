@@ -265,6 +265,7 @@ impl Oryxis {
                     up.clone(),
                     up,
                     None,
+                    false,
                     pos,
                 ));
                 pos += 1;
@@ -329,6 +330,7 @@ impl Oryxis {
                 } else {
                     Message::Sftp(SftpMessage::SftpCopyPath(full.clone()))
                 };
+                let is_selected = files.selected.as_deref() == Some(full.as_str());
                 list = list.push(self.files_row(
                     &entry.name,
                     entry.is_dir,
@@ -337,6 +339,7 @@ impl Oryxis {
                     press,
                     key_activate,
                     Some(full),
+                    is_selected,
                     pos,
                 ));
                 pos += 1;
@@ -396,16 +399,11 @@ impl Oryxis {
         press: Message,
         key_activate: Message,
         full_path: Option<String>,
+        selected: bool,
         pos: usize,
     ) -> Element<'a, Message> {
         let c = OryxisColors::t();
         let hovered = self.hover.files_row == Some(pos);
-        let selected = full_path.as_ref().is_some_and(|fp| {
-            self.active_tab
-                .and_then(|i| self.tabs.get(i))
-                .and_then(|t| t.active().files.selected.as_ref())
-                .is_some_and(|s| s == fp)
-        });
 
         let mut cells: Vec<Element<'a, Message>> = vec![
             crate::views::sftp::file_icon(name, is_dir, is_symlink).into(),

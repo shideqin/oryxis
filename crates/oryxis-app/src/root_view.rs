@@ -107,13 +107,15 @@ impl Oryxis {
         // inside the terminal area is invisible from the vault views.
         // The lock screen deliberately drops it, a background session's
         // notification must not leak onto a locked UI.
-        // Always wrap in a Stack — even when the toast is absent — so
+        // Always wrap in a Stack, even when the toast is absent, so
         // the root widget type never changes and scrollable positions
-        // survive the view rebuild.
+        // survive the view rebuild. The placeholder stays Shrink-sized
+        // (the repo's void-Space discipline): a Fixed(0.0) child is
+        // exactly the shape that once made child counts vary.
         let composed = if matches!(self.vault_ui.state, VaultState::Unlocked) {
             let overlay = self
                 .toast_overlay()
-                .unwrap_or_else(|| iced::widget::Space::new().width(0).height(0).into());
+                .unwrap_or_else(|| iced::widget::Space::new().into());
             iced::widget::Stack::new()
                 .push(composed)
                 .push(overlay)

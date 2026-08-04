@@ -32,9 +32,9 @@ impl Oryxis {
                 };
                 let now = std::time::Instant::now();
                 let is_double = pane.files.last_click.as_ref().is_some_and(
-                    |(t, p, _)| p == &path && now.duration_since(*t) < DOUBLE_CLICK_WINDOW,
+                    |(t, p)| p == &path && now.duration_since(*t) < DOUBLE_CLICK_WINDOW,
                 );
-                pane.files.last_click = Some((now, path.clone(), is_dir));
+                pane.files.last_click = Some((now, path.clone()));
                 pane.files.selected = Some(path.clone());
                 if is_double && is_dir {
                     pane.files.last_click = None;

@@ -207,9 +207,9 @@ pub(crate) struct PaneFiles {
     /// Full remote path of the currently selected row, if any.
     /// Cleared on navigation / mount / disconnect.
     pub selected: Option<String>,
-    /// Timestamp + (path, is_dir) of the last single click, for
-    /// double-click detection (matching the SFTP pane's rule).
-    pub last_click: Option<(std::time::Instant, String, bool)>,
+    /// Timestamp + path of the last single click, for double-click
+    /// detection (matching the SFTP pane's rule).
+    pub last_click: Option<(std::time::Instant, String)>,
 }
 
 impl PaneFiles {
