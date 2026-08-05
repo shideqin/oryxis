@@ -6,46 +6,51 @@ use iced::widget::{button, column, container, text, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
 use crate::app::{SettingsMessage, TabsMessage, TerminalMessage, Message, Oryxis};
+use crate::tab_conn_state::TabConnState;
 use crate::theme::OryxisColors;
 
 impl Oryxis {
     pub(crate) fn view_status_bar(&self) -> Element<'_, Message> {
-        let (status_text, status_color) = if let Some(idx) = self.active_tab {
-            if let Some(tab) = self.tabs.get(idx) {
-                let pane = tab.active();
-                // Privacy Mode redacts the label here too (issue #78):
-                // the status bar sits in every screenshot. No hover
-                // reveal on a passive text line; the tab strip has one.
-                let label = self.privacy_display_label(
-                    &tab.label,
-                    &tab.label,
-                    &self.privacy_terms(),
-                );
-                let display_label = label.trim_end_matches(" (disconnected)");
-                // Is a connect in flight for THIS tab?
-                let connecting_this_tab = self.connecting.as_ref()
-                    .map(|c| c.tab_idx == idx || c.pane_id == pane.id)
-                    .unwrap_or(false);
-                let was_remote = matches!(
-                    pane.origin,
-                    crate::state::PaneOrigin::Host(_)
-                        | crate::state::PaneOrigin::QuickHost(_)
-                        | crate::state::PaneOrigin::Ephemeral
-                );
-                if connecting_this_tab {
-                    (format!("● {}, {}", display_label, crate::i18n::t("connecting_status")), OryxisColors::t().warning)
-                } else if pane.connecting {
-                    (format!("● {}, {}", display_label, crate::i18n::t("disconnected_reconnecting")), OryxisColors::t().warning)
-                } else if pane.session.as_ref().map(|s| s.is_alive()).unwrap_or(false) {
-                    (format!("● {}, {}", display_label, crate::i18n::t("status_bar_connected")), OryxisColors::t().success)
-                } else if was_remote {
-                    (format!("● {}, {}", display_label, crate::i18n::t("disconnected_idle")), OryxisColors::t().error)
-                } else {
-                    // Local shell (no remote session): label only, no status.
-                    (format!("● {}", display_label), OryxisColors::t().text_secondary)
+        // The segment used to hard-code "connected" for any active tab,
+        // so a dialing, a dead and an established session all read the
+        // same. It now spells out the tab's real state, derived by the
+        // same `tab_conn_state` the strip's status dot reads (one
+        // authority, so the two can't disagree on one frame).
+        let (status_text, status_color) = if let Some(idx) = self.active_tab
+            && let Some(tab) = self.tabs.get(idx)
+        {
+            // Privacy Mode redacts the label here too (issue #78):
+            // the status bar sits in every screenshot. No hover
+            // reveal on a passive text line; the tab strip has one.
+            let label = self.privacy_display_label(
+                &tab.label,
+                &tab.label,
+                &self.privacy_terms(),
+            );
+            // The "(disconnected)" suffix is the strip's own way of
+            // saying what this segment now says in full; keeping both
+            // reads as "host (disconnected), disconnected".
+            let label = label.trim_end_matches(" (disconnected)");
+            let c = OryxisColors::t();
+            // Status words are lower-case state labels ("connected"),
+            // not sentences, so they sit after the comma the way the
+            // original segment read.
+            let with = |key: &str, color: Color| {
+                (format!("● {}, {}", label, crate::i18n::t(key)), color)
+            };
+            match self.tab_conn_state(idx) {
+                TabConnState::Connecting => with("status_bar_connecting", c.warning),
+                TabConnState::Reconnecting => {
+                    with("status_bar_reconnecting", c.warning)
                 }
-            } else {
-                (crate::i18n::t("no_active_connection").into(), OryxisColors::t().text_muted)
+                TabConnState::Connected => with("status_bar_connected", c.success),
+                TabConnState::Lost => with("status_bar_disconnected", c.error),
+                // A local shell has no connection to report, and a
+                // dormant pinned tab hasn't dialed yet: name the tab and
+                // claim nothing.
+                TabConnState::Idle => {
+                    (format!("● {}", label), c.text_secondary)
+                }
             }
         } else {
             (crate::i18n::t("no_active_connection").into(), OryxisColors::t().text_muted)
