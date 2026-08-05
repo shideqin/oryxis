@@ -10,8 +10,9 @@ use crate::theme::OryxisColors;
 
 impl Oryxis {
     pub(crate) fn view_status_bar(&self) -> Element<'_, Message> {
-        let status_text = if let Some(idx) = self.active_tab {
+        let (status_text, status_color) = if let Some(idx) = self.active_tab {
             if let Some(tab) = self.tabs.get(idx) {
+                let pane = tab.active();
                 // Privacy Mode redacts the label here too (issue #78):
                 // the status bar sits in every screenshot. No hover
                 // reveal on a passive text line; the tab strip has one.
@@ -20,18 +21,34 @@ impl Oryxis {
                     &tab.label,
                     &self.privacy_terms(),
                 );
-                format!("● {}, {}", label, crate::i18n::t("status_bar_connected"))
+                let display_label = label.trim_end_matches(" (disconnected)");
+                // Is a connect in flight for THIS tab?
+                let connecting_this_tab = self.connecting.as_ref()
+                    .map(|c| c.tab_idx == idx || c.pane_id == pane.id)
+                    .unwrap_or(false);
+                let was_remote = matches!(
+                    pane.origin,
+                    crate::state::PaneOrigin::Host(_)
+                        | crate::state::PaneOrigin::QuickHost(_)
+                        | crate::state::PaneOrigin::Ephemeral
+                );
+                if connecting_this_tab {
+                    (format!("● {}, {}", display_label, crate::i18n::t("connecting_status")), OryxisColors::t().warning)
+                } else if pane.connecting {
+                    (format!("● {}, {}", display_label, crate::i18n::t("disconnected_reconnecting")), OryxisColors::t().warning)
+                } else if pane.session.as_ref().map(|s| s.is_alive()).unwrap_or(false) {
+                    (format!("● {}, {}", display_label, crate::i18n::t("status_bar_connected")), OryxisColors::t().success)
+                } else if was_remote {
+                    (format!("● {}, {}", display_label, crate::i18n::t("disconnected_idle")), OryxisColors::t().error)
+                } else {
+                    // Local shell (no remote session): label only, no status.
+                    (format!("● {}", display_label), OryxisColors::t().text_secondary)
+                }
             } else {
-                crate::i18n::t("no_active_connection").into()
+                (crate::i18n::t("no_active_connection").into(), OryxisColors::t().text_muted)
             }
         } else {
-            crate::i18n::t("no_active_connection").into()
-        };
-
-        let status_color = if self.active_tab.is_some() {
-            OryxisColors::t().success
-        } else {
-            OryxisColors::t().text_muted
+            (crate::i18n::t("no_active_connection").into(), OryxisColors::t().text_muted)
         };
 
         // 1 px hairline on top only, iced's Border has a single width that
