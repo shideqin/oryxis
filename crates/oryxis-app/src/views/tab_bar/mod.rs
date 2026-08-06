@@ -671,7 +671,6 @@ impl Oryxis {
             };
             Message::Tabs(TabsMessage::TabBarWheel(y))
         })
-        .on_exit(Message::Tabs(TabsMessage::StripUnhovered))
         .into();
 
         // `⋯` jump-to button, shown only when the strip is compressed

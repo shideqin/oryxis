@@ -262,8 +262,7 @@ impl Oryxis {
         // never start a window move. The MouseArea wrapper is ALWAYS
         // present (handlers only bound in hidden-bar mode) so the
         // hide toggle never changes this subtree's widget type.
-        let mut area = MouseArea::new(bar)
-            .on_exit(Message::Tabs(TabsMessage::StripUnhovered));
+        let mut area = MouseArea::new(bar);
         if hide_top_bar {
             area = area
                 .on_press(Message::Tabs(TabsMessage::WindowDrag))
