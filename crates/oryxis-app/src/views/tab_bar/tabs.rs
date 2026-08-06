@@ -380,6 +380,7 @@ pub(crate) fn settings_tab<'a>(
     // just what reveals the X.
     MouseArea::new(tab_btn)
         .on_enter(Message::Tabs(TabsMessage::SettingsTabHovered))
+        .on_exit(Message::Tabs(TabsMessage::SettingsTabUnhovered))
         .into()
 }
 
