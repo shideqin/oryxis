@@ -13,6 +13,10 @@ pub enum TabsMessage {
     ConfirmCloseGroupedTab(usize),
     TabHovered(usize),
     TabUnhovered,
+    /// Cursor left the tab strip entirely — clears all strip hover states
+    /// (terminal, settings) at once. Individual tab exit events are
+    /// unreliable when inner widgets swap (badge ↔ close button).
+    StripUnhovered,
     /// Cursor entered the trailing drop zone (the `+` button area) during an
     /// active tab-reorder drag: slide the dragged tab to the end of its
     /// partition, the one slot the live-slide can't otherwise reach.

@@ -91,6 +91,7 @@ impl Oryxis {
                 | TabsMessage::SettingsTabUnhovered
                 | TabsMessage::TabHovered(..)
                 | TabsMessage::TabUnhovered
+                | TabsMessage::StripUnhovered
             ) => self.handle_tabs_hover(m),
             m @ (
                 TabsMessage::SelectTab(..)

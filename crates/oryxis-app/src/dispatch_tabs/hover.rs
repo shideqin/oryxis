@@ -68,6 +68,10 @@ impl Oryxis {
             TabsMessage::TabUnhovered => {
                 self.hover.tab = None;
             }
+            TabsMessage::StripUnhovered => {
+                self.hover.tab = None;
+                self.hover.settings_tab = false;
+            }
             // Routed here by the parent; anything else is a
             // grouping mistake, not a runtime case.
             m => return crate::dispatch::unrouted(m),
