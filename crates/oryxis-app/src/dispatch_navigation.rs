@@ -190,6 +190,8 @@ impl Oryxis {
             }
             NavigationMessage::OpenGroup(gid) => {
                 self.active_group = Some(gid);
+                self.active_view = View::Dashboard;
+                self.active_tab = None;
                 self.host_search.clear();
                 // Auto-trigger resolve when the user opens a dynamic
                 // group, saves an extra click. Re-resolve when there's

@@ -54,10 +54,14 @@ impl Oryxis {
                 | View::KnownHosts
                 | View::History
         );
+        let on_press = match self.active_group {
+            Some(gid) => Message::Navigation(NavigationMessage::OpenGroup(gid)),
+            None => Message::Navigation(NavigationMessage::ChangeView(View::Dashboard)),
+        };
         area_tab(
             "",
             iced_fonts::lucide::house(),
-            View::Dashboard,
+            on_press,
             nav_active && in_vault_area,
             solid_fill,
         )

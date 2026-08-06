@@ -600,7 +600,10 @@ impl Oryxis {
             section("vault", hk_hosts),
             indent(item(
                 "hosts",
-                Message::Navigation(NavigationMessage::ChangeView(View::Dashboard)),
+                match self.active_group {
+                    Some(gid) => Message::Navigation(NavigationMessage::OpenGroup(gid)),
+                    None => Message::Navigation(NavigationMessage::ChangeView(View::Dashboard)),
+                },
                 self.hotkey_label_for_vault_slot(1)
             )),
             indent(item(
