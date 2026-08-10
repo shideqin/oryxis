@@ -28,9 +28,9 @@ main ones:
 
 **A new crate lands with its documentation in the same change.** Same discipline as i18n keys, keynav and the settings index: three places describe the workspace and they drift silently, because nothing compiles them.
 
-- `CLAUDE.md` (this table) — one row, the agent-facing role.
-- `docs/ARCHITECTURE.md` — the `## Crates` table AND the layer diagram above it (a crate absent from the diagram reads as "not part of the system"), plus the crate count in the opening paragraph.
-- `CONTRIBUTING.md` — the crate count in the "map the N-crate workspace" line, and the engine list next to it if the new crate is one a contributor would plausibly start in.
+- `CLAUDE.md` (this table): one row, the agent-facing role.
+- `docs/ARCHITECTURE.md`: the `## Crates` table AND the layer diagram above it (a crate absent from the diagram reads as "not part of the system"), plus the crate count in the opening paragraph.
+- `CONTRIBUTING.md`: the crate count in the "map the N-crate workspace" line, and the engine list next to it if the new crate is one a contributor would plausibly start in.
 
 The count is workspace MEMBERS, not directories under `crates/`: `oryxis-gif` is deliberately excluded from the workspace (its render stack would land in every `cargo check --workspace`), so it is 24 members across 25 directories. Verify with the `members` list in the root `Cargo.toml` rather than `ls`.
 
@@ -125,7 +125,7 @@ the real system clipboard.
   same private fields. Tests mirror this under `store/tests/`.
 - Secrets (passwords, private keys) live in their own `BLOB` columns,
   encrypted per-field with the master key. Plaintext columns (JSON,
-  text fields) **must not** carry credentials — the test
+  text fields) **must not** carry credentials; the test
   `proxy_password_does_not_leak_into_proxy_column` enforces this for
   proxies.
 - API for password fields follows a tri-state model:
@@ -137,18 +137,18 @@ the real system clipboard.
 
 A connection can express its proxy in two ways:
 
-1. **Inline** — `Connection.proxy: Option<ProxyConfig>` (host/port/user
+1. **Inline**: `Connection.proxy: Option<ProxyConfig>` (host/port/user
    in JSON; password in the encrypted `proxy_password` column).
-2. **Identity reference** — `Connection.proxy_identity_id: Option<Uuid>`
+2. **Identity reference**: `Connection.proxy_identity_id: Option<Uuid>`
    pointing at a `proxy_identities` row.
 
 `Vault::resolve_proxy(&Connection)` returns the effective `ProxyConfig`
 with password hydrated. **Identity wins over inline** when both are
 set. A dangling identity (id no longer exists) resolves to `None` with
-a warning — never an error, so a deleted proxy doesn't break every
+a warning, never an error, so a deleted proxy doesn't break every
 host that referenced it.
 
-The SSH engine consumes `Connection.proxy` only — callers
+The SSH engine consumes `Connection.proxy` only; callers
 (`dispatch_ssh.rs`, `mcp/handlers.rs`) collapse the resolved value
 into `conn.proxy` just before handing the connection off.
 
@@ -228,25 +228,25 @@ merge, see the `menu_cjk_covers_picker_names` test).
 
 `crate::i18n::is_rtl_layout()` resolves the user's `LayoutDirection`
 setting (`Auto` defers to `Language::is_rtl()`; explicit
-`LeftToRight` / `RightToLeft` overrides). Use this signal — never
-match on language directly — when writing direction-aware code.
+`LeftToRight` / `RightToLeft` overrides). Use this signal, never a
+direct match on language, when writing direction-aware code.
 
 Two `widgets` helpers cover the common cases:
 
 - `widgets::dir_row(items)` builds a `Row` whose children are
   reversed under RTL. Use anywhere the *physical* placement of
-  widgets should mirror — sidebar/content split, leading/trailing
+  widgets should mirror: sidebar/content split, leading/trailing
   icon pairs, toolbar action buttons. Don't use `iced::widget::row!`
-  for these — the macro can't be reversed after construction.
+  for these; the macro can't be reversed after construction.
 - `widgets::dir_align_x()` returns `Horizontal::Right` under RTL
   and `Horizontal::Left` otherwise. Apply to `Column::align_x()` /
   `Container::align_x()` when a `Length::Fill` child should hug the
   *leading* edge instead of the physical left edge. Note that the
-  parent column / container also needs `Length::Fill` width — without
+  parent column / container also needs `Length::Fill` width: without
   slack to align inside, the alignment has no effect.
 
 For the keychain split-button "+ ADD ▼" pattern, the rounded outer
-corners need to swap sides under RTL too — compute `Radius` from
+corners need to swap sides under RTL too; compute `Radius` from
 `is_rtl_layout()` rather than hard-coding LTR corner positions.
 
 iced doesn't auto-flip text alignment in `Length::Fill` containers,
@@ -261,10 +261,10 @@ position remains physical-right and isn't fixable from the iced
 Two NSIS scripts in `resources/`, both parametrized with
 `/DVERSION /DARCH /DBINPATH`:
 
-- `installer.nsi` — system, `$PROGRAMFILES64\Oryxis`,
+- `installer.nsi`: system, `$PROGRAMFILES64\Oryxis`,
   `RequestExecutionLevel admin`, `HKLM` registry. Output:
   `oryxis-setup-<arch>.exe`. This is what `winget install` targets.
-- `installer-user.nsi` — per-user, `$LOCALAPPDATA\Programs\Oryxis`,
+- `installer-user.nsi`: per-user, `$LOCALAPPDATA\Programs\Oryxis`,
   `RequestExecutionLevel user`, `HKCU` registry. Output:
   `oryxis-user-setup-<arch>.exe`. Detects existing system install on
   `.onInit` and warns; never auto-uninstalls (would need elevation
@@ -287,14 +287,14 @@ installers run under x86 emulation on install but lay down native
 ARM64 binaries.
 
 `PATH` is managed via the EnVar plugin (pinned `v0.3.1` from
-`GsNSIS/EnVar`). Don't roll PATH manipulation by hand —
+`GsNSIS/EnVar`). Don't roll PATH manipulation by hand:
 `WriteRegExpandStr` truncates at `${NSIS_MAX_STRLEN}` (1024 chars).
 Always `EnVar::SetHKLM` (system) or `EnVar::SetHKCU` (per-user)
 before each `AddValue`/`DeleteValue` call.
 
 The auto-updater (`update.rs::launch_installer`) uses `ShellExecuteW`
 with `verb=NULL` so the installer manifest controls UAC. Don't go
-back to `Command::new(path).spawn()` — it returns
+back to `Command::new(path).spawn()`; it returns
 `ERROR_ELEVATION_REQUIRED` (740) on the system installer.
 `pick_asset` checks `is_per_user_install()` (current_exe inside
 `%LOCALAPPDATA%`) to choose between system and per-user
@@ -303,7 +303,7 @@ exclude so it doesn't grab the wrong file.
 
 ### Iced patterns specific to the wilsonglasser fork
 
-- `pick_list(selected, options, mapper).on_select(callback)` — the
+- `pick_list(selected, options, mapper).on_select(callback)`: the
   fork's API is 4-step (mapper closure converts `&T` → `String` for
   display; `on_select` is a separate chained call). Don't try the
   upstream 3-arg form.
@@ -343,7 +343,7 @@ Rules when adding messages:
   `Editor*` env-var / port-forward fields are matched in `dispatch_mcp`
   but live in `EditorMessage`).
 - **Keep variant names verbatim inside the sub-enum** (no prefix strip),
-  unless *every* variant shares one prefix — then strip it, because
+  unless *every* variant shares one prefix, then strip it, because
   `clippy::enum_variant_names` fires on a uniform prefix. Four domains
   stripped prefixes during the conversion: `tray` (`TrayMessage::
   MenuEvent`), `onboarding`, `player` (`SessionPlayer*` dropped,
@@ -358,7 +358,7 @@ Rules when adding messages:
   their variants need; prefer fully-qualified `crate::state::…` /
   `uuid::Uuid` in bodies to keep imports minimal. Variants carrying
   `Box<Message>` (envelopes) import `use super::Message;`.
-- **Domain routers are exhaustive per-variant matches** — no `_ => {}`
+- **Domain routers are exhaustive per-variant matches**: no `_ => {}`
   tail, no `Err`-fallthrough chain. A multi-file domain routes each
   variant group straight to its owning sub-handler
   (`m @ (X::A | X::B(..)) => self.handle_x_sub(m)
@@ -368,7 +368,7 @@ Rules when adding messages:
   a silent drop). Adding a variant without an arm is a compile error.
   References: `handle_sftp_domain` (`dispatch_sftp/mod.rs`),
   `handle_settings`, `handle_keys`. Exception: `handle_sftp_transfers`
-  declines wholesale when no SFTP tab owns the continuation — its group
+  declines wholesale when no SFTP tab owns the continuation; its group
   drops quietly by design.
 
 The mechanical per-domain conversion tooling and its hazards (the
@@ -430,7 +430,7 @@ keeps the pure fit geometry; the app stacks the two per pane in
 drawn inside the grid's frame: within one render layer both iced
 renderers draw by primitive KIND (quads → meshes → images → text), so a
 picture in the same frame sits over every `fill_rectangle` no matter the
-call order — it buried the fade veil, the selection, the cursor and the
+call order: it buried the fade veil, the selection, the cursor and the
 cell backgrounds, and only the glyphs survived (the original "Fade image
 does nothing" bug). The fade itself is baked into the picture as
 `opacity = 1 - dim`, never veiled over it with a translucent fill (a
@@ -906,7 +906,7 @@ accepts keys pushed in by tools like KeePassXC. Module:
 
 ## Settings table
 
-Live in the SQLite `settings` table — accessed via
+Live in the SQLite `settings` table, accessed via
 `vault.get_setting("key")` / `vault.set_setting("key", value)`. Values
 are `String`. Booleans use `"true"` / `"false"`. The vault opens
 without unlocking for settings reads, so the lock screen can hydrate
@@ -1474,7 +1474,7 @@ direction (builds on the multi-vault draft, vault = collection):
   approaches exist, pick the more correct/durable one even if it's
   more work, or surface the trade-off explicitly rather than silently
   choosing the easy one.
-- Keep CRUD APIs consistent with the `identities` family — same
+- Keep CRUD APIs consistent with the `identities` family: same
   signatures, same behaviors (preserve-vs-clear semantics, cascade
   NULL on delete).
 - Match the file's existing style by hand. Don't rely on rustfmt for
