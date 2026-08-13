@@ -397,6 +397,37 @@ label) or the reveal falls back to just opening the section. Tests in
 `settings_index.rs` assert every key resolves in English and no
 (section, key) pair repeats.
 
+### Glyph rendering: raw coverage, merged runs (convention)
+
+Two facts about how the grid paints text, both of which look like bugs
+until you know them, and both measured against a row of 41 identical
+`l` glyphs (peak coverage of the stem, 1.00 = the full foreground):
+
+- **We rasterize RAW COVERAGE and every other stack does not.** swash
+  hands us an 8-bit alpha mask and the canvas composites it as-is.
+  macOS runs glyphs through Core Graphics with `AppleFontSmoothing` on
+  by default, which in crossfont's own words (the font crate alacritty
+  uses) "increases the stroke width". So the same file at the same size
+  reads LIGHTER here than in a terminal that rasterizes through the OS,
+  which is what issue #155 was really reporting. The answer is
+  `TextThickness` (Settings > Terminal, default Medium): the glyph is
+  stamped twice a fraction of a pixel apart, which is the same
+  operation. Do NOT try to fix this in the shader or the atlas, they
+  belong to `cryoglyph`, a third-party dep pinned by rev, not to our
+  iced fork.
+- **A merged run is positioned by the SHAPER, not by `cell_width`.**
+  `draw.rs` coalesces up to `MAX_RUN_LEN` contiguous same-colour ASCII
+  cells into one `fill_text`, so inside a run the glyphs advance by the
+  FONT's fractional advance (8.4 px at 14 px), not by our cell. Since
+  cosmic-text bins the subpixel phase into quarters, the same character
+  lands on a different phase per column: measured 0.61 / 0.80 / 0.86 /
+  1.00, mean 0.85. Rounding `cell_width` changes NOTHING (verified);
+  only per-glyph drawing would, and per-glyph at an integer cell pins
+  every stem to whatever phase the outline's side bearing produces
+  (uniform 0.61 for this font, i.e. worse). The dilation lifts the low
+  phases instead (mean 0.97) at one extra text primitive per run, which
+  is why it ships and the alacritty-style grid rewrite does not.
+
 ### Translucent terminal background (convention)
 
 `terminal_opacity` (Settings > Terminal, 100 = opaque) fades the
