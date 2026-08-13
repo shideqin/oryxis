@@ -401,7 +401,9 @@ label) or the reveal falls back to just opening the section. Tests in
 
 Two facts about how the grid paints text, both of which look like bugs
 until you know them, and both measured against a row of 41 identical
-`l` glyphs (peak coverage of the stem, 1.00 = the full foreground):
+`l` glyphs (peak coverage of the stem, 1.00 = the full foreground).
+`scripts/stem_contrast.py` runs that measurement through the harness,
+so re-run it before touching any of this rather than trusting the eye:
 
 - **We rasterize RAW COVERAGE and every other stack does not.** swash
   hands us an 8-bit alpha mask and the canvas composites it as-is.
