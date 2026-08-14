@@ -79,6 +79,7 @@ Command grammar (shared by ctl / REPL / `.ice` files,
 `harness/commands.rs`): any `.ice` instruction (`click "Text"`,
 `type "x"`, `type enter`, `expect "Text"`) plus `screenshot [name]`,
 `texts` (text dump with bounds = DOM inspector), `find "Text"`,
+`drop hover|leave` / `drop "/path"` (synthesized OS drag-and-drop),
 `wait <ms>`, `settle`, `timeout <ms>`, `status`, `reset [wipe]`,
 `save <path>`, `quit`. Responses are `== `-prefixed. `$HOME` is
 sandboxed (default `<tmp>/oryxis-harness`, persistent; `--home`
