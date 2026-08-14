@@ -864,7 +864,15 @@ multiplexed over the tab's live `client::Handle` via
   `dispatch_sidebar_files.rs`): per-PANE state in `Pane.files`
   (`PaneFiles`), lazily mounted, follows the shell's OSC 7 cwd
   (`pane.cwd`; manual navigation unpins, the pin re-enables). Every
-  entry point calls the idempotent `sidebar_files_sync()`. Reset on
+  entry point calls the idempotent `sidebar_files_sync()`. The backend
+  is `local_files::FilesClient` (issue #145): the pane's SFTP channel,
+  or the app's own filesystem for a LOCAL shell, behind one operation
+  set, so listing/navigation/rename/create/delete run unchanged over
+  both; transfer-shaped ops (download/upload/edit/properties-chmod/the
+  ⛶ promote) stay SFTP-only behind `FilesClient::sftp()` and their
+  menu items hide for local. The path helpers (`files_join` /
+  `files_parent_dir` / `files_basename`) detect `C:\` paths per call,
+  so a Windows local browser works without recompiling assumptions. Reset on
   disconnect (`reset_for_disconnect`, preferences survive). The ⛶
   action promotes to a full SFTP surface at the current directory via
   the one-shot `Oryxis.sftp_open_at_path` hint, consumed by
