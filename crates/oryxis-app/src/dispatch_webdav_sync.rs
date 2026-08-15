@@ -107,21 +107,10 @@ impl Oryxis {
         let Some(vault) = &self.vault else {
             return Task::none();
         };
-        // Group key from STORAGE, not the form field: the four snapshot
-        // transports share one `sync_sftp_passphrase` row, and a sibling
-        // transport's edit can leave this form stale. Sealing with a
-        // stale value pushes a snapshot the next session cannot decrypt
-        // (see `run_git_sync_round`).
-        let passphrase = match vault.get_sync_sftp_passphrase() {
-            Ok(Some(p)) => p,
-            Ok(None) => {
-                self.sync.webdav.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
-                return Task::none();
-            }
-            Err(e) => {
-                self.sync.webdav.status = Some(Err(e.to_string()));
-                return Task::none();
-            }
+        // Group key: the typed buffer when editing, else the stored value.
+        let Some(passphrase) = self.sync_round_passphrase() else {
+            self.sync.webdav.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
+            return Task::none();
         };
         // Argon2id derivation (~0.4 s) runs on a worker thread, not on
         // the UI thread (same reason as the Git transport).

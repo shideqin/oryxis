@@ -228,25 +228,12 @@ impl Oryxis {
         let Some(vault) = &self.vault else {
             return Task::none();
         };
-        // The group key comes from STORAGE, not the form field. The four
-        // snapshot transports share one encrypted `sync_sftp_passphrase`
-        // row, and the in-memory forms can go stale relative to it
-        // (typing in the SFTP card rewrites the shared row while the git
-        // form keeps its old value). Sealing with the stale form value
-        // would push a snapshot the next session cannot decrypt
-        // ("Decryption failed (wrong key?)"): a restart loads the stored
-        // value, not the form. Reading the stored key makes the push key
-        // and the post-restart key the same by construction.
-        let passphrase = match vault.get_sync_sftp_passphrase() {
-            Ok(Some(p)) => p,
-            Ok(None) => {
-                self.sync.git.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
-                return Task::none();
-            }
-            Err(e) => {
-                self.sync.git.status = Some(Err(e.to_string()));
-                return Task::none();
-            }
+        // Group key: the typed buffer when editing, else the stored value.
+        // The four transports share one row and one edit buffer, so there
+        // is no stale-form drift to guard against.
+        let Some(passphrase) = self.sync_round_passphrase() else {
+            self.sync.git.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
+            return Task::none();
         };
         // The Argon2id derivation (~0.4 s) runs inside the blocking
         // task, not on the UI thread: it used to freeze the app for

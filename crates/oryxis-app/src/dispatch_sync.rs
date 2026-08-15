@@ -11,6 +11,92 @@ use iced::Task;
 use crate::app::{Message, Oryxis, SyncMessage};
 
 impl Oryxis {
+    /// One edit of the shared snapshot-transport group passphrase (SFTP /
+    /// folder / Git / WebDAV all derive their key from the same stored
+    /// row). Two rules keep the group key from silently changing under
+    /// the existing snapshot:
+    ///
+    /// - The field starts EMPTY (the stored value never pre-fills it: a
+    ///   masked pre-filled passphrase turns every later keystroke into an
+    ///   append that silently swaps the key).
+    /// - Typing NEVER writes through to storage. The typed value is the
+    ///   round's key candidate, committed only when a round succeeds
+    ///   with it ([`Self::commit_sync_passphrase`]), so an accidental
+    ///   keystroke can't destroy the stored key.
+    ///
+    /// The per-keystroke comparison against the stored value powers the
+    /// "matches / differs" hint under the field.
+    fn set_sync_passphrase(&mut self, value: String) {
+        self.sync.passphrase_input.set(value.clone());
+        // An empty field says nothing (the user just cleared it, and may
+        // keep typing); only a non-empty typed value is compared against
+        // the stored passphrase for the live hint.
+        self.sync.passphrase_matches = if value.is_empty() {
+            None
+        } else {
+            match &self.vault {
+                Some(vault) if self.sync.passphrase_known => {
+                    match vault.get_sync_sftp_passphrase() {
+                        Ok(Some(stored)) => Some(stored == value),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        };
+    }
+
+    /// Abandon an open passphrase edit without committing: the typed
+    /// buffer is dropped and the read-only masked display returns.
+    /// Shared by the blur probe (a click outside the empty field), the
+    /// keynav Escape path and the settings Tab walk, all of which are
+    /// "the user left the field" signals.
+    pub(crate) fn exit_passphrase_edit(&mut self) {
+        self.sync.passphrase_input.clear();
+        self.sync.passphrase_matches = None;
+        self.sync.passphrase_editing = false;
+        self.sync.passphrase_field_id = None;
+    }
+
+    /// A snapshot round succeeded with the typed passphrase: it is now
+    /// the group key. Writing it here and nowhere else is what makes the
+    /// post-restart key equal to the key that sealed the fresh snapshot
+    /// (typing alone never touches storage). The edit is spent, so the
+    /// field returns to its empty read-only "saved" state.
+    fn commit_sync_passphrase(&mut self) {
+        if self.sync.passphrase_input.touched() {
+            if let Some(p) = self.sync.passphrase_input.resolve() {
+                if let Some(vault) = &self.vault {
+                    let _ = vault.set_sync_sftp_passphrase(p);
+                }
+                self.sync.passphrase_known = !p.is_empty();
+            }
+            self.sync.passphrase_input.clear();
+            self.sync.passphrase_matches = None;
+            self.sync.passphrase_editing = false;
+            self.sync.passphrase_field_id = None;
+        }
+    }
+
+    /// The group key for one snapshot round: the TYPED buffer when the
+    /// field has been typed into this session (committed to storage only
+    /// if the round succeeds with it, see [`Self::commit_sync_passphrase`]),
+    /// else the stored value. Typing never writes through, so an
+    /// accidental keystroke can't swap the key under the existing
+    /// snapshot. `None` = no usable passphrase (a cleared field, or none
+    /// stored); the caller shows the "set a passphrase" status and aborts.
+    pub(crate) fn sync_round_passphrase(&self) -> Option<String> {
+        if self.sync.passphrase_input.touched() {
+            let p = self.sync.passphrase_input.as_str().to_string();
+            (!p.is_empty()).then_some(p)
+        } else {
+            self.vault
+                .as_ref()
+                .and_then(|v| v.get_sync_sftp_passphrase().ok().flatten())
+                .filter(|p| !p.is_empty())
+        }
+    }
+
     pub(crate) fn handle_sync(
         &mut self,
         message: SyncMessage,
@@ -510,18 +596,60 @@ impl Oryxis {
                     let _ = vault.set_sync_webdav_password(&v);
                 }
             }
-            SyncMessage::WebdavPassphraseChanged(v) => {
-                let v = v.into_inner();
-                self.sync.webdav.passphrase = v.clone();
-                if let Some(vault) = &self.vault {
-                    // One group secret across every snapshot transport.
-                    let _ = vault.set_sync_sftp_passphrase(&v);
+            SyncMessage::PassphraseChanged(v) => {
+                self.set_sync_passphrase(v.into_inner());
+            }
+            SyncMessage::PassphraseChangeRequested(id) => {
+                // The read-only display hides the input until the user
+                // explicitly asks to change the group passphrase; edit
+                // mode starts with an empty buffer (the stored value
+                // never pre-fills it). Focus the fresh field so the
+                // first keystroke lands without a second click.
+                self.sync.passphrase_editing = true;
+                self.sync.passphrase_field_id = Some(id);
+                return crate::widgets::focus_input(iced::widget::Id::new(id));
+            }
+            SyncMessage::PassphraseBlurCheck => {
+                // A click landed while a passphrase edit was open. Two
+                // probes, both gated on an EMPTY buffer: a non-empty edit
+                // is mid-correction and survives any click elsewhere.
+                // 1. Geometry: the click against the field's last drawn
+                //    bounds (iced does not blur a text input on a
+                //    button/blank click, so position is the signal).
+                // 2. Focus: when the geometry is inconclusive, ask where
+                //    iced focus actually went.
+                if !self.sync.passphrase_input.as_str().is_empty() {
+                    return Task::none();
+                }
+                let bounds = self.sync.passphrase_field_bounds.get();
+                let pos = crate::subscription::live_mouse_position();
+                if bounds.width > 0.0 && !bounds.contains(pos) {
+                    self.exit_passphrase_edit();
+                    return Task::none();
+                }
+                let Some(field_id) = self.sync.passphrase_field_id else {
+                    return Task::none();
+                };
+                return iced::widget::operation::find_focused().map(move |focused| {
+                    Message::Sync(SyncMessage::PassphraseBlurChecked(
+                        focused.is_some_and(|id| id == iced::widget::Id::new(field_id)),
+                    ))
+                });
+            }
+            SyncMessage::PassphraseBlurChecked(still_on_field) => {
+                // Focus-probe fallback: an empty edit whose field lost
+                // iced focus is abandoned. Buffer content is consulted
+                // here (not in the probe) so a non-empty edit survives.
+                if !still_on_field && self.sync.passphrase_input.as_str().is_empty() {
+                    self.exit_passphrase_edit();
                 }
             }
             SyncMessage::WebdavSyncNow => return self.run_webdav_sync_round(),
             SyncMessage::WebdavRoundFinished(result) => {
                 self.sync.webdav.in_progress = false;
                 if result.is_ok() {
+                    // Commit the typed buffer only when the round succeeded.
+                    self.commit_sync_passphrase();
                     // The round merged on its own `VaultStore` handle,
                     // so the in-memory lists are stale until this.
                     self.load_data_from_vault();
@@ -538,18 +666,12 @@ impl Oryxis {
                     let _ = vault.set_setting("sync_git_remote", &v);
                 }
             }
-            SyncMessage::GitPassphraseChanged(v) => {
-                let v = v.into_inner();
-                self.sync.git.passphrase = v.clone();
-                if let Some(vault) = &self.vault {
-                    // One group secret across every snapshot transport.
-                    let _ = vault.set_sync_sftp_passphrase(&v);
-                }
-            }
             SyncMessage::GitSyncNow => return self.run_git_sync_round(),
             SyncMessage::GitRoundFinished(result) => {
                 self.sync.git.in_progress = false;
                 if result.is_ok() {
+                    // Commit the typed buffer only when the round succeeded.
+                    self.commit_sync_passphrase();
                     // A completed round proves `git` is on PATH; keep
                     // the card's cached probe current without re-spawning
                     // on every frame.
@@ -570,16 +692,6 @@ impl Oryxis {
                 self.sync.folder.path = v.clone();
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("sync_folder_path", &v);
-                }
-            }
-            SyncMessage::FolderPassphraseChanged(v) => {
-                let v = v.into_inner();
-                self.sync.folder.passphrase = v.clone();
-                if let Some(vault) = &self.vault {
-                    // Same encrypted setting the SFTP transport uses:
-                    // it is the same group secret, and keeping two
-                    // copies would let them drift into two groups.
-                    let _ = vault.set_sync_sftp_passphrase(&v);
                 }
             }
             SyncMessage::FolderPickDirectory => {
@@ -607,6 +719,8 @@ impl Oryxis {
             SyncMessage::FolderRoundFinished(result) => {
                 self.sync.folder.in_progress = false;
                 if result.is_ok() {
+                    // Commit the typed buffer only when the round succeeded.
+                    self.commit_sync_passphrase();
                     // The round merged on its OWN `VaultStore` handle,
                     // so every in-memory list is stale: whatever it
                     // pulled is on disk and invisible until this
@@ -623,13 +737,6 @@ impl Oryxis {
                 self.sync.sftp.remote_path = v.clone();
                 if let Some(vault) = &self.vault {
                     let _ = vault.set_setting("sync_sftp_remote_path", &v);
-                }
-            }
-            SyncMessage::SftpPassphraseChanged(v) => {
-                let v = v.into_inner();
-                self.sync.sftp.passphrase = v.clone();
-                if let Some(vault) = &self.vault {
-                    let _ = vault.set_sync_sftp_passphrase(&v);
                 }
             }
             SyncMessage::SnapshotTick => {
@@ -664,6 +771,8 @@ impl Oryxis {
             SyncMessage::SftpDone(result) => {
                 self.sync.sftp.in_progress = false;
                 if result.is_ok() {
+                    // Commit the typed buffer only when the round succeeded.
+                    self.commit_sync_passphrase();
                     // The merge ran on a separate vault handle, so the
                     // in-memory lists are stale: reload to reflect it.
                     self.load_data_from_vault();
