@@ -124,6 +124,18 @@ pub(crate) struct SyncState {
     /// the existing snapshot undecryptable until it matches again.
     /// `None` while the field is untouched or no passphrase is stored.
     pub(crate) passphrase_matches: Option<bool>,
+    /// The key an IN-FLIGHT round sealed its snapshot with, armed at the
+    /// start of the round and spent when it finishes: success stores it
+    /// as the group key, failure drops it. Committing this instead of
+    /// re-reading `passphrase_input` is what makes the stored key equal
+    /// the key the remote snapshot actually carries. Nothing freezes the
+    /// field while a round runs (`in_progress` only disables the button)
+    /// and a round costs an Argon2id derivation plus a network trip, so
+    /// a user still correcting the field would otherwise leave storage
+    /// holding a key the snapshot was never sealed with. `None` outside
+    /// a round, and for any round keyed from storage (nothing to
+    /// commit).
+    pub(crate) passphrase_sealed: Option<zeroize::Zeroizing<String>>,
     /// "Set up your own relay" wizard (Settings > Sync > P2P): inputs,
     /// generated-artifact format, and the reachability test state.
     pub(crate) relay_wizard: RelayWizardForm,
@@ -253,6 +265,7 @@ impl Default for SyncState {
             passphrase_field_id: None,
             passphrase_field_bounds: crate::widgets::new_bounds_cell(),
             passphrase_matches: None,
+            passphrase_sealed: None,
             relay_wizard: RelayWizardForm::default(),
             signaling_last: None,
         }

@@ -28,6 +28,7 @@ use iced::Task;
 use oryxis_vault::VaultStore;
 
 use crate::app::{Message, Oryxis, SyncMessage};
+use crate::dispatch_sync::SyncRoundTrigger;
 use crate::i18n::t;
 
 /// Snapshot filename appended when the URL names a collection. Same
@@ -90,7 +91,7 @@ impl Oryxis {
     ///
     /// Validates config while holding `&self`, then does the network and
     /// vault work off-thread, so the caller can fire it blindly.
-    pub(crate) fn run_webdav_sync_round(&mut self) -> Task<Message> {
+    pub(crate) fn run_webdav_sync_round(&mut self, trigger: SyncRoundTrigger) -> Task<Message> {
         if self.sync.webdav.in_progress {
             return Task::none();
         }
@@ -107,8 +108,9 @@ impl Oryxis {
         let Some(vault) = &self.vault else {
             return Task::none();
         };
-        // Group key: the typed buffer when editing, else the stored value.
-        let Some(passphrase) = self.sync_round_passphrase() else {
+        // Group key: the typed buffer for a manual round, else the
+        // stored value.
+        let Some(key) = self.sync_round_passphrase(trigger) else {
             self.sync.webdav.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
             return Task::none();
         };
@@ -123,6 +125,9 @@ impl Oryxis {
 
         self.sync.webdav.in_progress = true;
         self.sync.webdav.status = None;
+        // Remember what seals this snapshot, so the commit at the end
+        // writes that key and not whatever the field holds by then.
+        let passphrase = self.arm_round_passphrase(key);
         Task::perform(
             async move {
                 let secret = tokio::task::spawn_blocking(move || {

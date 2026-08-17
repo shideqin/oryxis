@@ -29,6 +29,7 @@ use iced::Task;
 use oryxis_vault::VaultStore;
 
 use crate::app::{Message, Oryxis, SyncMessage};
+use crate::dispatch_sync::SyncRoundTrigger;
 use crate::i18n::t;
 
 /// Snapshot filename inside the repository. Same name the other
@@ -211,7 +212,7 @@ pub(crate) fn git_availability_task() -> Task<Message> {
 
 impl Oryxis {
     /// Run one Git-sync round.
-    pub(crate) fn run_git_sync_round(&mut self) -> Task<Message> {
+    pub(crate) fn run_git_sync_round(&mut self, trigger: SyncRoundTrigger) -> Task<Message> {
         if self.sync.git.in_progress {
             return Task::none();
         }
@@ -228,10 +229,13 @@ impl Oryxis {
         let Some(vault) = &self.vault else {
             return Task::none();
         };
-        // Group key: the typed buffer when editing, else the stored value.
-        // The four transports share one row and one edit buffer, so there
-        // is no stale-form drift to guard against.
-        let Some(passphrase) = self.sync_round_passphrase() else {
+        // Group key: the typed buffer for a manual round, else the
+        // stored value. The four transports share one row and one edit
+        // buffer, so there is no stale-form drift to guard against; what
+        // still has to be guarded is drift in TIME (an auto round never
+        // reads the buffer) and IN FLIGHT (the key is armed below and
+        // committed by value, never re-read from the field).
+        let Some(key) = self.sync_round_passphrase(trigger) else {
             self.sync.git.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
             return Task::none();
         };
@@ -251,6 +255,9 @@ impl Oryxis {
 
         self.sync.git.in_progress = true;
         self.sync.git.status = None;
+        // Remember what seals this snapshot, so the commit at the end
+        // writes that key and not whatever the field holds by then.
+        let passphrase = self.arm_round_passphrase(key);
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || {

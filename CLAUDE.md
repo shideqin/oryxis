@@ -92,7 +92,15 @@ per-instruction timeout so a live PTY can't deadlock a test, and it
 accepts the pacing lines (`settle` / `wait` / `timeout` /
 `screenshot` / `#` comments) in committed tests, so terminal flows
 are batchable; canvas assertions stay screenshot-based (collect the
-shots dir as a CI artifact). `save_ice` records pacing lines too.
+shots dir as a CI artifact). `save_ice` records pacing lines too. It
+also takes the assertions (`absent`, plus `find` / `texts` / `clipboard`)
+and `reset [wipe]`, which is how a committed test asserts what a SECOND
+session sees: plain `reset` restarts the app keeping the sandbox vault,
+so a value hydrated from storage is testable without a second test.
+A test that needs a path on disk uses one INSIDE the sandbox
+(`~/.oryxis`, which the runner wipes per test and the app now expands),
+never `/tmp`: anything else outlives the run and makes the test depend
+on what an earlier run left behind.
 
 The emulator improvements live in the iced fork's `oryxis` branch
 (pushed 2026-07-10, rev e5be0795; local clone `/home/wilson/iced`,

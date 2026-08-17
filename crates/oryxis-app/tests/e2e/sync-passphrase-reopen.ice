@@ -43,8 +43,13 @@ settle
 # Folder card is up. Point it at an existing directory (the snapshot
 # is written as <dir>/oryxis-sync.bin), set the group passphrase and
 # run the first round so the snapshot is sealed with this key.
+# `~/.oryxis` is the SANDBOX vault directory ($HOME is redirected for
+# the whole run) and the batch runner wipes it before every test, so
+# the round below always starts from "no snapshot yet". A path outside
+# it (`/tmp`) would leave a real file on the machine and make the
+# record count below depend on whether an earlier run had written one.
 click #sync-folder-path
-type "/tmp"
+type "~/.oryxis"
 settle
 click #sync-folder-pass
 type "hunter2"

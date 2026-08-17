@@ -243,6 +243,11 @@ impl Oryxis {
                     self.sync.passphrase_matches = None;
                     self.sync.passphrase_editing = false;
                     self.sync.passphrase_field_id = None;
+                    // Same for a round's armed key: a locked vault cannot
+                    // store it anyway (`set_sync_sftp_passphrase` needs
+                    // the master key), so the round that comes back
+                    // finds nothing to commit.
+                    self.sync.passphrase_sealed = None;
                     // Land the keyboard in the unlock field so the user
                     // returning to the machine just types the password.
                     return crate::widgets::focus_input(iced::widget::Id::new(
