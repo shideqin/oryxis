@@ -159,7 +159,18 @@ impl Oryxis {
                 if let Some(tab_idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(tab_idx)
                 {
+                    // A composition interrupted mid-way (focus clicks onto
+                    // another pane) leaves stale preedit on the pane being
+                    // left; clear it or the overlay would re-show an
+                    // already-abandoned composition when the user returns.
+                    let old = tab.focused;
                     tab.focused = pane;
+                    if old != pane
+                        && let Some(old_pane) = tab.pane_grid.get(old)
+                        && let Ok(mut state) = old_pane.terminal.lock()
+                    {
+                        state.set_preedit(String::new());
+                    }
                 }
                 // Clicking a terminal pane takes the keyboard back from the
                 // sidebar ring (see write_input_to_tab for the rationale),
@@ -750,6 +761,24 @@ impl Oryxis {
                 {
                     let bytes = text.into_bytes();
                     self.write_input_to_tab(tab_idx, &bytes);
+                    // The commit ends any active composition; winit usually
+                    // sends an empty Preedit first, but clear defensively so
+                    // a stale preedit can never linger on the overlay.
+                    self.clear_focused_pane_preedit();
+                }
+            }
+            // IME composition (preedit) update, e.g. pinyin syllables. Stored
+            // on the focused pane's TerminalState; the `ime_host` widget
+            // reports it to the iced runtime on the next redraw so the
+            // over-the-spot overlay renders it at the caret. An empty string
+            // clears it. Purely visual: nothing is written to the PTY until
+            // the composition commits.
+            TerminalMessage::TerminalImePreedit(text) => {
+                if let Some(tab_idx) = self.active_tab
+                    && let Some(tab) = self.tabs.get(tab_idx)
+                    && let Ok(mut state) = tab.active().terminal.lock()
+                {
+                    state.set_preedit(text);
                 }
             }
         }
@@ -762,6 +791,17 @@ impl Oryxis {
         self.tabs
             .iter()
             .position(|t| t.pane_grid.panes.values().any(|p| p.id == pane_id))
+    }
+
+    /// Clear the IME preedit of the focused pane of the active tab. Called
+    /// when a composition commits so a stale overlay can never linger.
+    fn clear_focused_pane_preedit(&mut self) {
+        if let Some(tab_idx) = self.active_tab
+            && let Some(tab) = self.tabs.get(tab_idx)
+            && let Ok(mut state) = tab.active().terminal.lock()
+        {
+            state.set_preedit(String::new());
+        }
     }
 
     /// Find a pane by its stable id across every tab (shared read).
