@@ -774,6 +774,21 @@ impl Oryxis {
             // clears it. Purely visual: nothing is written to the PTY until
             // the composition commits.
             TerminalMessage::TerminalImePreedit(text) => {
+                // Same surface guards as `TerminalImeCommit`: IME events
+                // reach this subscription even while a text_input owns the
+                // composition (host panel field, modal, sidebar chat), and
+                // without these the grid would paint someone else's
+                // composition at the caret. An empty preedit (composition
+                // ended or the IME closed) always lands, so a surface
+                // opening mid-composition can never strand a ghost on the
+                // grid.
+                if !text.is_empty()
+                    && (self.panels.host_panel
+                        || self.any_modal_blocks_input()
+                        || self.cursor_over_sidebar())
+                {
+                    return Task::none();
+                }
                 if let Some(tab_idx) = self.active_tab
                     && let Some(tab) = self.tabs.get(tab_idx)
                     && let Ok(mut state) = tab.active().terminal.lock()
