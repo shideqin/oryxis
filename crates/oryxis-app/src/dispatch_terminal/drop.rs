@@ -396,9 +396,27 @@ impl Oryxis {
             temp_name,
         } = paused;
         let entry_start = index;
+        // Cancel with "apply to all" drops the rest of the batch, the
+        // panel's own sticky-cancel semantics (`handle_sftp_conflict`
+        // clears the queue): the user asked to stop the drop, not to
+        // keep uploading around every conflict. One terminal event
+        // still clears the card and toasts.
+        if apply_to_all && matches!(action, crate::state::OverwriteAction::Cancel) {
+            return Task::done(Message::Terminal(TerminalMessage::TerminalDropProgress(
+                pane_id,
+                DropProgress::Cancelled,
+            )));
+        }
         // Sticky answer when the user ticked "apply to all": every later
-        // conflict applies it instead of asking again.
-        let sticky = apply_to_all.then_some(action);
+        // conflict applies it instead of asking again. Resume is
+        // deliberately never sticky, same rule as the panel handler: the
+        // engine can check that THIS destination's tail belongs to THIS
+        // source, which says nothing about the next pair, and a sticky
+        // "continue" would be guessing at whether to splice two files it
+        // has not seen.
+        let sticky = (apply_to_all
+            && !matches!(action, crate::state::OverwriteAction::Resume))
+        .then_some(action);
         // The first remaining item is the conflicted file; pop it so the
         // answer can be applied before the loop resumes.
         let conflict = plans
@@ -430,23 +448,38 @@ impl Oryxis {
                 };
 
                 let mut completed = completed;
-                if let Some(item) = conflict
-                    && !matches!(action, crate::state::OverwriteAction::Cancel)
-                {
-                    let counter = Arc::new(AtomicU64::new(0));
-                    if let Err(e) = crate::sftp_helpers::apply_overwrite_for_item(
-                        client.clone(),
-                        item,
-                        action,
-                        temp_name,
-                        Some(Arc::clone(&counter)),
-                    )
-                    .await
-                    {
-                        send(DropProgress::Failed(e)).await;
-                        return;
+                if let Some(item) = conflict {
+                    if matches!(action, crate::state::OverwriteAction::Cancel) {
+                        // Skipped, not transferred: count its planned size
+                        // anyway so the bar still sums to the total.
+                        completed += item.size.unwrap_or(0);
+                    } else {
+                        let counter = Arc::new(AtomicU64::new(0));
+                        match watched_apply_overwrite(
+                            &send, &client, &item, action, temp_name, &abort, completed, &counter,
+                        )
+                        .await
+                        {
+                            Ok(WatchedApply::Finished) => {}
+                            Ok(WatchedApply::Aborted) => {
+                                send(DropProgress::Cancelled).await;
+                                return;
+                            }
+                            Ok(WatchedApply::ChannelClosed) => return,
+                            Err(e) => {
+                                send(DropProgress::Failed(e)).await;
+                                return;
+                            }
+                        }
+                        // Replace-if-different may skip (equal sizes) and
+                        // Resume moves fewer bytes than the planned size:
+                        // count the larger of planned and moved so the bar
+                        // still sums to the total.
+                        completed += item
+                            .size
+                            .unwrap_or(0)
+                            .max(counter.load(Ordering::Relaxed));
                     }
-                    completed += counter.load(Ordering::Relaxed);
                     if !send(DropProgress::Advanced { transferred: completed }).await {
                         return;
                     }
@@ -562,7 +595,11 @@ impl Oryxis {
         // A destination conflict paused the drop upload: raise the
         // overwrite modal. The pane keeps the paused context; answering
         // the modal resumes the upload through
-        // `resolve_terminal_drop_conflict`.
+        // `resolve_terminal_drop_conflict`. Last-writer-wins like the
+        // queue runners' own raise site (`SftpTransferConflict`): a
+        // prompt already up for another surface would be replaced here
+        // and its transfer left parked. Both raisers share that
+        // limitation; lifting it takes a prompt queue across surfaces.
         if let Some(prompt) = park_prompt {
             self.sftp.overwrite_prompt = Some(prompt);
         }
@@ -587,10 +624,12 @@ impl Oryxis {
 /// (`begin_drop_sftp_upload`) and a paused-then-resumed one
 /// (`resolve_terminal_drop_conflict`).
 ///
-/// Every file item checks its destination first: a pre-existing file with
-/// no sticky default pauses the whole drop (emitting `Conflict`, which the
-/// update loop turns into the overwrite modal) instead of overwriting
-/// silently. Folders merge tolerantly, mirroring the panel uploader.
+/// Every top-level FILE checks its destination first: a pre-existing file
+/// with no sticky default pauses the whole drop (emitting `Conflict`,
+/// which the update loop turns into the overwrite modal) instead of
+/// overwriting silently. Folder plans upload under a fresh collision-free
+/// root, so their children skip the check entirely; the directories
+/// themselves merge tolerantly, mirroring the panel uploader.
 #[allow(clippy::too_many_arguments)]
 async fn run_drop_upload_plans(
     send: &(dyn Fn(DropProgress) -> BoxFuture<'static, bool> + Send + Sync),
@@ -617,6 +656,12 @@ async fn run_drop_upload_plans(
             return;
         }
         let item_count = plan_items.len();
+        // A folder plan uploads under a fresh collision-free root
+        // (`unique_name_in_remote_dir`), so its children cannot conflict
+        // by construction; only top-level file plans probe the
+        // destination. That keeps the cost at one `list_dir` per dropped
+        // file, never one per child of a dropped tree.
+        let checks_conflict = plan_items.first().is_some_and(|i| !i.is_dir);
         for item_idx in 0..item_count {
             let item = &plan_items[item_idx];
             if abort.load(Ordering::Relaxed) {
@@ -638,80 +683,92 @@ async fn run_drop_upload_plans(
             // Conflict gate: a pre-existing destination asks instead of
             // silently overwriting (or silently renaming, the old drop
             // behavior). Mirrors the panel queue's per-item check.
-            let parent = crate::sftp_helpers::parent_path(&item.dst);
-            let basename = item
-                .dst
-                .rsplit('/')
-                .find(|s| !s.is_empty())
-                .unwrap_or(&item.dst)
-                .to_string();
-            let entries = match client.list_dir(&parent).await {
-                Ok(e) => e,
-                Err(e) => {
-                    send(DropProgress::Failed(e.to_string())).await;
+            if checks_conflict {
+                let parent = crate::sftp_helpers::parent_path(&item.dst);
+                let basename = item
+                    .dst
+                    .rsplit('/')
+                    .find(|s| !s.is_empty())
+                    .unwrap_or(&item.dst)
+                    .to_string();
+                let entries = match client.list_dir(&parent).await {
+                    Ok(e) => e,
+                    Err(e) => {
+                        send(DropProgress::Failed(e.to_string())).await;
+                        return;
+                    }
+                };
+                if let Some(existing) = entries.iter().find(|e| e.name == basename) {
+                    if let Some(action) = overwrite_default {
+                        let counter = Arc::new(AtomicU64::new(0));
+                        match watched_apply_overwrite(
+                            send, client, item, action, temp_name, &abort, completed, &counter,
+                        )
+                        .await
+                        {
+                            Ok(WatchedApply::Finished) => {}
+                            Ok(WatchedApply::Aborted) => {
+                                send(DropProgress::Cancelled).await;
+                                return;
+                            }
+                            Ok(WatchedApply::ChannelClosed) => return,
+                            Err(e) => {
+                                send(DropProgress::Failed(e)).await;
+                                return;
+                            }
+                        }
+                        // Same accounting as the resolve handler: count
+                        // the larger of planned and moved so a skipping
+                        // replace-if-different still advances the bar.
+                        completed += item
+                            .size
+                            .unwrap_or(0)
+                            .max(counter.load(Ordering::Relaxed));
+                        if !send(DropProgress::Advanced { transferred: completed }).await {
+                            return;
+                        }
+                        continue;
+                    }
+                    let src_size = tokio::fs::metadata(&item.src)
+                        .await
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    let prompt = crate::state::OverwritePrompt {
+                        dst_dir: parent,
+                        basename,
+                        src_size,
+                        dst_size: existing.size,
+                        direction: crate::state::OverwriteDirection::Upload,
+                        multi: of > 1,
+                        apply_to_all: false,
+                        owner: None,
+                        drop_upload_pane: Some(pane_id),
+                    };
+                    // Everything still to do, this conflicted item first, so
+                    // the resolve handler can apply the answer and continue.
+                    let mut rest: Vec<(String, Vec<crate::state::TransferItem>)> = Vec::new();
+                    rest.push((name.clone(), plan_items[item_idx..].to_vec()));
+                    for (pname, pitems) in plans.iter().skip(plan_idx + 1) {
+                        rest.push((pname.clone(), pitems.clone()));
+                    }
+                    send(DropProgress::Conflict {
+                        prompt: Box::new(prompt),
+                        item: item.clone(),
+                        paused: crate::state::DropUploadPaused {
+                            plans: rest,
+                            completed,
+                            // 0-based global entry position; the resume uses
+                            // it as its `entry_start` so the displayed
+                            // `(k, n)` batch position does not advance twice.
+                            index: entry_start + plan_idx,
+                            of,
+                            dest_dir: dest_dir.clone(),
+                            temp_name,
+                        },
+                    })
+                    .await;
                     return;
                 }
-            };
-            if let Some(existing) = entries.iter().find(|e| e.name == basename) {
-                if let Some(action) = overwrite_default {
-                    let counter = Arc::new(AtomicU64::new(0));
-                    if let Err(e) = crate::sftp_helpers::apply_overwrite_for_item(
-                        client.clone(),
-                        item.clone(),
-                        action,
-                        temp_name,
-                        Some(Arc::clone(&counter)),
-                    )
-                    .await
-                    {
-                        send(DropProgress::Failed(e)).await;
-                        return;
-                    }
-                    completed += counter.load(Ordering::Relaxed);
-                    if !send(DropProgress::Advanced { transferred: completed }).await {
-                        return;
-                    }
-                    continue;
-                }
-                let src_size = tokio::fs::metadata(&item.src)
-                    .await
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-                let prompt = crate::state::OverwritePrompt {
-                    dst_dir: parent,
-                    basename,
-                    src_size,
-                    dst_size: existing.size,
-                    direction: crate::state::OverwriteDirection::Upload,
-                    multi: of > 1,
-                    apply_to_all: false,
-                    owner: None,
-                    drop_upload_pane: Some(pane_id),
-                };
-                // Everything still to do, this conflicted item first, so
-                // the resolve handler can apply the answer and continue.
-                let mut rest: Vec<(String, Vec<crate::state::TransferItem>)> = Vec::new();
-                rest.push((name.clone(), plan_items[item_idx..].to_vec()));
-                for (pname, pitems) in plans.iter().skip(plan_idx + 1) {
-                    rest.push((pname.clone(), pitems.clone()));
-                }
-                send(DropProgress::Conflict {
-                    prompt: Box::new(prompt),
-                    item: item.clone(),
-                    paused: crate::state::DropUploadPaused {
-                        plans: rest,
-                        completed,
-                        // 0-based global entry position; the resume uses
-                        // it as its `entry_start` so the displayed
-                        // `(k, n)` batch position does not advance twice.
-                        index: entry_start + plan_idx,
-                        of,
-                        dest_dir: dest_dir.clone(),
-                        temp_name,
-                    },
-                })
-                .await;
-                return;
             }
             // No conflict: upload with progress ticks.
             let counter = Arc::new(AtomicU64::new(0));
@@ -767,6 +824,89 @@ async fn run_drop_upload_plans(
         }
     }
     send(DropProgress::Done).await;
+}
+
+/// Outcome of `watched_apply_overwrite`. `ChannelClosed` means a progress
+/// send failed: the UI is gone, so the caller just ends the stream
+/// without another event.
+enum WatchedApply {
+    Finished,
+    Aborted,
+    ChannelClosed,
+}
+
+/// Run an overwrite apply under the same 120 ms watch loop as a plain
+/// upload, so the card keeps advancing and the overlay cancel is not
+/// deaf for the whole file. Mid-flight cancel only sweeps where the
+/// sweep is provably safe; everything else cancels at the next file
+/// boundary instead (the outer loop's per-item abort check), which
+/// never leaves a spliced resume or an orphan half-duplicate behind.
+#[allow(clippy::too_many_arguments)]
+async fn watched_apply_overwrite(
+    send: &(dyn Fn(DropProgress) -> BoxFuture<'static, bool> + Send + Sync),
+    client: &oryxis_ssh::SftpClient,
+    item: &crate::state::TransferItem,
+    action: crate::state::OverwriteAction,
+    temp_name: bool,
+    abort: &Arc<AtomicBool>,
+    completed: u64,
+    counter: &Arc<AtomicU64>,
+) -> Result<WatchedApply, String> {
+    let sweepable = if temp_name {
+        // Scratch mode: the bytes went to `<dst>.oryxis-part`, so the
+        // sweep can only ever remove our own partial, never the file
+        // being replaced.
+        matches!(
+            action,
+            crate::state::OverwriteAction::Replace
+                | crate::state::OverwriteAction::ReplaceIfDifferent
+        )
+    } else {
+        // Direct mode truncates `dst` on open, so a cancelled Replace
+        // must sweep the damaged file (the user chose to forfeit it).
+        // Replace-if-different may finish WITHOUT touching `dst` at all
+        // (equal sizes): sweeping could delete the intact file the
+        // action just decided to keep, so it is boundary-only here.
+        // Resume appends into the file the user chose to continue and
+        // Duplicate writes under a name minted inside the apply, so
+        // neither has anything addressable to sweep in either mode.
+        matches!(action, crate::state::OverwriteAction::Replace)
+    };
+    let mut apply = Box::pin(crate::sftp_helpers::apply_overwrite_for_item(
+        client.clone(),
+        item.clone(),
+        action,
+        temp_name,
+        Some(Arc::clone(counter)),
+    ));
+    let mut tick = tokio::time::interval(std::time::Duration::from_millis(120));
+    let finished = loop {
+        tokio::select! {
+            r = &mut apply => break r,
+            _ = tick.tick() => {
+                if sweepable && abort.load(Ordering::Relaxed) {
+                    // Same sweep rules as the plain upload path: which
+                    // side holds the bytes depends on the scratch-name
+                    // setting.
+                    drop(apply);
+                    if temp_name {
+                        client.discard_upload_scratch(&item.dst).await;
+                    } else {
+                        let _ = client.remove_file(&item.dst).await;
+                    }
+                    return Ok(WatchedApply::Aborted);
+                }
+                if !send(DropProgress::Advanced {
+                    transferred: completed + counter.load(Ordering::Relaxed),
+                })
+                .await
+                {
+                    return Ok(WatchedApply::ChannelClosed);
+                }
+            }
+        }
+    };
+    finished.map(|()| WatchedApply::Finished)
 }
 
 /// The pane whose last-drawn rect contains `point`. `None` when the
