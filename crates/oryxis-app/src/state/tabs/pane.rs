@@ -791,7 +791,7 @@ pub(crate) enum DropProgress {
     /// overwrite modal is up. `paused` is what the resolve handler
     /// resumes with once the user answers.
     Conflict {
-        prompt: crate::state::OverwritePrompt,
+        prompt: Box<crate::state::OverwritePrompt>,
         item: crate::state::TransferItem,
         paused: DropUploadPaused,
     },

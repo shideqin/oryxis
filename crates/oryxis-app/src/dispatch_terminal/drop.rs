@@ -430,25 +430,25 @@ impl Oryxis {
                 };
 
                 let mut completed = completed;
-                if let Some(item) = conflict {
-                    if !matches!(action, crate::state::OverwriteAction::Cancel) {
-                        let counter = Arc::new(AtomicU64::new(0));
-                        if let Err(e) = crate::sftp_helpers::apply_overwrite_for_item(
-                            client.clone(),
-                            item,
-                            action,
-                            temp_name,
-                            Some(Arc::clone(&counter)),
-                        )
-                        .await
-                        {
-                            send(DropProgress::Failed(e)).await;
-                            return;
-                        }
-                        completed += counter.load(Ordering::Relaxed);
-                        if !send(DropProgress::Advanced { transferred: completed }).await {
-                            return;
-                        }
+                if let Some(item) = conflict
+                    && !matches!(action, crate::state::OverwriteAction::Cancel)
+                {
+                    let counter = Arc::new(AtomicU64::new(0));
+                    if let Err(e) = crate::sftp_helpers::apply_overwrite_for_item(
+                        client.clone(),
+                        item,
+                        action,
+                        temp_name,
+                        Some(Arc::clone(&counter)),
+                    )
+                    .await
+                    {
+                        send(DropProgress::Failed(e)).await;
+                        return;
+                    }
+                    completed += counter.load(Ordering::Relaxed);
+                    if !send(DropProgress::Advanced { transferred: completed }).await {
+                        return;
                     }
                 }
                 run_drop_upload_plans(
@@ -516,7 +516,7 @@ impl Oryxis {
                         up.paused = Some(paused);
                         up.file_name = Some(crate::sftp_helpers::transfer_item_label(&item));
                     }
-                    park_prompt = Some(prompt);
+                    park_prompt = Some(*prompt);
                 }
                 DropProgress::Done => {
                     let up = pane.drop_upload.take();
@@ -696,7 +696,7 @@ async fn run_drop_upload_plans(
                     rest.push((pname.clone(), pitems.clone()));
                 }
                 send(DropProgress::Conflict {
-                    prompt,
+                    prompt: Box::new(prompt),
                     item: item.clone(),
                     paused: crate::state::DropUploadPaused {
                         plans: rest,
