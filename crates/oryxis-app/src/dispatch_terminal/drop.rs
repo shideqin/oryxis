@@ -39,6 +39,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use iced::Task;
 use iced::futures::SinkExt;
+use iced::futures::future::BoxFuture;
 use uuid::Uuid;
 
 use crate::app::{Message, Oryxis, TerminalMessage, ZmodemMessage};
@@ -223,10 +224,11 @@ impl Oryxis {
 
     /// Start the SFTP half: pre-walk the sources (so the total is known
     /// up front), then upload sequentially on a fresh subsystem channel,
-    /// streaming progress back as messages. Top-level entries get
-    /// collision-free names via `unique_name_in_remote_dir`, the same
-    /// never-clobber rule the SFTP panel's folder upload uses; children
-    /// live under a fresh root, so they cannot conflict.
+    /// streaming progress back as messages. Top-level folders get
+    /// collision-free names via `unique_name_in_remote_dir` (a tree
+    /// cannot merge safely); top-level files keep their own name, and a
+    /// pre-existing destination pauses the upload to ask the user via
+    /// the overwrite modal instead of clobbering or silently renaming.
     fn begin_drop_sftp_upload(
         &mut self,
         pane_id: Uuid,
@@ -247,6 +249,7 @@ impl Oryxis {
                 total: None,
                 abort: Arc::clone(&abort),
                 dest_dir: dest_dir.clone(),
+                paused: None,
             });
         } else {
             return Task::none();
@@ -257,10 +260,10 @@ impl Oryxis {
             move |out: iced::futures::channel::mpsc::Sender<Message>| async move {
                 // Every exit path reports exactly one terminal event;
                 // the handler clears the card and toasts from it.
-                let send = |p: DropProgress| {
+                let send = |p: DropProgress| -> BoxFuture<'static, bool> {
                     let msg = Message::Terminal(TerminalMessage::TerminalDropProgress(pane_id, p));
                     let mut out = out.clone();
-                    async move { out.send(msg).await.is_ok() }
+                    Box::pin(async move { out.send(msg).await.is_ok() })
                 };
 
                 let client = match ssh.open_sftp().await {
@@ -271,9 +274,13 @@ impl Oryxis {
                     }
                 };
 
-                // Top-level plan: (source, unique remote destination,
-                // is_dir), then the recursive queue per folder.
-                let mut entries: Vec<(PathBuf, String, bool)> = Vec::new();
+                // Top-level plan: folders keep a non-colliding remote name
+                // (a tree cannot merge safely), files keep their own so a
+                // pre-existing destination asks the user instead of being
+                // silently renamed or overwritten. The run loop below does
+                // that per-file conflict check.
+                let mut plans: Vec<(String, Vec<crate::state::TransferItem>)> = Vec::new();
+                let mut total: u64 = 0;
                 for (src, is_dir) in files
                     .iter()
                     .map(|f| (f.clone(), false))
@@ -283,34 +290,21 @@ impl Oryxis {
                     else {
                         continue;
                     };
-                    let unique = match crate::sftp_helpers::unique_name_in_remote_dir(
-                        &client, &dest_dir, &base,
-                    )
-                    .await
-                    {
-                        Ok(u) => u,
-                        Err(e) => {
-                            send(DropProgress::Failed(e)).await;
-                            return;
-                        }
-                    };
-                    let dst = crate::sftp_helpers::remote_join(&dest_dir, &unique);
-                    entries.push((src, dst, is_dir));
-                }
-                if entries.is_empty() {
-                    send(DropProgress::Done).await;
-                    return;
-                }
-
-                // Expand folders into their full item queues now, so the
-                // byte total covers everything before the first write.
-                // (top-level display name, items in parent-first order)
-                let mut plans: Vec<(String, Vec<crate::state::TransferItem>)> = Vec::new();
-                let mut total: u64 = 0;
-                for (src, dst, is_dir) in entries {
-                    let name = dst.rsplit('/').next().unwrap_or(&dst).to_string();
-                    let mut items = Vec::new();
                     if is_dir {
+                        let unique = match crate::sftp_helpers::unique_name_in_remote_dir(
+                            &client, &dest_dir, &base,
+                        )
+                        .await
+                        {
+                            Ok(u) => u,
+                            Err(e) => {
+                                send(DropProgress::Failed(e)).await;
+                                return;
+                            }
+                        };
+                        let dst = crate::sftp_helpers::remote_join(&dest_dir, &unique);
+                        let name = dst.rsplit('/').next().unwrap_or(&dst).to_string();
+                        let mut items = Vec::new();
                         items.push(crate::state::TransferItem {
                             src: src.to_string_lossy().into_owned(),
                             dst: dst.clone(),
@@ -326,112 +320,151 @@ impl Oryxis {
                         }
                         total += queue.iter().filter_map(|i| i.size).sum::<u64>();
                         items.extend(queue);
+                        plans.push((name, items));
                     } else {
+                        let dst = crate::sftp_helpers::remote_join(&dest_dir, &base);
                         let size = tokio::fs::metadata(&src).await.map(|m| m.len()).ok();
                         total += size.unwrap_or(0);
-                        items.push(crate::state::TransferItem {
-                            src: src.to_string_lossy().into_owned(),
-                            dst,
-                            is_dir: false,
-                            size,
-                        });
+                        plans.push((
+                            base,
+                            vec![crate::state::TransferItem {
+                                src: src.to_string_lossy().into_owned(),
+                                dst,
+                                is_dir: false,
+                                size,
+                            }],
+                        ));
                     }
-                    plans.push((name, items));
+                }
+                if plans.is_empty() {
+                    send(DropProgress::Done).await;
+                    return;
                 }
                 if !send(DropProgress::Plan { total }).await {
                     return;
                 }
 
                 let of = plans.len();
-                let mut completed: u64 = 0;
-                for (index, (name, items)) in plans.into_iter().enumerate() {
-                    if !send(DropProgress::Entry {
-                        name,
-                        index: index + 1,
-                        of,
-                    })
-                    .await
-                    {
+                run_drop_upload_plans(
+                    &send,
+                    &client,
+                    temp_name,
+                    abort,
+                    pane_id,
+                    plans,
+                    0,
+                    of,
+                    0,
+                    dest_dir,
+                    None,
+                )
+                .await;
+            },
+        );
+        Task::stream(stream)
+    }
+
+    /// Apply the user's overwrite answer to a paused drop upload and
+    /// resume it from where it stopped. Called by the SFTP conflict
+    /// handler when the modal's prompt carried `drop_upload_pane`.
+    pub(crate) fn resolve_terminal_drop_conflict(
+        &mut self,
+        pane_id: Uuid,
+        action: crate::state::OverwriteAction,
+        apply_to_all: bool,
+    ) -> Task<Message> {
+        let Some(pane) = self.pane_by_id_mut(pane_id) else {
+            return Task::none();
+        };
+        let Some(up) = pane.drop_upload.as_mut() else {
+            return Task::none();
+        };
+        let Some(paused) = up.paused.take() else {
+            return Task::none();
+        };
+        let abort = up.abort.clone();
+        let Some(ssh) = pane.session.as_ref().and_then(|t| t.ssh()) else {
+            return Task::none();
+        };
+        let ssh = Arc::clone(ssh);
+        let crate::state::DropUploadPaused {
+            mut plans,
+            completed,
+            index,
+            of,
+            dest_dir,
+            temp_name,
+        } = paused;
+        let entry_start = index;
+        // Sticky answer when the user ticked "apply to all": every later
+        // conflict applies it instead of asking again.
+        let sticky = apply_to_all.then_some(action);
+        // The first remaining item is the conflicted file; pop it so the
+        // answer can be applied before the loop resumes.
+        let conflict = plans
+            .first_mut()
+            .and_then(|(_, items)| if items.is_empty() { None } else { Some(items.remove(0)) });
+
+        let stream = iced::stream::channel::<Message>(
+            64,
+            move |out: iced::futures::channel::mpsc::Sender<Message>| async move {
+                let send = |p: DropProgress| -> BoxFuture<'static, bool> {
+                    let msg = Message::Terminal(TerminalMessage::TerminalDropProgress(pane_id, p));
+                    let mut out = out.clone();
+                    Box::pin(async move { out.send(msg).await.is_ok() })
+                };
+
+                // Cancelled via the overlay while the modal was up:
+                // honor it instead of starting the paused upload.
+                if abort.load(Ordering::Relaxed) {
+                    send(DropProgress::Cancelled).await;
+                    return;
+                }
+
+                let client = match ssh.open_sftp().await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        send(DropProgress::Failed(e.to_string())).await;
                         return;
                     }
-                    for item in items {
-                        if abort.load(Ordering::Relaxed) {
-                            send(DropProgress::Cancelled).await;
-                            return;
-                        }
-                        if item.is_dir {
-                            // Merge-tolerant like the panel's uploader: a
-                            // racing mkdir is fine, anything else poisons
-                            // every child below it, so surface it now.
-                            if let Err(e) = client.create_dir(&item.dst).await
-                                && client.list_dir(&item.dst).await.is_err()
-                            {
-                                send(DropProgress::Failed(e.to_string())).await;
-                                return;
-                            }
-                            continue;
-                        }
+                };
+
+                let mut completed = completed;
+                if let Some(item) = conflict {
+                    if !matches!(action, crate::state::OverwriteAction::Cancel) {
                         let counter = Arc::new(AtomicU64::new(0));
-                        let src = PathBuf::from(&item.src);
-                        let mut up = Box::pin(crate::sftp_helpers::upload_one(
-                            &client,
-                            &src,
-                            &item.dst,
+                        if let Err(e) = crate::sftp_helpers::apply_overwrite_for_item(
+                            client.clone(),
+                            item,
+                            action,
                             temp_name,
                             Some(Arc::clone(&counter)),
-                        ));
-                        let mut tick =
-                            tokio::time::interval(std::time::Duration::from_millis(120));
-                        let finished = loop {
-                            tokio::select! {
-                                r = &mut up => break r,
-                                _ = tick.tick() => {
-                                    if abort.load(Ordering::Relaxed) {
-                                        // Kill the in-flight write and
-                                        // sweep the partial so a cancel
-                                        // never masquerades as a
-                                        // complete file. Which path holds
-                                        // the bytes depends on the
-                                        // scratch-name setting: with it
-                                        // on they went to `<dst>.oryxis-
-                                        // part`, so removing `dst` would
-                                        // miss the scratch AND could
-                                        // delete a pre-existing real file
-                                        // this upload never touched.
-                                        drop(up);
-                                        if temp_name {
-                                            client.discard_upload_scratch(&item.dst).await;
-                                        } else {
-                                            let _ = client.remove_file(&item.dst).await;
-                                        }
-                                        send(DropProgress::Cancelled).await;
-                                        return;
-                                    }
-                                    if !send(DropProgress::Advanced {
-                                        transferred: completed + counter.load(Ordering::Relaxed),
-                                    })
-                                    .await
-                                    {
-                                        return;
-                                    }
-                                }
-                            }
-                        };
-                        if let Err(e) = finished {
-                            send(DropProgress::Failed(format!("{}: {e}", item.dst))).await;
-                            return;
-                        }
-                        completed += item.size.unwrap_or_else(|| counter.load(Ordering::Relaxed));
-                        if !send(DropProgress::Advanced {
-                            transferred: completed,
-                        })
+                        )
                         .await
                         {
+                            send(DropProgress::Failed(e)).await;
+                            return;
+                        }
+                        completed += counter.load(Ordering::Relaxed);
+                        if !send(DropProgress::Advanced { transferred: completed }).await {
                             return;
                         }
                     }
                 }
-                send(DropProgress::Done).await;
+                run_drop_upload_plans(
+                    &send,
+                    &client,
+                    temp_name,
+                    abort,
+                    pane_id,
+                    plans,
+                    completed,
+                    of,
+                    entry_start,
+                    dest_dir,
+                    sticky,
+                )
+                .await;
             },
         );
         Task::stream(stream)
@@ -449,6 +482,10 @@ impl Oryxis {
         // Title + body for the OS notice on a terminal event, taken
         // while the card is still here (the arms below consume it).
         let mut finished: Option<(String, String)> = None;
+        // A `Conflict` parks the paused context on the pane and raises
+        // the overwrite modal; the modal write happens after the pane
+        // borrow below ends.
+        let mut park_prompt: Option<crate::state::OverwritePrompt> = None;
         if let Some(pane) = self.pane_by_id_mut(pane_id) {
             let file_name = pane
                 .drop_upload
@@ -473,6 +510,13 @@ impl Oryxis {
                     if let Some(up) = pane.drop_upload.as_mut() {
                         up.transferred = transferred;
                     }
+                }
+                DropProgress::Conflict { prompt, item, paused } => {
+                    if let Some(up) = pane.drop_upload.as_mut() {
+                        up.paused = Some(paused);
+                        up.file_name = Some(crate::sftp_helpers::transfer_item_label(&item));
+                    }
+                    park_prompt = Some(prompt);
                 }
                 DropProgress::Done => {
                     let up = pane.drop_upload.take();
@@ -515,6 +559,13 @@ impl Oryxis {
                 }
             }
         }
+        // A destination conflict paused the drop upload: raise the
+        // overwrite modal. The pane keeps the paused context; answering
+        // the modal resumes the upload through
+        // `resolve_terminal_drop_conflict`.
+        if let Some(prompt) = park_prompt {
+            self.sftp.overwrite_prompt = Some(prompt);
+        }
         // Dropping files onto the terminal is an upload like any other,
         // and the one most likely to be left running: the user dropped
         // a folder and went back to what they were doing. Away from the
@@ -530,6 +581,192 @@ impl Oryxis {
         }
         refresh.unwrap_or_else(Task::none)
     }
+}
+
+/// Drive the upload loop shared by the initial drop
+/// (`begin_drop_sftp_upload`) and a paused-then-resumed one
+/// (`resolve_terminal_drop_conflict`).
+///
+/// Every file item checks its destination first: a pre-existing file with
+/// no sticky default pauses the whole drop (emitting `Conflict`, which the
+/// update loop turns into the overwrite modal) instead of overwriting
+/// silently. Folders merge tolerantly, mirroring the panel uploader.
+#[allow(clippy::too_many_arguments)]
+async fn run_drop_upload_plans(
+    send: &(dyn Fn(DropProgress) -> BoxFuture<'static, bool> + Send + Sync),
+    client: &oryxis_ssh::SftpClient,
+    temp_name: bool,
+    abort: Arc<AtomicBool>,
+    pane_id: Uuid,
+    plans: Vec<(String, Vec<crate::state::TransferItem>)>,
+    mut completed: u64,
+    of: usize,
+    entry_start: usize,
+    dest_dir: String,
+    overwrite_default: Option<crate::state::OverwriteAction>,
+) {
+    for (plan_idx, (name, plan_items)) in plans.iter().enumerate() {
+        let index = entry_start + plan_idx + 1;
+        if !send(DropProgress::Entry {
+            name: name.clone(),
+            index,
+            of,
+        })
+        .await
+        {
+            return;
+        }
+        let item_count = plan_items.len();
+        for item_idx in 0..item_count {
+            let item = &plan_items[item_idx];
+            if abort.load(Ordering::Relaxed) {
+                send(DropProgress::Cancelled).await;
+                return;
+            }
+            if item.is_dir {
+                // Merge-tolerant like the panel's uploader: a racing mkdir
+                // is fine, anything else poisons every child below it, so
+                // surface it now.
+                if let Err(e) = client.create_dir(&item.dst).await
+                    && client.list_dir(&item.dst).await.is_err()
+                {
+                    send(DropProgress::Failed(e.to_string())).await;
+                    return;
+                }
+                continue;
+            }
+            // Conflict gate: a pre-existing destination asks instead of
+            // silently overwriting (or silently renaming, the old drop
+            // behavior). Mirrors the panel queue's per-item check.
+            let parent = crate::sftp_helpers::parent_path(&item.dst);
+            let basename = item
+                .dst
+                .rsplit('/')
+                .find(|s| !s.is_empty())
+                .unwrap_or(&item.dst)
+                .to_string();
+            let entries = match client.list_dir(&parent).await {
+                Ok(e) => e,
+                Err(e) => {
+                    send(DropProgress::Failed(e.to_string())).await;
+                    return;
+                }
+            };
+            if let Some(existing) = entries.iter().find(|e| e.name == basename) {
+                if let Some(action) = overwrite_default {
+                    let counter = Arc::new(AtomicU64::new(0));
+                    if let Err(e) = crate::sftp_helpers::apply_overwrite_for_item(
+                        client.clone(),
+                        item.clone(),
+                        action,
+                        temp_name,
+                        Some(Arc::clone(&counter)),
+                    )
+                    .await
+                    {
+                        send(DropProgress::Failed(e)).await;
+                        return;
+                    }
+                    completed += counter.load(Ordering::Relaxed);
+                    if !send(DropProgress::Advanced { transferred: completed }).await {
+                        return;
+                    }
+                    continue;
+                }
+                let src_size = tokio::fs::metadata(&item.src)
+                    .await
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                let prompt = crate::state::OverwritePrompt {
+                    dst_dir: parent,
+                    basename,
+                    src_size,
+                    dst_size: existing.size,
+                    direction: crate::state::OverwriteDirection::Upload,
+                    multi: of > 1,
+                    apply_to_all: false,
+                    owner: None,
+                    drop_upload_pane: Some(pane_id),
+                };
+                // Everything still to do, this conflicted item first, so
+                // the resolve handler can apply the answer and continue.
+                let mut rest: Vec<(String, Vec<crate::state::TransferItem>)> = Vec::new();
+                rest.push((name.clone(), plan_items[item_idx..].to_vec()));
+                for (pname, pitems) in plans.iter().skip(plan_idx + 1) {
+                    rest.push((pname.clone(), pitems.clone()));
+                }
+                send(DropProgress::Conflict {
+                    prompt,
+                    item: item.clone(),
+                    paused: crate::state::DropUploadPaused {
+                        plans: rest,
+                        completed,
+                        // 0-based global entry position; the resume uses
+                        // it as its `entry_start` so the displayed
+                        // `(k, n)` batch position does not advance twice.
+                        index: entry_start + plan_idx,
+                        of,
+                        dest_dir: dest_dir.clone(),
+                        temp_name,
+                    },
+                })
+                .await;
+                return;
+            }
+            // No conflict: upload with progress ticks.
+            let counter = Arc::new(AtomicU64::new(0));
+            let src = PathBuf::from(&item.src);
+            let mut up = Box::pin(crate::sftp_helpers::upload_one(
+                client,
+                &src,
+                &item.dst,
+                temp_name,
+                Some(Arc::clone(&counter)),
+            ));
+            let mut tick = tokio::time::interval(std::time::Duration::from_millis(120));
+            let finished = loop {
+                tokio::select! {
+                    r = &mut up => break r,
+                    _ = tick.tick() => {
+                        if abort.load(Ordering::Relaxed) {
+                            // Kill the in-flight write and sweep the
+                            // partial so a cancel never masquerades as a
+                            // complete file. Which path holds the bytes
+                            // depends on the scratch-name setting: with it
+                            // on they went to `<dst>.oryxis-part`, so
+                            // removing `dst` would miss the scratch AND
+                            // could delete a pre-existing real file this
+                            // upload never touched.
+                            drop(up);
+                            if temp_name {
+                                client.discard_upload_scratch(&item.dst).await;
+                            } else {
+                                let _ = client.remove_file(&item.dst).await;
+                            }
+                            send(DropProgress::Cancelled).await;
+                            return;
+                        }
+                        if !send(DropProgress::Advanced {
+                            transferred: completed + counter.load(Ordering::Relaxed),
+                        })
+                        .await
+                        {
+                            return;
+                        }
+                    }
+                }
+            };
+            if let Err(e) = finished {
+                send(DropProgress::Failed(format!("{}: {e}", item.dst))).await;
+                return;
+            }
+            completed += item.size.unwrap_or_else(|| counter.load(Ordering::Relaxed));
+            if !send(DropProgress::Advanced { transferred: completed }).await {
+                return;
+            }
+        }
+    }
+    send(DropProgress::Done).await;
 }
 
 /// The pane whose last-drawn rect contains `point`. `None` when the
