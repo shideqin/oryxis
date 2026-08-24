@@ -1,0 +1,20 @@
+[package]
+name = "oryxis-mosh"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# The protocol itself, with `default-features = false` so its built-in
+# vt100 screen never reaches the binary: the screen this crate hands the
+# session is backed by alacritty, the SAME emulator the pane draws with,
+# which is the point. See `screen.rs`.
+mosh-rs = { version = "0.1", default-features = false }
+# The emulator the pane already uses, pinned by the workspace so there
+# is exactly one copy of it in the build.
+alacritty_terminal = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
