@@ -95,6 +95,62 @@ impl Oryxis {
         .into()
     }
 
+    /// Per-host drop-transport flag (SSH > Integration): drag-and-drop
+    /// uploads ride ZMODEM (`rz` typed into the shell) instead of SFTP,
+    /// for hosts whose interactive shell runs inside a container. SFTP
+    /// always reaches the host filesystem as sshd sees it; the `rz` the
+    /// app types runs where the shell runs and lands in the container's
+    /// own working directory. Off keeps the standard drop routing.
+    pub(super) fn hp_row_zmodem_drops(&self, is_ssh: bool) -> Element<'_, Message> {
+        if !is_ssh {
+            return empty();
+        }
+        let on = self.editor_form.zmodem_drops;
+        let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
+        let fg = crate::theme::contrast_text_for(bg);
+        let toggle: Element<'_, Message> = button(
+            text(if on { crate::i18n::t("toggle_on") } else { crate::i18n::t("toggle_off") })
+                .size(12)
+                .color(fg),
+        )
+        .on_press(Message::Editor(EditorMessage::EditorToggleZmodemDrops))
+        .style(move |_theme, _status| button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(4.0), ..Default::default() },
+            text_color: fg,
+            ..Default::default()
+        })
+        .padding(Padding { top: 3.0, right: 10.0, bottom: 3.0, left: 10.0 })
+        .into();
+        let row = container(
+            dir_row(vec![
+                iced_fonts::lucide::upload()
+                    .size(14)
+                    .color(OryxisColors::t().text_muted)
+                    .into(),
+                Space::new().width(10).into(),
+                column![
+                    text(t("host_zmodem_drops")).size(13).color(OryxisColors::t().text_secondary),
+                    Space::new().height(2),
+                    text(t("host_zmodem_drops_desc")).size(11).color(OryxisColors::t().text_muted),
+                ]
+                .width(Length::Fill)
+                .into(),
+                Space::new().width(8).into(),
+                toggle,
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 });
+        self.panel_nav_slot(
+            crate::keynav::RowAction::activate(Message::Editor(
+                EditorMessage::EditorToggleZmodemDrops,
+            )),
+            8.0,
+            row.into(),
+        )
+    }
+
     /// Per-host agentless monitoring opt-in (SSH > Integration, issue
     /// #83). Same shape as the MCP row: SSH-only, since the probe reads
     /// `/proc` over an exec channel.
