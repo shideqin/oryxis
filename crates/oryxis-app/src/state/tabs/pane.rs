@@ -103,6 +103,20 @@ impl TerminalTransport {
         }
     }
 
+    /// The inner mosh session, for the one thing only mosh can answer.
+    ///
+    /// Every other transport reports its health by being up or down, and
+    /// `is_alive` covers both. mosh is up while it is out of touch, on
+    /// purpose, so "alive" stops being the whole answer and something
+    /// has to carry the rest.
+    pub fn mosh(&self) -> Option<&Arc<oryxis_mosh::MoshSession>> {
+        match self {
+            TerminalTransport::Mosh(s) => Some(s),
+            TerminalTransport::Ssh(_)
+            | TerminalTransport::Telnet(_)
+            | TerminalTransport::Serial(_) => None,
+        }
+    }
 
     /// Whether this session outlives the network changing underneath
     /// it.
@@ -160,6 +174,30 @@ impl TerminalTransport {
         }
     }
 
+    /// Whether the session behind this pane is still usable.
+    ///
+    /// **Every arm owes one ordering guarantee: it must read as DEAD
+    /// BEFORE its output stream ends.** A new transport added here
+    /// inherits that debt, and the compiler cannot name it: the match
+    /// below will demand an arm, and say nothing about when the answer
+    /// has to be settled.
+    ///
+    /// The reason is `SshDisconnected`. The end of a transport's output
+    /// stream is what produces that message, and the handler discards it
+    /// while this still says "alive", because since the mosh handover a
+    /// superseded session reporting its own death is ordinary rather
+    /// than exotic. So a session that really died and still answered
+    /// "alive" here would get its own disconnect thrown away, leaving
+    /// the tab reading connected over a dead link until the 30 s
+    /// liveness sweep caught it (longer while the vault is soft-locked,
+    /// which unmounts that sweep).
+    ///
+    /// The four existing arms satisfy it the same way: the reader task
+    /// stores its death flag and only then drops the output sender, in
+    /// one task with no await between (`reader_done` on SSH / Telnet /
+    /// Serial, `alive` on mosh). Anything that settles a task later
+    /// (a `JoinHandle`, a channel some OTHER task closes) is a race, not
+    /// a guarantee, and was exactly what this replaced.
     pub fn is_alive(&self) -> bool {
         match self {
             TerminalTransport::Ssh(s) => s.is_alive(),
