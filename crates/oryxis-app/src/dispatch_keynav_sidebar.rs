@@ -29,6 +29,14 @@
 //! receives text while the ring is up; the selection is tagged by
 //! sidebar tab and clamped against each frame's recording, so
 //! filtering while ringed just clamps.
+//!
+//! Delete has a second, RING-LESS reading, and only on Files: a click
+//! there selects a row and deliberately drops the ring, so the key
+//! falls back to the mouse selection (`sidebar_files_selected_entry`),
+//! which is the select-then-Del pair the SFTP pane offers. That
+//! fallback is what makes the inline-edit guard in that helper load
+//! bearing: this layer engages on the cursor alone, so a Delete typed
+//! into a Files input must not reach a file.
 
 use iced::keyboard;
 use iced::Task;
@@ -159,6 +167,18 @@ impl Oryxis {
     /// selection, or when the selection no longer matches the listing
     /// (a refresh raced the key): a stale selection must never guess
     /// `is_dir`, so the key simply isn't consumed.
+    ///
+    /// Also `None` while an inline edit (path / rename / new entry)
+    /// owns the keyboard, which is the SFTP pane's `editing` guard
+    /// under another name. This layer engages on the CURSOR being
+    /// over the sidebar, and the ring goes quiet on an input row, so
+    /// without it a Delete meant to erase a character forward inside
+    /// the rename field would raise the destructive confirm on the
+    /// row the mouse selected earlier, with the removal as its
+    /// default button: the next Enter, the one that was going to
+    /// commit the rename, would delete the file instead. The refusal
+    /// lives HERE rather than in the Delete arm so a later ring-less
+    /// caller (the Menu key is the obvious one) inherits it.
     fn sidebar_files_selected_entry(
         &self,
         tab: TerminalSidebarTab,
@@ -167,6 +187,12 @@ impl Oryxis {
             return None;
         }
         let pane = self.tabs.get(self.active_tab?)?.active();
+        if pane.files.path_editing.is_some()
+            || pane.files.rename.is_some()
+            || pane.files.new_entry.is_some()
+        {
+            return None;
+        }
         let path = pane.files.selected.clone()?;
         let is_dir = pane
             .files
@@ -535,7 +561,7 @@ impl Oryxis {
                 }
                 // Files: a click selects a row AND deliberately drops the
                 // ring (`SidebarFilesSelectRow`), so a ring-less Del acts
-                // on what the mouse selected — the select-then-Del pair
+                // on what the mouse selected, the select-then-Del pair
                 // the SFTP pane offers.
                 let (path, is_dir) = self.sidebar_files_selected_entry(tab)?;
                 Some(self.update(Message::SidebarFiles(
