@@ -101,54 +101,37 @@ impl Oryxis {
     /// always reaches the host filesystem as sshd sees it; the `rz` the
     /// app types runs where the shell runs and lands in the container's
     /// own working directory. Off keeps the standard drop routing.
+    ///
+    /// Shaped like the mosh block (`panel_option_row` + the note under
+    /// it) rather than the sibling one-liners: the note runs to several
+    /// lines, and nesting it INSIDE the row centers the icon and the
+    /// pill against the whole block, which leaves the icon beside the
+    /// middle of the text with no label next to it.
     pub(super) fn hp_row_zmodem_drops(&self, is_ssh: bool) -> Element<'_, Message> {
         if !is_ssh {
             return empty();
         }
-        let on = self.editor_form.zmodem_drops;
-        let bg = if on { OryxisColors::t().success } else { OryxisColors::t().bg_hover };
-        let fg = crate::theme::contrast_text_for(bg);
-        let toggle: Element<'_, Message> = button(
-            text(if on { crate::i18n::t("toggle_on") } else { crate::i18n::t("toggle_off") })
-                .size(12)
-                .color(fg),
-        )
-        .on_press(Message::Editor(EditorMessage::EditorToggleZmodemDrops))
-        .style(move |_theme, _status| button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(4.0), ..Default::default() },
-            text_color: fg,
-            ..Default::default()
-        })
-        .padding(Padding { top: 3.0, right: 10.0, bottom: 3.0, left: 10.0 })
-        .into();
-        let row = container(
-            dir_row(vec![
-                iced_fonts::lucide::upload()
-                    .size(14)
-                    .color(OryxisColors::t().text_muted)
-                    .into(),
-                Space::new().width(10).into(),
-                column![
-                    text(t("host_zmodem_drops")).size(13).color(OryxisColors::t().text_secondary),
-                    Space::new().height(2),
-                    text(t("host_zmodem_drops_desc")).size(11).color(OryxisColors::t().text_muted),
-                ]
-                .width(Length::Fill)
-                .into(),
-                Space::new().width(8).into(),
-                toggle,
-            ])
-            .align_y(iced::Alignment::Center),
-        )
-        .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 });
-        self.panel_nav_slot(
-            crate::keynav::RowAction::activate(Message::Editor(
-                EditorMessage::EditorToggleZmodemDrops,
-            )),
+        let msg = Message::Editor(EditorMessage::EditorToggleZmodemDrops);
+        let row = self.panel_nav_slot(
+            crate::keynav::RowAction::activate(msg.clone()),
             8.0,
-            row.into(),
+            panel_option_row(
+                iced_fonts::lucide::upload(),
+                t("host_zmodem_drops"),
+                super::basics::hp_toggle_button(self.editor_form.zmodem_drops, msg),
+            ),
+        );
+        container(
+            column![
+                row,
+                text(t("host_zmodem_drops_desc")).size(11).color(OryxisColors::t().text_muted),
+            ]
+            .width(Length::Fill),
         )
+        // `panel_option_row` carries 4 of its own, so the row keeps the
+        // 8px the sibling toggles sit on.
+        .padding(Padding { top: 4.0, right: 0.0, bottom: 8.0, left: 0.0 })
+        .into()
     }
 
     /// Per-host agentless monitoring opt-in (SSH > Integration, issue
