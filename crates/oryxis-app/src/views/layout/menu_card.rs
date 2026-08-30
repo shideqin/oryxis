@@ -144,6 +144,9 @@ impl Oryxis {
             rows += 1.0; // Share
             if self.sftp_enabled {
                 rows += 1.0; // Open SFTP tab
+                if conn.is_some_and(Oryxis::host_can_console) {
+                    rows += 1.0; // Open SFTP console
+                }
             }
         }
         if matches!(
@@ -218,6 +221,17 @@ impl Oryxis {
             // toggle, like every other SFTP surface.
             if self.sftp_enabled {
                 items = items.push(self.menu_item(iced_fonts::lucide::folder_tree(), crate::i18n::t("open_sftp_tab"), by_idx(|i| Message::Sftp(SftpMessage::OpenSftpForConnection(i))), OryxisColors::t().text_secondary));
+                // The console right beside the browser, because they are
+                // two answers to the same question and the whole point of
+                // issue #188 is that some people want the other one. From
+                // a card there is no shell to inherit a directory from,
+                // so it opens at the session's home.
+                // Not offered on a mosh host: the dial would hand the
+                // pane to the mosh handover instead (see
+                // `host_can_console`).
+                if conn.is_some_and(Oryxis::host_can_console) {
+                    items = items.push(self.menu_item(iced_fonts::lucide::square_terminal(), crate::i18n::t("open_sftp_console"), Message::Sftp(SftpMessage::OpenSftpConsoleForHost(id)), OryxisColors::t().text_secondary));
+                }
             }
         }
         if has_url {
