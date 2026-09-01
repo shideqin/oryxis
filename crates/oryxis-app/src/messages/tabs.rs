@@ -20,7 +20,7 @@ pub enum TabsMessage {
     /// so tear it down without asking again (issue #112). Carries the
     /// tab's id, not its position: the modal can sit open across an
     /// auto-reconnect (a remove + rebuild), which shifts every index
-    /// after the reconnected tab — a cached position would close a
+    /// after the reconnected tab, and a cached position would close a
     /// different tab than the one the user just confirmed.
     ConfirmCloseGroupedTab(Uuid),
     /// Bring back the last closed tab (issue #186), terminal or SFTP.

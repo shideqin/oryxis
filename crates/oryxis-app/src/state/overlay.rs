@@ -30,7 +30,7 @@ pub(crate) enum OverlayContent {
     /// index: the menu is an overlay, not a modal, so async updates
     /// keep flowing while it is open, and the 30 s auto-reconnect tick
     /// can remove + re-append a disconnected tab (the legacy rebuild
-    /// path) — a frozen index would silently aim Close / Rename /
+    /// path): a frozen index would silently aim Close / Rename /
     /// Duplicate at whatever neighbour slid into its slot (same rule
     /// `TreeHostActions` and `PendingSftpClose::HybridSession` already
     /// follow).

@@ -146,6 +146,10 @@ impl Oryxis {
                 );
             }
             TabsMessage::ShowTabMenu(idx) => {
+                // The anchor is a one-shot: take it before the guard
+                // below, or a keyboard-placed anchor would stay armed
+                // and land the NEXT menu where this one was asked for.
+                let anchor = self.keynav_take_menu_anchor();
                 // Store the tab's id, not the index: the menu outlives
                 // the frame that opened it, and the auto-reconnect tick
                 // can remove + re-append a tab while it is up (see
@@ -153,7 +157,6 @@ impl Oryxis {
                 let Some(tab_id) = self.tabs.get(idx).map(|t| t._id) else {
                     return Task::none();
                 };
-                let anchor = self.keynav_take_menu_anchor();
                 self.overlay = Some(OverlayState {
                     content: OverlayContent::TabActions(tab_id),
                     x: anchor.0,

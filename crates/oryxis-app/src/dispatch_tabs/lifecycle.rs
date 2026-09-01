@@ -170,14 +170,14 @@ impl Oryxis {
     /// menu, Ctrl+W, and the terminal's own close handling all land
     /// here.
     pub(super) fn handle_close_tab(&mut self, idx: usize) -> Task<Message> {
-        let panes = self.tabs.get(idx).map(|t| t.pane_count()).unwrap_or(0);
+        // The id is read here beside the pane count because the dialog's
+        // action survives the modal being up, so it has to carry the tab
+        // id rather than this index (see
+        // `TabsMessage::ConfirmCloseGroupedTab`).
+        let Some((panes, tab_id)) = self.tabs.get(idx).map(|t| (t.pane_count(), t._id)) else {
+            return self.close_tab_now(idx);
+        };
         if panes > 1 {
-            // The dialog's action survives the modal being up, so it
-            // carries the tab id, not this index (see
-            // `TabsMessage::ConfirmCloseGroupedTab`).
-            let Some(tab_id) = self.tabs.get(idx).map(|t| t._id) else {
-                return Task::none();
-            };
             self.overlay = None;
             self.error_dialog = Some(crate::state::ErrorDialog {
                 title: crate::i18n::t("close_group_title").to_string(),

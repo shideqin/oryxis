@@ -355,8 +355,10 @@ impl Oryxis {
             }
             // Resolved per frame: the menu is an overlay, so a tab can
             // legitimately vanish under it (auto-reconnect's remove +
-            // rebuild); an empty menu then waits for the next click to
-            // dismiss the popover chrome.
+            // rebuild) and the items must bake the position THIS frame
+            // draws. The empty arm is belt and suspenders:
+            // `reconcile_overlay_tab_target` drops the overlay in the
+            // same update the tab leaves, so it never renders.
             OverlayContent::TabActions(id) => match self.tab_index_by_id(*id) {
                 Some(idx) => self.build_menu_tab_actions(idx),
                 None => column![].into(),
