@@ -38,6 +38,18 @@ impl Oryxis {
                 Message::SidebarFiles(SidebarFilesMessage::SidebarFilesCopySelectionPaths),
                 secondary,
             ));
+            // A local browser has nothing to download (issue #145), the
+            // same gate the single-file download applies.
+            if !self.sidebar_files_is_local() {
+                let download_label =
+                    crate::i18n::t("download_n_items").replacen("{n}", &n.to_string(), 1);
+                items = items.push(self.menu_item_owned(
+                    iced_fonts::lucide::download(),
+                    download_label,
+                    Message::SidebarFiles(SidebarFilesMessage::SidebarFilesDownloadSelection),
+                    OryxisColors::t().accent,
+                ));
+            }
             let delete_label =
                 crate::i18n::t("delete_n_items").replacen("{n}", &n.to_string(), 1);
             items = items.push(self.menu_item_owned(

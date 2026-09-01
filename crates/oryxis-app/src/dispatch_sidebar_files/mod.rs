@@ -362,6 +362,8 @@ impl Oryxis {
             ) => self.handle_sidebar_files_entries(m),
             m @ (
                 SidebarFilesMessage::SidebarFilesDownload(..)
+                | SidebarFilesMessage::SidebarFilesDownloadSelection
+                | SidebarFilesMessage::SidebarFilesDownloadSelectionPicked(..)
                 | SidebarFilesMessage::SidebarFilesDownloadPicked(..)
                 | SidebarFilesMessage::SidebarFilesUploadInto(..)
                 | SidebarFilesMessage::SidebarFilesUploadPicked(..)
