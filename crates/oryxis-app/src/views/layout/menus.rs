@@ -134,15 +134,21 @@ impl Oryxis {
             OverlayContent::ChatConversationActions(_) => 4.0,
             OverlayContent::SessionLogViewerActions(_) => 4.0,
             OverlayContent::SftpTabActions(_) => 6.0,
-            OverlayContent::SidebarFilesRow { is_dir, .. } => {
+            OverlayContent::SidebarFilesRow { path, is_dir, .. } => {
                 // The local browser's menu (issue #145) swaps the
                 // transfer-shaped items for OS ones; counted next to
-                // the builder (`build_menu_sidebar_files_row`).
-                match (self.sidebar_files_is_local(), *is_dir) {
-                    (true, true) => 5.0,
-                    (true, false) => 6.0,
-                    (false, true) => 7.0,
-                    (false, false) => 8.0,
+                // the builder (`build_menu_sidebar_files_row`). A
+                // multi-selection collapses to Copy N paths + Delete N
+                // items.
+                if self.sidebar_files_multi(path) {
+                    2.0
+                } else {
+                    match (self.sidebar_files_is_local(), *is_dir) {
+                        (true, true) => 5.0,
+                        (true, false) => 6.0,
+                        (false, true) => 7.0,
+                        (false, false) => 8.0,
+                    }
                 }
             }
             OverlayContent::SidebarFilesBackground { .. } => {
