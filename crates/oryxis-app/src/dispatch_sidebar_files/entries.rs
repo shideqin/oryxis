@@ -141,6 +141,68 @@ impl Oryxis {
                     Message::SidebarFiles(SidebarFilesMessage::SidebarFilesDeleteConfirmed(path, is_dir)),
                 );
             }
+            SidebarFilesMessage::SidebarFilesDeleteSelection(targets) => {
+                // Bulk delete from a multi-selection: same shared confirm
+                // dialog, with the SFTP modal's count-aware copy (folder /
+                // file breakdown) instead of a single name.
+                self.overlay = None;
+                if targets.is_empty() {
+                    return Task::none();
+                }
+                let (title, body) = if targets.len() == 1 {
+                    let (path, is_dir) = &targets[0];
+                    let name = files_basename(path);
+                    let detail = if *is_dir {
+                        format!(
+                            "\"{}\", {}",
+                            name,
+                            crate::i18n::t("folder_and_contents")
+                        )
+                    } else {
+                        format!("\"{name}\"")
+                    };
+                    (
+                        crate::i18n::t("delete_item_question").to_string(),
+                        detail,
+                    )
+                } else {
+                    let folder_count = targets.iter().filter(|(_, d)| *d).count();
+                    let file_count = targets.len() - folder_count;
+                    let detail = match (folder_count, file_count) {
+                        (0, n) => format!("{} {}", n, crate::i18n::t("files_lower")),
+                        (n, 0) => {
+                            format!("{} {}", n, crate::i18n::t("folders_recursive_lower"))
+                        }
+                        (f, fi) => format!(
+                            "{} {} {} {} {}",
+                            f,
+                            crate::i18n::t("folders_recursive_lower"),
+                            crate::i18n::t("and"),
+                            fi,
+                            crate::i18n::t("files_lower"),
+                        ),
+                    };
+                    (
+                        crate::i18n::t("delete_n_items_question")
+                            .replacen("{n}", &targets.len().to_string(), 1),
+                        detail,
+                    )
+                };
+                self.error_dialog = Some(crate::state::ErrorDialog {
+                    title,
+                    body,
+                    link: None,
+                    action: Some(crate::state::ErrorDialogAction {
+                        label: crate::i18n::t("delete").to_string(),
+                        message: Box::new(Message::SidebarFiles(
+                            SidebarFilesMessage::SidebarFilesDeleteConfirmedSelection(
+                                targets,
+                            ),
+                        )),
+                        danger: true,
+                    }),
+                });
+            }
             SidebarFilesMessage::SidebarFilesDeleteConfirmed(path, is_dir) => {
                 let Some(pane) = self.active_pane_mut() else {
                     return Task::none();
@@ -160,6 +222,20 @@ impl Oryxis {
                         client.remove_file(&path).await
                     }
                 });
+            }
+            SidebarFilesMessage::SidebarFilesDeleteConfirmedSelection(targets) => {
+                let Some(pane) = self.active_pane_mut() else {
+                    return Task::none();
+                };
+                let Some(client) = pane.files.client.clone() else {
+                    return Task::none();
+                };
+                let list_path = pane.files.path.clone();
+                let pane_id = pane.id;
+                pane.files.loading = true;
+                pane.files.error = None;
+                let seq = pane.files.next_req();
+                return bulk_delete_then_list(client, list_path, pane_id, seq, targets);
             }
             // The parent routed us here, so anything else is a
             // grouping mistake, not a runtime case.

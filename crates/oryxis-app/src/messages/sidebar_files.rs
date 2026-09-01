@@ -70,6 +70,13 @@ pub enum SidebarFilesMessage {
     /// then the confirmed op (recursive for directories).
     SidebarFilesDelete(String, bool),
     SidebarFilesDeleteConfirmed(String, bool),
+    /// Bulk delete of the whole current selection (arm the same shared
+    /// confirm, count-aware copy) and its confirmed op.
+    SidebarFilesDeleteSelection(Vec<(String, bool)>),
+    SidebarFilesDeleteConfirmedSelection(Vec<(String, bool)>),
+    /// Copy every path of the current selection to the clipboard, one
+    /// per line (the SFTP pane's bulk-copy rule).
+    SidebarFilesCopySelectionPaths,
     /// Download a file to a local destination picked via the OS dialog.
     /// Only opens the dialog; a cancelled one ends the flow untouched.
     SidebarFilesDownload(String),
