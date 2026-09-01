@@ -141,7 +141,14 @@ impl Oryxis {
                 // multi-selection collapses to Copy N paths + Delete N
                 // items.
                 if self.sidebar_files_multi(path) {
-                    2.0
+                    // Copy N paths (+ Download N items on a remote
+                    // browser) + Delete N items; the download row is
+                    // the same local/remote gate the builder applies.
+                    if self.sidebar_files_is_local() {
+                        2.0
+                    } else {
+                        3.0
+                    }
                 } else {
                     match (self.sidebar_files_is_local(), *is_dir) {
                         (true, true) => 5.0,
