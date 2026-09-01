@@ -172,6 +172,12 @@ impl Oryxis {
     pub(super) fn handle_close_tab(&mut self, idx: usize) -> Task<Message> {
         let panes = self.tabs.get(idx).map(|t| t.pane_count()).unwrap_or(0);
         if panes > 1 {
+            // The dialog's action survives the modal being up, so it
+            // carries the tab id, not this index (see
+            // `TabsMessage::ConfirmCloseGroupedTab`).
+            let Some(tab_id) = self.tabs.get(idx).map(|t| t._id) else {
+                return Task::none();
+            };
             self.overlay = None;
             self.error_dialog = Some(crate::state::ErrorDialog {
                 title: crate::i18n::t("close_group_title").to_string(),
@@ -180,7 +186,7 @@ impl Oryxis {
                 link: None,
                 action: Some(crate::state::ErrorDialogAction {
                     label: crate::i18n::t("close_group_confirm").to_string(),
-                    message: Box::new(Message::Tabs(TabsMessage::ConfirmCloseGroupedTab(idx))),
+                    message: Box::new(Message::Tabs(TabsMessage::ConfirmCloseGroupedTab(tab_id))),
                     danger: true,
                 }),
             });
