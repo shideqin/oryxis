@@ -100,7 +100,7 @@ where
                     ((pos.y - TERM_PAD_TOP) / cell_h).max(0.0) as u16,
                 )
             }),
-            hovered_osc8: hash_osc8(&widget_state.hovered_osc8),
+            hovered_link_spans: hash_link_spans(&widget_state.hovered_link_spans),
             hovered_cell: if self.privacy { widget_state.hovered_cell } else { None },
             hover: widget_state.hover,
             scrollbar_dragging: widget_state.scrollbar_drag.is_some(),
@@ -215,7 +215,7 @@ where
 
         let mut cells: Vec<CellData> = DRAW_CELLS.take();
         cells.clear();
-        let mut row_chars: Vec<(u16, Vec<(u16, char)>)> = Vec::new();
+        let mut row_chars: Vec<ScanRow> = Vec::new();
         // Buffer-search match spans clipped to the visible window, in
         // (visible_row, start_col, end_col_inclusive, is_active) form.
         // Snapshot under the lock so pass 2 can fill each match's cells
@@ -276,6 +276,9 @@ where
                 let max_scroll = grid.total_lines().saturating_sub(grid.screen_lines()) as i32;
                 widget_state.scroll_offset.get().clamp(0, max_scroll)
             };
+            // Preserve the resolved viewport position for actions outside the
+            // widget, such as the tab menu's visible-screen export.
+            state.set_viewport_scroll_offset(scroll_offset);
 
             // Faint PRIMARY ghost: the demoted rectangle of the
             // last selection, shown only when no live highlight is
@@ -428,7 +431,21 @@ where
                     });
                 }
                 if !chars.is_empty() {
-                    row_chars.push((visible_row as u16, chars));
+                    // A row whose last cell carries WRAPLINE ran into the
+                    // margin and is continued by the row below: one
+                    // logical line, so a URL may cross the boundary. The
+                    // scanners cannot see the grid, so the margin travels
+                    // with the row.
+                    let wraps_at = (cols_count > 0
+                        && row_data[alacritty_terminal::index::Column(cols_count - 1)]
+                            .flags
+                            .contains(CellFlags::WRAPLINE))
+                    .then(|| (cols_count - 1) as u16);
+                    row_chars.push(ScanRow {
+                        row: visible_row as u16,
+                        cols: chars,
+                        wraps_at,
+                    });
                 }
             }
 
@@ -532,9 +549,10 @@ where
         } else {
             None
         };
-        // An OSC 8 link's run was captured at hover time (it isn't in the
-        // regex highlight scan); underline every wrapped row the same way.
-        let hovered_osc8 = &widget_state.hovered_osc8;
+        // The hovered link's run was captured at hover time, across every
+        // row it wraps onto: an OSC 8 link isn't in the regex highlight
+        // scan at all, and a scraped URL is scanned one row at a time.
+        let hovered_link_spans = &widget_state.hovered_link_spans;
 
         // --- Pass 2: draw cells with highlight overrides ---
         // Consecutive plain ASCII glyphs in a row that share the same
@@ -831,7 +849,7 @@ where
             // looking like every link is independently clickable.
             let is_hovered_url = hovered_url_extent.is_some_and(|(r, sc, ec)| {
                 cd.row == r && cd.col >= sc && cd.col <= ec
-            }) || hovered_osc8.iter().any(|&(r, sc, ec)| {
+            }) || hovered_link_spans.iter().any(|&(r, sc, ec)| {
                 cd.row == r && cd.col >= sc && cd.col <= ec
             });
             if cd.flags.intersects(CellFlags::ALL_UNDERLINES) || is_hovered_url {
