@@ -345,21 +345,26 @@ impl Oryxis {
             && !modifiers.alt()
             && matches!(key, keyboard::Key::Character(c) if c.as_str().eq_ignore_ascii_case("a"))
         {
-            if let Some(idx) = self.active_tab
-                && let Some(t) = self.tabs.get_mut(idx)
+            let idx = self.active_tab?;
+            let files = &mut self.tabs.get_mut(idx)?.active_mut().files;
+            // DECLINE rather than consume while an inline edit owns the
+            // keyboard: there Ctrl+A is the text input's own select-all,
+            // and swallowing it here would leave the field with a key
+            // that does nothing. Same reason the ring-less Delete
+            // refuses in `sidebar_files_selected_entries`, and the same
+            // shape: not acting is not the same as consuming.
+            if files.path_editing.is_some()
+                || files.rename.is_some()
+                || files.new_entry.is_some()
             {
-                let files = &mut t.active_mut().files;
-                if files.path_editing.is_none()
-                    && files.rename.is_none()
-                    && files.new_entry.is_none()
-                {
-                    let paths = crate::dispatch_sidebar_files::visible_entry_paths(files);
-                    if !paths.is_empty() {
-                        files.selection_anchor = Some(paths[0].clone());
-                        files.selected = paths;
-                    }
-                }
+                return None;
             }
+            let paths = crate::dispatch_sidebar_files::visible_entry_paths(files);
+            if paths.is_empty() {
+                return None;
+            }
+            files.selection_anchor = Some(paths[0].clone());
+            files.selected = paths;
             return Some(Task::none());
         }
         if modifiers.control() || modifiers.alt() || modifiers.logo() {

@@ -149,45 +149,12 @@ impl Oryxis {
                 if targets.is_empty() {
                     return Task::none();
                 }
-                let (title, body) = if targets.len() == 1 {
-                    let (path, is_dir) = &targets[0];
-                    let name = files_basename(path);
-                    let detail = if *is_dir {
-                        format!(
-                            "\"{}\", {}",
-                            name,
-                            crate::i18n::t("folder_and_contents")
-                        )
-                    } else {
-                        format!("\"{name}\"")
-                    };
-                    (
-                        crate::i18n::t("delete_item_question").to_string(),
-                        detail,
-                    )
-                } else {
-                    let folder_count = targets.iter().filter(|(_, d)| *d).count();
-                    let file_count = targets.len() - folder_count;
-                    let detail = match (folder_count, file_count) {
-                        (0, n) => format!("{} {}", n, crate::i18n::t("files_lower")),
-                        (n, 0) => {
-                            format!("{} {}", n, crate::i18n::t("folders_recursive_lower"))
-                        }
-                        (f, fi) => format!(
-                            "{} {} {} {} {}",
-                            f,
-                            crate::i18n::t("folders_recursive_lower"),
-                            crate::i18n::t("and"),
-                            fi,
-                            crate::i18n::t("files_lower"),
-                        ),
-                    };
-                    (
-                        crate::i18n::t("delete_n_items_question")
-                            .replacen("{n}", &targets.len().to_string(), 1),
-                        detail,
-                    )
-                };
+                let owned: Vec<(&str, bool)> = targets
+                    .iter()
+                    .map(|(p, d)| (p.as_str(), *d))
+                    .collect();
+                let (title, body) = crate::sftp_helpers::delete_confirm_copy(&owned);
+                drop(owned);
                 self.error_dialog = Some(crate::state::ErrorDialog {
                     title,
                     body,

@@ -186,13 +186,19 @@ pub(crate) fn selected_items(files: &crate::state::PaneFiles) -> Vec<(String, bo
 /// descriptors the drag data object doesn't build yet, matching the
 /// SFTP pane's rule), capped like it too; `None` when there is
 /// nothing to carry. Returns `(payload, ghost label)`.
-fn sidebar_drag_out_payload(
+///
+/// Deliberately does NOT ask `drag_out::supported()`: that is a
+/// platform answer (`cfg!(windows)`), not a fact about the selection,
+/// and asking it here made the whole function unreachable off Windows
+/// including from a unit test, which is where the selection rules are
+/// worth pinning. The caller gates on it.
+pub(crate) fn sidebar_drag_out_payload(
     files: &crate::state::PaneFiles,
     path: &str,
     is_dir: bool,
 ) -> Option<(crate::drag_out::DragOutPayload, String)> {
     const MAX_DRAG_OUT_FILES: usize = 64;
-    if is_dir || !crate::drag_out::supported() {
+    if is_dir {
         return None;
     }
     let mut items: Vec<String> = if files.selected.iter().any(|p| p == path) {
@@ -773,15 +779,17 @@ mod tests {
 
     #[test]
     fn visible_paths_follow_the_listing_and_hidden_filter() {
-        let mut files = crate::state::PaneFiles::default();
-        files.path = "/srv".to_string();
-        files.entries = vec![
-            entry("a.conf", 10),
-            oryxis_ssh::SftpEntry {
-                name: ".hidden".to_string(),
-                ..entry(".hidden", 0)
-            },
-        ];
+        let mut files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![
+                entry("a.conf", 10),
+                oryxis_ssh::SftpEntry {
+                    name: ".hidden".to_string(),
+                    ..entry(".hidden", 0)
+                },
+            ],
+            ..Default::default()
+        };
         // Hidden rows are invisible to a shift-click range, exactly as
         // they are to the mouse.
         assert_eq!(visible_entry_paths(&files), vec!["/srv/a.conf"]);
@@ -794,10 +802,12 @@ mod tests {
 
     #[test]
     fn selected_items_returns_listing_rows_not_stale_paths() {
-        let mut files = crate::state::PaneFiles::default();
-        files.path = "/srv".to_string();
-        files.entries = vec![entry("a.conf", 10), dir_entry("docs")];
-        files.selected = vec!["/srv/a.conf".to_string(), "/srv/gone".to_string()];
+        let files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![entry("a.conf", 10), dir_entry("docs")],
+            selected: vec!["/srv/a.conf".to_string(), "/srv/gone".to_string()],
+            ..Default::default()
+        };
         // The stale path (already deleted from the listing) does not
         // produce a target, and directories report `is_dir`.
         assert_eq!(selected_items(&files), vec![("/srv/a.conf".to_string(), false)]);
@@ -805,22 +815,24 @@ mod tests {
 
     #[test]
     fn drag_out_payload_carries_the_selection() {
-        let mut files = crate::state::PaneFiles::default();
-        files.path = "/srv".to_string();
-        files.entries = vec![
-            entry("a.conf", 10),
-            entry("b.conf", 20),
-            entry("c.conf", 30),
-            dir_entry("docs"),
-        ];
-        files.selected = vec![
-            "/srv/a.conf".to_string(),
-            "/srv/b.conf".to_string(),
-            "/srv/docs".to_string(),
-        ];
-        files.client = Some(crate::local_files::FilesClient::Local(
-            crate::local_files::LocalFs,
-        ));
+        let files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![
+                entry("a.conf", 10),
+                entry("b.conf", 20),
+                entry("c.conf", 30),
+                dir_entry("docs"),
+            ],
+            selected: vec![
+                "/srv/a.conf".to_string(),
+                "/srv/b.conf".to_string(),
+                "/srv/docs".to_string(),
+            ],
+            client: Some(crate::local_files::FilesClient::Local(
+                crate::local_files::LocalFs,
+            )),
+            ..Default::default()
+        };
         // Pressing a selected FILE row drags every file of the
         // selection; the directory stays behind (no recursive payload).
         let (payload, label) = sidebar_drag_out_payload(&files, "/srv/b.conf", false)

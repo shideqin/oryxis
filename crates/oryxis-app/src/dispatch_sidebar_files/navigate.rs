@@ -39,6 +39,10 @@ impl Oryxis {
                 let ctrl = self.modifiers.control() || self.modifiers.command();
                 let shift = self.modifiers.shift();
                 let now = std::time::Instant::now();
+                // Read off `self` with the modifiers, for the same
+                // reason: the arm below is built while the pane borrow
+                // is live.
+                let press_pos = self.mouse_position;
                 let Some(pane) = self.active_pane_mut() else {
                     return Task::none();
                 };
@@ -47,6 +51,34 @@ impl Oryxis {
                 // back to the label + actions.
                 pane.files.path_editing = None;
                 pane.files.path_history_open = false;
+                // Arm a drag-out (issue #167) on FILE rows where a
+                // backend can serve it: crossing the movement threshold
+                // while the button is still down raises the ghost, and
+                // leaving the window turns the press into an OS drag
+                // (see `advance_drag_out`); a plain click stays exactly
+                // the select it always was.
+                //
+                // BEFORE the selection edit below, which is the whole
+                // reason a multi-selection can be dragged at all: a
+                // plain press collapses `selected` to the pressed row,
+                // so a payload built after it would carry one file no
+                // matter how many were highlighted, and the gesture the
+                // selection exists for (pick several, drag one of them
+                // out) would silently drop the rest. `SftpSelectRow`
+                // arms in the same position and says so.
+                // Computed here, PUBLISHED at the end: `pane` still owns
+                // the borrow through the selection edit, and the value
+                // is what has to be captured early, not the assignment.
+                let arm = crate::drag_out::supported()
+                    .then(|| super::sidebar_drag_out_payload(&pane.files, &path, is_dir))
+                    .flatten()
+                    .map(
+                    |(payload, label)| crate::drag_out::DragOutArm {
+                        press: press_pos,
+                        label,
+                        stage: crate::drag_out::DragOutStage::Armed(payload),
+                    },
+                );
                 // Only a PLAIN click can be a double-click: a ctrl/shift
                 // press is selection-building, never an enter (the SFTP
                 // pane's rule).
@@ -91,11 +123,14 @@ impl Oryxis {
                     });
                     if let Some(range) = range {
                         pane.files.selected = range;
-                        // No early return: the shared drag-out arm
-                        // below builds its payload from the selection as
-                        // it stands now, so the fresh range drags as one
-                        // (the fall-through is what makes this branch
-                        // two lines instead of ten).
+                        // No early return: the shared publish at the
+                        // bottom still has to run. The payload it
+                        // publishes was taken BEFORE this range was
+                        // built, which is the same answer the SFTP pane
+                        // gives (it arms ahead of its own collapse):
+                        // what a press drags is what was selected when
+                        // the button went down, not what the same press
+                        // then selected.
                     } else {
                         pane.files.selected = vec![path.clone()];
                         pane.files.selection_anchor = Some(path.clone());
@@ -113,23 +148,6 @@ impl Oryxis {
                     pane.files.selected = vec![path.clone()];
                     pane.files.selection_anchor = Some(path.clone());
                 }
-                // Arm a drag-out (issue #167) on FILE rows where a
-                // backend can serve it: crossing the movement threshold
-                // while the button is still down raises the ghost, and
-                // leaving the window turns the press into an OS drag
-                // (see `advance_drag_out`); a plain click stays exactly
-                // the select it always was. A press on a row that is
-                // part of a multi-selection carries the whole
-                // selection; a press on an outside row carries just
-                // that row. The payload is built NOW, while the pane
-                // is in hand; the press anchor was synced at the top of
-                // `update`.
-                let arm = super::sidebar_drag_out_payload(&pane.files, &path, is_dir)
-                    .map(|(payload, label)| crate::drag_out::DragOutArm {
-                        press: self.mouse_position,
-                        label,
-                        stage: crate::drag_out::DragOutStage::Armed(payload),
-                    });
                 self.drag_out_arm = arm;
             }
             SidebarFilesMessage::SidebarFilesToggleFollow => {

@@ -152,16 +152,20 @@ mod tests {
             permissions: None,
             uid: None,
             gid: None,
+            owner: None,
+            group: None,
         }
     }
 
     #[test]
     fn prune_drops_deleted_rows_and_their_anchor() {
-        let mut files = crate::state::PaneFiles::default();
-        files.path = "/srv".to_string();
-        files.entries = vec![entry("a.conf", false), entry("b.conf", false)];
-        files.selected = vec!["/srv/a.conf".to_string(), "/srv/gone".to_string()];
-        files.selection_anchor = Some("/srv/gone".to_string());
+        let mut files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![entry("a.conf", false), entry("b.conf", false)],
+            selected: vec!["/srv/a.conf".to_string(), "/srv/gone".to_string()],
+            selection_anchor: Some("/srv/gone".to_string()),
+            ..Default::default()
+        };
         prune_selection(&mut files, "/srv");
         assert_eq!(files.selected, vec!["/srv/a.conf".to_string()]);
         // The anchor's row no longer exists, so a later shift-click
@@ -171,11 +175,13 @@ mod tests {
 
     #[test]
     fn prune_keeps_surviving_anchor() {
-        let mut files = crate::state::PaneFiles::default();
-        files.path = "/srv".to_string();
-        files.entries = vec![entry("a.conf", false), entry("b.conf", false)];
-        files.selected = vec!["/srv/a.conf".to_string(), "/srv/b.conf".to_string()];
-        files.selection_anchor = Some("/srv/a.conf".to_string());
+        let mut files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![entry("a.conf", false), entry("b.conf", false)],
+            selected: vec!["/srv/a.conf".to_string(), "/srv/b.conf".to_string()],
+            selection_anchor: Some("/srv/a.conf".to_string()),
+            ..Default::default()
+        };
         prune_selection(&mut files, "/srv");
         assert_eq!(
             files.selected,
@@ -186,10 +192,12 @@ mod tests {
 
     #[test]
     fn prune_clears_an_empty_selection() {
-        let mut files = crate::state::PaneFiles::default();
-        files.path = "/srv".to_string();
-        files.entries = vec![entry("a.conf", false)];
-        files.selection_anchor = Some("/srv/a.conf".to_string());
+        let mut files = crate::state::PaneFiles {
+            path: "/srv".to_string(),
+            entries: vec![entry("a.conf", false)],
+            selection_anchor: Some("/srv/a.conf".to_string()),
+            ..Default::default()
+        };
         prune_selection(&mut files, "/srv");
         assert!(files.selected.is_empty());
         assert_eq!(files.selection_anchor, None);
