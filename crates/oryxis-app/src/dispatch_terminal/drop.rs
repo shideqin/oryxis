@@ -652,7 +652,7 @@ impl Oryxis {
         // times that notice wasn't shown.
         let notified = finished
             .as_ref()
-            .is_some_and(|(title, body)| self.notify_away(title, body));
+            .is_some_and(|(title, body)| self.notify_away(title, body, toast.clone()));
         if let Some(t) = toast
             && !notified
         {

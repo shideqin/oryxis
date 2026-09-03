@@ -590,9 +590,19 @@ pub(crate) fn truncate_middle(s: &str, max: usize) -> String {
     out
 }
 
-/// Show a native OS notification (OSC 9). Returns whether it was dispatched;
-/// the caller falls back to an in-app toast on `false` (no notification daemon
-/// on Linux, or the toast pipeline failing on Windows).
+/// Show a native OS notification and report whether it was dispatched:
+/// `false` means no notification daemon answered (Linux) or the toast
+/// pipeline failed (Windows), and the caller owes an in-app toast.
+///
+/// BLOCKING, and never to be called on the UI thread. On macOS
+/// `mac-notification-sys` waits for the delivery callback by spinning the
+/// current run loop (`runUntilDate:`, up to two seconds), and on the main
+/// thread that is the run loop winit's event handler is executing in, so
+/// the sources it services re-enter the handler mid-event. On Linux the
+/// D-Bus round trip stalls the frame. The one caller is the blocking task
+/// in `dispatch_global::take_os_notice_tasks`; app code queues through
+/// `Oryxis::push_os_notice` / `notify_away`, and a test there pins the
+/// call sites.
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn show_os_notification(summary: &str, body: &str) -> bool {
     notify_rust::Notification::new()
@@ -605,7 +615,10 @@ pub(crate) fn show_os_notification(summary: &str, body: &str) -> bool {
 
 /// Windows half, calling the same backend notify-rust would (0.8 builds
 /// on `windows` 0.62, the major everything else in the tree already
-/// uses, while notify-rust pins the 0.7 line to 0.61).
+/// uses, while notify-rust pins the 0.7 line to 0.61). Same contract as
+/// the other half: blocking, called from the blocking task only. WinRT
+/// activation from a thread that never initialized COM is fine, the
+/// `windows` crate joins the MTA on `CO_E_NOTINITIALIZED` itself.
 ///
 /// Toasts are attributed to whatever AppUserModelID they are sent under,
 /// so the id decides the name and icon Windows prints on the banner and

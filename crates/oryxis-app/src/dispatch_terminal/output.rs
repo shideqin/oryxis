@@ -1106,8 +1106,13 @@ impl Oryxis {
                             crate::util::NotificationMode::Off => false,
                             crate::util::NotificationMode::Toast => true,
                             crate::util::NotificationMode::Os => {
-                                !win_focused
-                                    && !crate::util::show_os_notification("Oryxis", body)
+                                // Away from the window the OS carries it,
+                                // and a refusal comes back later as this
+                                // same body in a toast.
+                                if !win_focused {
+                                    self.push_os_notice("Oryxis", body, Some(body.to_string()));
+                                }
+                                false
                             }
                         };
                         if show_toast {
@@ -1151,6 +1156,11 @@ impl Oryxis {
                     } else {
                         (label, body)
                     };
+                    let toast_text = if private {
+                        text.clone()
+                    } else {
+                        format!("{title} \u{b7} {text}")
+                    };
                     let show_toast = match notif_mode {
                         crate::util::NotificationMode::Off => false,
                         crate::util::NotificationMode::Toast => !about_active_tab,
@@ -1163,20 +1173,18 @@ impl Oryxis {
                             } else {
                                 // Away: the system banner is the point,
                                 // active tab included. Toast only as the
-                                // failure fallback, and the active-tab gate
-                                // still applies to it, "away" may already be
-                                // stale in the alt-tab race.
-                                !crate::util::show_os_notification(&title, &text)
-                                    && !about_active_tab
+                                // failure fallback, raised later by the task
+                                // that asked, and the active-tab gate still
+                                // applies to it, "away" may already be stale
+                                // in the alt-tab race.
+                                let fallback = (!about_active_tab).then(|| toast_text.clone());
+                                self.push_os_notice(&title, &text, fallback);
+                                false
                             }
                         }
                     };
                     if show_toast {
-                        self.set_toast(if private {
-                            text
-                        } else {
-                            format!("{title} \u{b7} {text}")
-                        });
+                        self.set_toast(toast_text);
                         toast_shown = win_focused;
                     }
                 }

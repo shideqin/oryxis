@@ -193,6 +193,11 @@ impl Oryxis {
             crate::dispatch_global::serve_terminal_clipboard_requests()
                 .into_iter()
                 .collect();
+        // Native OS notifications this cycle asked for. The blocking call
+        // runs off the UI thread, one task per notice, and a notice the OS
+        // refused comes back as `ToastShow`. Same funnel shape as the
+        // clipboard above: no caller hands the OS a notification itself.
+        extra.extend(self.take_os_notice_tasks());
         // One-shot Privacy Mode hint (issue #78): the first time a
         // redaction bar actually draws, spell out how the reveal works
         // ("hover to peek, click to pin"); getting silently masked with
@@ -438,6 +443,7 @@ impl Oryxis {
             | Message::ClipboardWritten(_)
             | Message::ToastClear
             | Message::ToastDismiss
+            | Message::ToastShow(_)
             | Message::ErrorDialogDismiss
             | Message::ErrorDialogRunAction
             | Message::TogglePrivacyReveal

@@ -278,7 +278,7 @@ impl Oryxis {
                         // the log line (and, below, the pane's error),
                         // both of which PERSIST, so the notice adds to
                         // them instead of standing in for them.
-                        self.notify_away(crate::i18n::t("transfer_notify_done"), &label);
+                        self.notify_away(crate::i18n::t("transfer_notify_done"), &label, None);
                         self.push_sftp_log(SftpLogLevel::Ok, label);
                         // Refresh the affected pane so the new entries
                         // show up (skip if it meanwhile entered zip
@@ -297,7 +297,7 @@ impl Oryxis {
                         }
                     }
                     Err(e) => {
-                        self.notify_away(crate::i18n::t("transfer_notify_failed"), &e);
+                        self.notify_away(crate::i18n::t("transfer_notify_failed"), &e, None);
                         return Ok(Task::done(Message::Sftp(SftpMessage::SftpOpResult(side, e, true))));
                     }
                 }

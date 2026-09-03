@@ -69,8 +69,9 @@ impl Oryxis {
                 // for, and a user who turned those off was refusing the
                 // remote host, not themselves. A rule's action is
                 // opt-in per rule, so the rule is the switch.
-                if self.window_focused || !crate::util::show_os_notification(&title, &body) {
-                    self.set_toast(format!("{title}: {body}"));
+                let toast = format!("{title}: {body}");
+                if !self.notify_away(&title, &body, Some(toast.clone())) {
+                    self.set_toast(toast);
                 }
             }
             TriggerAction::Snippet { id } => {

@@ -283,7 +283,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -2284,7 +2284,7 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 [[package]]
 name = "dpi"
 version = "0.1.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 
 [[package]]
 name = "dtor"
@@ -2455,7 +2455,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5798,7 +5798,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6516,7 +6516,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7179,7 +7179,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8237,10 +8237,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9582,7 +9582,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9819,7 +9819,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "winit"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "bitflags 2.13.1",
  "cfg_aliases 0.2.2",
@@ -9845,7 +9845,7 @@ dependencies = [
 [[package]]
 name = "winit-android"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "android-activity",
  "bitflags 2.13.1",
@@ -9860,7 +9860,7 @@ dependencies = [
 [[package]]
 name = "winit-appkit"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "bitflags 2.13.1",
  "block2",
@@ -9882,7 +9882,7 @@ dependencies = [
 [[package]]
 name = "winit-common"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "block2",
  "memmap2",
@@ -9899,7 +9899,7 @@ dependencies = [
 [[package]]
 name = "winit-core"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "bitflags 2.13.1",
  "cursor-icon",
@@ -9914,7 +9914,7 @@ dependencies = [
 [[package]]
 name = "winit-orbital"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "bitflags 2.13.1",
  "dpi 0.1.2 (git+https://github.com/wilsonglasser/winit)",
@@ -9930,7 +9930,7 @@ dependencies = [
 [[package]]
 name = "winit-uikit"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "bitflags 2.13.1",
  "block2",
@@ -9950,7 +9950,7 @@ dependencies = [
 [[package]]
 name = "winit-wayland"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "bitflags 2.13.1",
  "calloop",
@@ -9977,7 +9977,7 @@ dependencies = [
 [[package]]
 name = "winit-web"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "atomic-waker",
  "bitflags 2.13.1",
@@ -9999,7 +9999,7 @@ dependencies = [
 [[package]]
 name = "winit-win32"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "bitflags 2.13.1",
  "cursor-icon",
@@ -10016,7 +10016,7 @@ dependencies = [
 [[package]]
 name = "winit-x11"
 version = "0.31.0-beta.2"
-source = "git+https://github.com/wilsonglasser/winit#f344dfb1096ed9215f557d5663bde8c638f20512"
+source = "git+https://github.com/wilsonglasser/winit#0a6341f5627f4df42130b00ea75eee205cbdcb86"
 dependencies = [
  "bitflags 2.13.1",
  "bytemuck",

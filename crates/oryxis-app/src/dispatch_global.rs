@@ -82,9 +82,23 @@ pub(crate) fn serve_terminal_clipboard_requests() -> Option<Task<Message>> {
         .reduce(Task::chain)
 }
 
+/// A native OS notification waiting for the end of the current `update`,
+/// where it is handed to a blocking task off the UI thread.
+///
+/// `fallback` is the in-app toast to raise if the OS refuses to carry it
+/// (no notification daemon on Linux, no AppUserModelID on a
+/// non-installed Windows build); `None` when the caller keeps a
+/// persistent in-app record of its own and needs no stand-in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OsNotice {
+    pub title: String,
+    pub body: String,
+    pub fallback: Option<String>,
+}
+
 impl Oryxis {
     /// Hand the OS a notice about something that finished while the
-    /// user was away from the window, and say whether it was carried.
+    /// user was away from the window, and say whether it was handed over.
     ///
     /// A file transfer is the long operation the user is EXPECTED to
     /// walk away from, which is what makes it worth a native popup:
@@ -93,22 +107,74 @@ impl Oryxis {
     /// surfaces already shows its own progress, so this refuses there
     /// and the caller keeps whatever in-app feedback it had.
     ///
-    /// `false` means nothing was shown (the window is focused, or the
-    /// OS refused: no notification daemon on Linux, no AppUserModelID
-    /// on a non-installed Windows build), so a caller with an in-app
-    /// fallback should show it.
+    /// `false` means the window is focused and nothing was queued, so a
+    /// caller with an in-app fallback shows it now. `true` means the
+    /// notice is queued for the OS; whether the OS carries it is only
+    /// known later, off the UI thread, and a refusal raises `fallback`
+    /// as a toast then (see [`Oryxis::take_os_notice_tasks`]).
     ///
     /// No setting gates this: `terminal_notification` governs notices
     /// a remote SHELL asks for, which is a different question from
     /// whether the user's own transfer is done.
-    pub(crate) fn notify_away(&self, title: &str, body: &str) -> bool {
+    pub(crate) fn notify_away(
+        &mut self,
+        title: &str,
+        body: &str,
+        fallback: Option<String>,
+    ) -> bool {
         if self.window_focused {
             return false;
         }
         // One line, and never the full path of a deep tree: the OS
         // decides how much of a body it shows, and a truncated middle
         // reads worse than a short line.
-        crate::util::show_os_notification(title, &crate::util::truncate_middle(body, 120))
+        self.push_os_notice(title, &crate::util::truncate_middle(body, 120), fallback);
+        true
+    }
+
+    /// Queue a native OS notification for the end of this `update`.
+    ///
+    /// Nothing is shown here. `util::show_os_notification` blocks the
+    /// thread it runs on (macOS spins the main run loop while it waits
+    /// for the delivery callback, Linux makes a D-Bus round trip), and
+    /// inside `update` that thread is the one drawing the window and
+    /// hosting winit's event handler, so the call is left to the
+    /// blocking task [`Oryxis::take_os_notice_tasks`] spawns.
+    pub(crate) fn push_os_notice(&mut self, title: &str, body: &str, fallback: Option<String>) {
+        self.os_notices.push(OsNotice {
+            title: title.to_string(),
+            body: body.to_string(),
+            fallback,
+        });
+    }
+
+    /// Drain the notices queued this cycle into one blocking task each.
+    ///
+    /// Called from `update` after every message, next to the terminal
+    /// clipboard requests: one funnel, so no caller can hand the OS a
+    /// notification from the UI thread. A task reports back only when
+    /// the OS refused, as a `ToastShow` of the notice's fallback.
+    pub(crate) fn take_os_notice_tasks(&mut self) -> Vec<Task<Message>> {
+        std::mem::take(&mut self.os_notices)
+            .into_iter()
+            .map(|notice| {
+                Task::perform(
+                    async move {
+                        let OsNotice { title, body, fallback } = notice;
+                        let shown = tokio::task::spawn_blocking(move || {
+                            crate::util::show_os_notification(&title, &body)
+                        })
+                        .await
+                        .unwrap_or(false);
+                        if shown { None } else { fallback }
+                    },
+                    |fallback| match fallback {
+                        Some(text) => Message::ToastShow(text),
+                        None => Message::NoOp,
+                    },
+                )
+            })
+            .collect()
     }
 
     pub(crate) fn handle_global(&mut self, message: Message) -> Task<Message> {
@@ -164,6 +230,12 @@ impl Oryxis {
                 self.toast_deadline = None;
             }
 
+            Message::ToastShow(text) => {
+                // The in-app stand-in for an OS notification the OS
+                // refused, reported by the blocking task that asked it.
+                self.set_toast(text);
+            }
+
             Message::ErrorDialogRunAction => {
                 if let Some(dialog) = self.error_dialog.take()
                     && let Some(action) = dialog.action
@@ -183,5 +255,53 @@ impl Oryxis {
             m => return crate::dispatch::unrouted(m),
         }
         Task::none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// `util::show_os_notification` blocks the thread it runs on, and on
+    /// the UI thread that thread hosts winit's event handler, so the only
+    /// place allowed to call it is the blocking task `take_os_notice_tasks`
+    /// spawns. A new call site anywhere else is the regression this pins.
+    #[test]
+    fn show_os_notification_is_called_only_from_the_blocking_task() {
+        // Split so this test's own source does not match itself.
+        let needle = ["show_os_", "notification("].concat();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut stack = vec![root.clone()];
+        let mut call_sites: Vec<String> = Vec::new();
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).expect("read src dir") {
+                let path = entry.expect("dir entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|e| e != "rs") {
+                    continue;
+                }
+                let src = std::fs::read_to_string(&path).expect("read source");
+                for (idx, line) in src.lines().enumerate() {
+                    // The two `fn` definitions in `util.rs` (one per OS
+                    // family) are not calls.
+                    if line.contains(&needle) && !line.contains(&format!("fn {needle}")) {
+                        let rel = path.strip_prefix(&root).expect("under src");
+                        call_sites.push(format!("{}:{}", rel.display(), idx + 1));
+                    }
+                }
+            }
+        }
+        call_sites.sort();
+        assert_eq!(
+            call_sites.len(),
+            1,
+            "show_os_notification is called from {call_sites:?}; queue through \
+             Oryxis::push_os_notice / notify_away instead"
+        );
+        assert!(
+            call_sites[0].starts_with("dispatch_global.rs:"),
+            "the one call site must be take_os_notice_tasks, found {call_sites:?}"
+        );
     }
 }

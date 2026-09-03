@@ -1414,6 +1414,10 @@ pub struct Oryxis {
     /// When the current `toast` should auto-dismiss. Reset on every new
     /// toast so the latest one always gets its full dwell.
     pub(crate) toast_deadline: Option<std::time::Instant>,
+    /// Native OS notifications queued during this `update`, handed to a
+    /// blocking task each at its end (`dispatch_global::take_os_notice_tasks`).
+    /// Never shown from the UI thread: see `Oryxis::push_os_notice`.
+    pub(crate) os_notices: Vec<crate::dispatch_global::OsNotice>,
 
     /// CJK language codes (`"ko"`/`"zh"`/`"ja"`) whose font has already
     /// been requested this session, so switching language back and forth

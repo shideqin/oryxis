@@ -434,9 +434,8 @@ impl Oryxis {
     /// the toast is only for the case where the notice was owed and
     /// the OS refused to carry it.
     fn notify_transfer_finished(&mut self, title: &str, body: &str) {
-        if self.window_focused || self.notify_away(title, body) {
-            return;
+        if !self.window_focused {
+            self.notify_away(title, body, Some(format!("{title}: {body}")));
         }
-        self.set_toast(format!("{title}: {body}"));
     }
 }

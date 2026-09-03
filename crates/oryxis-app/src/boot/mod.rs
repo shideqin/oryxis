@@ -588,6 +588,7 @@ impl Oryxis {
                 ai: crate::state::AiState::default(),
                 toast: None,
                 toast_deadline: None,
+                os_notices: Vec::new(),
                 loaded_cjk_fonts: std::collections::HashSet::new(),
                 loaded_pack_fonts: std::collections::HashSet::new(),
                 error_dialog: None,
