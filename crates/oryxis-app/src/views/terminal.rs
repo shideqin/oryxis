@@ -946,7 +946,7 @@ impl Oryxis {
                 .into(),
         );
 
-        let mut controls: Vec<Element<'a, Message>> = Vec::with_capacity(2);
+        let mut controls: Vec<Element<'a, Message>> = Vec::with_capacity(3);
         if self.pane_restartable(pane) {
             controls.push(pane_header_button(
                 iced_fonts::lucide::refresh_cw(),
@@ -954,6 +954,15 @@ impl Oryxis {
                 Message::Terminal(TerminalMessage::RestartPane(pane_id)),
             ));
         }
+        // Break this pane out into a tab of its own (issue #208 item 4).
+        // Before close, in the same order the pane's own menu puts them:
+        // the two answers to "this pane should not be here", the one
+        // that keeps the session ahead of the one that ends it.
+        controls.push(pane_header_button(
+            iced_fonts::lucide::external_link(),
+            t("pane_to_new_tab"),
+            Message::Terminal(TerminalMessage::MovePaneToNewTab(pane_id)),
+        ));
         controls.push(pane_header_button(
             iced_fonts::lucide::x(),
             t("close_pane"),
@@ -969,12 +978,25 @@ impl Oryxis {
         } else {
             colors.bg_surface
         };
-        iced::widget::pane_grid::TitleBar::new(
+        // Right-click the NAME for the pane's own menu. Deliberately the
+        // title and not the whole strip: the drag pick area is the bar
+        // minus its title and minus its controls, so a target that
+        // filled the bar would leave nothing to grab. A right press
+        // never starts a drag either way, so the two gestures share the
+        // strip without competing.
+        //
+        // This is the route that does not care what `terminal_right_click`
+        // is set to. The canvas offers the same menu only under the Menu
+        // scheme; the header is not the canvas.
+        let title: Element<'a, Message> = MouseArea::new(
             container(dir_row(title).align_y(iced::Alignment::Center))
                 .height(Length::Fixed(PANE_HEADER_HEIGHT))
                 .padding(Padding::from([0.0, 8.0]))
                 .center_y(Length::Fixed(PANE_HEADER_HEIGHT)),
         )
+        .on_right_press(Message::Terminal(TerminalMessage::ShowPaneHeaderMenu(pane_id)))
+        .into();
+        iced::widget::pane_grid::TitleBar::new(title)
         .controls(iced::widget::pane_grid::Controls::new(
             container(dir_row(controls).align_y(iced::Alignment::Center))
                 .height(Length::Fixed(PANE_HEADER_HEIGHT))

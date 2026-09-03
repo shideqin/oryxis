@@ -1331,6 +1331,15 @@ pub struct Oryxis {
     pub(crate) pending_ecs_autoconnect: Option<crate::state::PendingEcsAutoConnect>,
     /// In-progress tab reorder drag (see `TabDrag`). `None` when not dragging.
     pub(crate) tab_drag: Option<crate::state::TabDrag>,
+    /// Which tab a pane being dragged by its header came FROM, and its
+    /// handle there (issue #208 item 4). Recorded when the widget picks
+    /// the pane up, read when it reports the release.
+    ///
+    /// Not derivable at release time: a `pane_grid::Pane` handle is
+    /// minted per grid and is only unique within one, so the tab cannot
+    /// be found by searching for the handle, and the handle only means
+    /// something next to the tab it was minted in.
+    pub(crate) pane_drag_from: Option<(uuid::Uuid, iced::widget::pane_grid::Pane)>,
     /// Live width of the right-side editor drawer (host / key / identity /
     /// snippet / port-forward / cloud forms, all of them: they share one
     /// width, like they shared one constant). Defaults to `PANEL_WIDTH`,
