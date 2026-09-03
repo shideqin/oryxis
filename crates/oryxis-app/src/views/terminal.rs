@@ -107,6 +107,10 @@ impl Oryxis {
                 // wears a 2px warning-tinted border so it is unmistakable that
                 // keystrokes fan out to all of them at once.
                 let broadcast = tab.broadcast;
+                // Headers are a SPLIT-tab affordance (issue #208): a lone
+                // pane has no sibling to tell itself apart from, and its
+                // end-of-session card is the answer it already has.
+                let headers = multipane && self.prefs.pane_headers;
                 let grid = iced::widget::pane_grid(&tab.pane_grid, move |pane, pane_data, _max| {
                     let is_focused = pane == focused;
                     // The outline (focus accent, or the warning tint while
@@ -116,7 +120,7 @@ impl Oryxis {
                     // fills the container and paints over it (#113). Gated on
                     // `multipane` there, since a lone pane has nothing to be
                     // distinguished from and broadcast is inert on it.
-                    iced::widget::pane_grid::Content::new(
+                    let content = iced::widget::pane_grid::Content::new(
                         container(self.render_pane_canvas(
                             pane_data,
                             is_focused,
@@ -126,7 +130,12 @@ impl Oryxis {
                         ))
                         .width(Length::Fill)
                         .height(Length::Fill),
-                    )
+                    );
+                    if headers {
+                        content.title_bar(self.pane_header(tab, pane_data, is_focused))
+                    } else {
+                        content
+                    }
                 })
                 .on_click(|v| Message::Terminal(TerminalMessage::FocusPane(v)))
                 // The panes sit FLUSH: no gutter at all (owner call). The
@@ -136,6 +145,50 @@ impl Oryxis {
                 // and no text selection starts. The leeway is back at 8
                 // now that nothing competes for those pixels.
                 .on_resize(8, |v| Message::Terminal(TerminalMessage::ResizePane(v)))
+                // Rearranging the grid by dragging a pane (issue #208
+                // item 4). Wired unconditionally on purpose: the widget
+                // gates itself twice over, and both gates are the ones
+                // we would have written. It refuses to start a drag on a
+                // pane with no title bar (`Content::can_be_dragged_at`),
+                // so this is inert unless the header preference put one
+                // there, and it drops the handler entirely while a pane
+                // is maximized, so a zoomed tab cannot be rearranged
+                // underneath its own zoom.
+                //
+                // The target is resolved by the grid rather than by
+                // `pane_drop::drop_target_at`, which exists for the
+                // OTHER gesture: a tab dragged out of the strip never
+                // enters the widget's dragging state, so nothing there
+                // computes a target or paints a preview and we have to.
+                // A drag that starts on a pane does both for us, and
+                // restating them here would be a second answer drawn
+                // over the widget's own.
+                .on_drag(|v| Message::Terminal(TerminalMessage::PaneDrag(v)))
+                .style(|_| iced::widget::pane_grid::Style {
+                    // The drop preview and the split lines, in the app's
+                    // accent rather than the fork default's, which reads
+                    // `Theme::palette().primary` from iced's own theme
+                    // and has no idea what an Oryxis palette looks like.
+                    hovered_region: iced::widget::pane_grid::Highlight {
+                        background: Background::Color(Color {
+                            a: 0.25,
+                            ..OryxisColors::t().accent
+                        }),
+                        border: Border {
+                            width: 2.0,
+                            color: OryxisColors::t().accent,
+                            radius: Radius::from(0.0),
+                        },
+                    },
+                    hovered_split: iced::widget::pane_grid::Line {
+                        color: OryxisColors::t().accent,
+                        width: 2.0,
+                    },
+                    picked_split: iced::widget::pane_grid::Line {
+                        color: OryxisColors::t().accent,
+                        width: 2.0,
+                    },
+                })
                 .spacing(if multipane { gap } else { 0.0 })
                 .width(Length::Fill)
                 .height(Length::Fill);
@@ -709,7 +762,22 @@ impl Oryxis {
                 })
                 .into()
         });
-        if overlay.is_none() && link_chip.is_none() && ring.is_none() {
+        // The end-of-session card (issue #208). Not gated on `multipane`:
+        // a local shell in a tab of its own raises `ended` too, and it is
+        // the pane with the least other recourse, since no relabel or
+        // auto-reconnect covers a local tab. `note_pane_ended` is the one
+        // that decides which panes get here.
+        // The card stands down while this pane wears a header (issue
+        // #208): the header states the same verdict in the same strip
+        // and puts the same two actions one click away, so drawing a
+        // second, larger answer over the scrollback adds nothing and
+        // takes the scrollback. Headers are opt-in and split-only, so
+        // the card remains the default answer and the only one a lone
+        // pane ever gets.
+        let ended_card: Option<Element<'a, Message>> = (pane.ended
+            && !(multipane && self.prefs.pane_headers))
+            .then(|| self.pane_ended_card(pane));
+        if overlay.is_none() && link_chip.is_none() && ring.is_none() && ended_card.is_none() {
             return host;
         }
         let mut stack = iced::widget::Stack::new().push(host);
@@ -737,6 +805,16 @@ impl Oryxis {
                     .align_x(crate::widgets::dir_align_x())
                     .align_y(iced::alignment::Vertical::Bottom)
                     .padding(Padding::from([6.0, 10.0])),
+            );
+        }
+        // Last, so nothing layers over the only controls a dead pane has.
+        if let Some(card) = ended_card {
+            stack = stack.push(
+                container(card)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill),
             );
         }
         stack.into()
@@ -788,6 +866,189 @@ impl Oryxis {
             ..Default::default()
         })
         .into()
+    }
+
+    /// Whether `pane` has something to restart INTO: a saved host that
+    /// still exists, a quick-connect entry still in the map, or a local
+    /// shell, all of which its `PaneOrigin` names. A cloud pane
+    /// (`Ephemeral`) has no in-place path at all.
+    ///
+    /// One owner, because the ended card and the pane header both offer
+    /// the same Restart and must agree about when it is there to offer.
+    fn pane_restartable(&self, pane: &crate::state::Pane) -> bool {
+        match &pane.origin {
+            crate::state::PaneOrigin::Host(id) => self.connections.iter().any(|c| c.id == *id),
+            crate::state::PaneOrigin::QuickHost(id) => self.quick_connects.contains_key(id),
+            crate::state::PaneOrigin::Local(_) => true,
+            crate::state::PaneOrigin::Ephemeral => false,
+        }
+    }
+
+    /// The optional title bar a pane of a SPLIT tab wears (issue #208,
+    /// item 2): what this pane is, how its transport is doing, and the
+    /// two actions that belong to a pane rather than to its tab.
+    ///
+    /// A real `pane_grid::TitleBar` rather than another layer in
+    /// `render_pane_canvas`'s stack, because the bar is also the DRAG
+    /// HANDLE: `Content::can_be_dragged_at` consults the title bar's
+    /// pick area and answers false for a pane that has none, so a
+    /// header drawn inside the body would look identical and leave
+    /// in-grid moves impossible.
+    ///
+    /// That pick area is the bar MINUS its title and MINUS its
+    /// controls, so both sides are `Shrink` on purpose: a label set to
+    /// fill would swallow the whole strip and leave nothing to grab.
+    fn pane_header<'a>(
+        &self,
+        tab: &'a crate::state::TerminalTab,
+        pane: &'a crate::state::Pane,
+        is_focused: bool,
+    ) -> iced::widget::pane_grid::TitleBar<'a, Message> {
+        let colors = OryxisColors::t();
+        let pane_id = pane.id;
+        let state = crate::tab_conn_state::derive_pane_conn_state(tab, pane);
+
+        // Privacy Mode redacts the pane name the way the chip and the
+        // link chip already do. The LOOKUP is `pane.label`, never the
+        // shell-set title: the per-host masking rules are written
+        // against host names, and an OSC title is set by the remote end,
+        // which is the last thing that should decide whether the local
+        // masking applies.
+        let shown = pane.display_label(self.tab_auto_title(tab));
+        let mut label =
+            self.privacy_display_label(&pane.label, shown, &self.privacy_terms());
+        // Not a colour-only signal. The dot says the same thing, but a
+        // dot is a hint and this is the pane's own account of itself,
+        // and it is the wording the tab already uses when it is the one
+        // that died.
+        if state == crate::tab_conn_state::TabConnState::Lost {
+            label = format!("{label} ({})", t("status_bar_disconnected"));
+        }
+        let label = truncate_middle(&label, 42);
+
+        let mut title: Vec<Element<'a, Message>> = Vec::with_capacity(3);
+        if let Some(dot) = state.dot_color() {
+            title.push(
+                container(Space::new().width(6).height(6))
+                    .style(move |_| container::Style {
+                        background: Some(Background::Color(dot)),
+                        border: Border { radius: Radius::from(3.0), ..Default::default() },
+                        ..Default::default()
+                    })
+                    .into(),
+            );
+            title.push(Space::new().width(6).into());
+        }
+        title.push(
+            text(label)
+                .size(11)
+                .color(if is_focused { colors.text_primary } else { colors.text_secondary })
+                .into(),
+        );
+
+        let mut controls: Vec<Element<'a, Message>> = Vec::with_capacity(2);
+        if self.pane_restartable(pane) {
+            controls.push(pane_header_button(
+                iced_fonts::lucide::refresh_cw(),
+                t("pane_ended_restart"),
+                Message::Terminal(TerminalMessage::RestartPane(pane_id)),
+            ));
+        }
+        controls.push(pane_header_button(
+            iced_fonts::lucide::x(),
+            t("close_pane"),
+            Message::Terminal(TerminalMessage::ClosePane(Some(pane_id))),
+        ));
+
+        // The focus accent lives in the bar's own skin. The ring in
+        // `render_pane_canvas` outlines the BODY, and a title bar is a
+        // sibling of the body rather than a child, so nothing drawn
+        // there can reach around this strip.
+        let bg = if is_focused {
+            Color { a: 0.18, ..colors.accent }
+        } else {
+            colors.bg_surface
+        };
+        iced::widget::pane_grid::TitleBar::new(
+            container(dir_row(title).align_y(iced::Alignment::Center))
+                .height(Length::Fixed(PANE_HEADER_HEIGHT))
+                .padding(Padding::from([0.0, 8.0]))
+                .center_y(Length::Fixed(PANE_HEADER_HEIGHT)),
+        )
+        .controls(iced::widget::pane_grid::Controls::new(
+            container(dir_row(controls).align_y(iced::Alignment::Center))
+                .height(Length::Fixed(PANE_HEADER_HEIGHT))
+                .padding(Padding::from([0.0, 4.0]))
+                .center_y(Length::Fixed(PANE_HEADER_HEIGHT)),
+        ))
+        // Shown without waiting for a hover. A control that materializes
+        // under an arriving cursor is the misclick issue #186 is about,
+        // and a close sitting one flick from a drag handle is exactly
+        // that shape; here there is no reserved slot to fall back on,
+        // so the answer is to never move.
+        .always_show_controls()
+        .style(move |_| container::Style {
+            background: Some(Background::Color(bg)),
+            ..Default::default()
+        })
+    }
+
+    /// The card a pane wears once its session has ended (issue #208):
+    /// what happened, and the two answers a tab-wide reconnect cannot
+    /// give one pane. `note_pane_ended` decides which panes get here.
+    ///
+    /// Restart is offered only where there is something to restart: a
+    /// saved host, a quick-connect entry or a local shell, all of which
+    /// the pane's `PaneOrigin` names. A cloud pane (`Ephemeral`) gets
+    /// Close alone rather than a button that would toast an apology.
+    ///
+    /// It sits over the pane's own canvas, so the scrollback the user
+    /// disconnected on stays readable behind it, and it is deliberately
+    /// not full-bleed for the same reason.
+    fn pane_ended_card<'a>(&self, pane: &'a crate::state::Pane) -> Element<'a, Message> {
+        let colors = OryxisColors::t();
+        let pane_id = pane.id;
+        let restartable = self.pane_restartable(pane);
+        // Collected first and handed to `dir_row` in one call: it
+        // reverses its children AT CONSTRUCTION, so a row built empty
+        // and pushed into afterwards keeps physical order and never
+        // mirrors under RTL.
+        let mut actions: Vec<Element<'a, Message>> = Vec::with_capacity(2);
+        if restartable {
+            actions.push(crate::widgets::styled_button(
+                t("pane_ended_restart"),
+                Message::Terminal(TerminalMessage::RestartPane(pane_id)),
+                colors.accent,
+            ));
+        }
+        actions.push(crate::widgets::styled_button(
+            t("pane_ended_close"),
+            Message::Terminal(TerminalMessage::ClosePane(Some(pane_id))),
+            colors.bg_hover,
+        ));
+        let buttons = crate::widgets::dir_row(actions).spacing(8);
+        let card = container(
+            iced::widget::column![
+                text(t("pane_ended")).size(13).color(colors.text_primary),
+                Space::new().height(10),
+                buttons,
+            ]
+            .align_x(iced::Alignment::Center)
+            .padding(Padding::from([14.0, 18.0])),
+        )
+        .style(move |_| container::Style {
+            background: Some(Background::Color(colors.bg_surface)),
+            border: Border {
+                radius: Radius::from(10.0),
+                width: 1.0,
+                color: colors.border,
+            },
+            ..Default::default()
+        });
+        // Swallow presses that miss the buttons, so a click aimed at the
+        // card never falls through to the canvas and starts a selection
+        // in the dead pane's scrollback.
+        MouseArea::new(card).on_press(Message::NoOp).into()
     }
 
     /// Broadcast opt-out chip (C2): a small button in the pane's top-right
@@ -1364,6 +1625,37 @@ fn sidebar_tab_icon<'a>(tab: crate::state::TerminalSidebarTab) -> iced::widget::
 /// `icon_tooltip` for a tip built at render time (a formatted figure, a
 /// path) rather than a borrowed `t(...)` literal. Same look; the owned
 /// String is what lets the element outlive the caller's frame-local.
+/// Height of the optional per-pane title bar (issue #208). Fixed rather
+/// than derived so the hit-test that has to add it back can:
+/// `bounds_reporter` measures a pane's BODY, and with a header the body
+/// no longer starts where the pane does.
+pub(crate) const PANE_HEADER_HEIGHT: f32 = 24.0;
+
+/// One control in a pane header: icon only, tooltip, hover and press
+/// feedback, sized to the strip.
+fn pane_header_button<'a>(
+    glyph: iced::widget::Text<'a>,
+    tip: &'a str,
+    msg: Message,
+) -> Element<'a, Message> {
+    let btn = button(
+        container(glyph.size(11).color(OryxisColors::t().text_secondary))
+            .center_x(Length::Fixed(20.0))
+            .center_y(Length::Fixed(20.0)),
+    )
+    .padding(0)
+    .on_press(msg)
+    .style(|_, status| button::Style {
+        background: Some(Background::Color(match status {
+            BtnStatus::Hovered | BtnStatus::Pressed => OryxisColors::t().bg_hover,
+            _ => Color::TRANSPARENT,
+        })),
+        border: Border { radius: Radius::from(4.0), ..Default::default() },
+        ..Default::default()
+    });
+    icon_tooltip(btn.into(), tip)
+}
+
 pub(crate) fn icon_tooltip_owned<'a>(
     inner: Element<'a, Message>,
     tip: String,

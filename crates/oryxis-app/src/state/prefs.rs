@@ -131,6 +131,13 @@ pub(crate) struct AppPrefs {
     /// pane's accent outline is not affected: with the panes flush there
     /// would otherwise be nothing at all marking where one ends.
     pub(crate) pane_border_inactive: bool,
+    /// Give every pane of a SPLIT tab its own title bar: label, state
+    /// dot, restart, close (issue #208). Persisted as `pane_headers`,
+    /// OFF by default, because the default layout is the one nobody
+    /// asked to change. A single-pane tab never grows one: it has no
+    /// sibling to tell itself apart from, and its end-of-session card
+    /// is the answer it already has.
+    pub(crate) pane_headers: bool,
     /// Gutter between split panes, in pixels, as a string ("0" = flush).
     /// Flush is the default: the seam is grabbable either way, because a
     /// pane hands a strip back to the grid on the edges it shares.
@@ -283,6 +290,11 @@ pub(crate) struct AppPrefs {
     /// Pinned-tab visual style: "compact" (Chrome-style icon-only chip) or
     /// "full" (a normal tab with a special pinned border, stuck to the left).
     pub(crate) pinned_tab_style: String,
+    /// Bring last session's tabs back at launch, dormant (issue #206).
+    /// Off by default: a strip that refills itself changes what opening
+    /// the app means, and pinning is the answer for the tabs a user
+    /// wants every time. While off, nothing is written to `open_tabs`.
+    pub(crate) restore_tabs_on_launch: bool,
     /// Where "Duplicate Tab" puts the copy: `"next"` (default, beside the
     /// original), `"end"` (the pre-#110 append) or `"start"`. Parsed by
     /// [`crate::state::TabPlacement::from_setting`]; ordering only, never
@@ -391,6 +403,14 @@ pub(crate) struct AppPrefs {
     /// locked-on. When off, the per-host opt-in decides. The effective
     /// per-host value is `setting_monitor_all_hosts || conn.monitor_enabled`.
     pub(crate) monitor_all_hosts: bool,
+    /// "Only hosts with a live session" (issue #197): when on, the
+    /// Monitoring dashboard is limited to machines a terminal tab is
+    /// already logged in to, so the one surface that opens connections
+    /// of its own stops opening any. Off (the default) it dials every
+    /// opted-in host, which is what the fleet view is for. It governs
+    /// the DASHBOARD alone: the sidebar tab reads the pane it belongs
+    /// to and has a live session by construction.
+    pub(crate) monitor_dash_live_only: bool,
     /// Master toggle for the tmux session manager (issue #116), in
     /// Features & Plugins. Off by default: managing tmux from a panel
     /// is niche, so the sidebar tab and everything else it owns stay
@@ -483,6 +503,12 @@ pub(crate) struct AppPrefs {
     /// `terminal_hint_mode` setting. `Once` (default) shows each hint a
     /// single time per pane, tracked in-memory on `Pane`.
     pub(crate) hint_mode: crate::util::HintMode,
+    /// What happens to a pane when its session ends (issue #208).
+    /// Persisted as the `pane_end_action` setting. `Prompt` (default)
+    /// keeps the pane and offers restart / close; `Close` drops it.
+    /// A lone REMOTE pane never consults this (it relabels and
+    /// auto-reconnects instead); a lone local shell does.
+    pub(crate) pane_end_action: crate::util::PaneEndAction,
     /// Max parallel SFTP transfer slots (uploads/downloads). 1 = serial,
     /// up to 8 = aggressive. Each slot gets its own SFTP subsystem
     /// channel on the same SSH connection so they don't fight for the
@@ -550,6 +576,16 @@ pub(crate) struct AppPrefs {
     /// Deflate recorded chunks before sealing them (order matters:
     /// ciphertext doesn't compress). Long sessions shrink 5-20x.
     pub(crate) session_log_compress: bool,
+    /// Mirror what is being recorded into a plain text file as the
+    /// session runs (issue #187). Off by default and gated by the
+    /// recording itself, so the per-host override still decides WHICH
+    /// sessions produce one; the file is not encrypted, which is the
+    /// whole point of the option and what its description says.
+    /// Persisted as `session_log_file`.
+    pub(crate) session_log_file: bool,
+    /// Folder those files live in; `None` = `~/.oryxis/session-logs/`.
+    /// Persisted as `session_log_file_dir` (a set value only).
+    pub(crate) session_log_file_dir: Option<String>,
     /// Whether connection events (connect / disconnect / auth failure /
     /// error) are recorded to the vault log. Gates every `add_log` site.
     pub(crate) connection_history: bool,
@@ -600,6 +636,7 @@ impl Default for AppPrefs {
             terminal_bg_fit: oryxis_terminal::BgFit::default().as_str().to_string(),
             terminal_bg_dim: 55,
             pane_border_inactive: true,
+            pane_headers: false,
             pane_gap: "0".to_string(),
             keyword_highlight: true,
             highlight_rules: Vec::new(),
@@ -635,6 +672,7 @@ impl Default for AppPrefs {
             minimize_to_tray: false,
             tab_close_button_side: "left".into(),
             pinned_tab_style: "compact".into(),
+            restore_tabs_on_launch: false,
             duplicate_tab_position: "next".into(),
             tab_slot_includes_home: false,
             tab_number_style: "off".into(),
@@ -654,6 +692,7 @@ impl Default for AppPrefs {
             host_monitoring: false,
             host_monitoring_seeded: false,
             monitor_all_hosts: false,
+            monitor_dash_live_only: false,
             tmux_manager: false,
             ssh_connection_reuse: true,
             nav_orientation: "horizontal".into(),
@@ -682,6 +721,7 @@ impl Default for AppPrefs {
             scrollback_rows: "10000".into(),
             word_delimiters: oryxis_terminal::DEFAULT_WORD_DELIMITERS.into(),
             hint_mode: crate::util::HintMode::default(),
+            pane_end_action: crate::util::PaneEndAction::default(),
             sftp_concurrency: "2".into(),
             sftp_ask_download_dir: false,
             sftp_upload_temp_name: false,
@@ -700,6 +740,8 @@ impl Default for AppPrefs {
             session_logging: false,
             session_log_full: true,
             session_log_compress: true,
+            session_log_file: false,
+            session_log_file_dir: None,
             connection_history: false,
             logs_retention: "off".into(),
             session_log_max_bytes: None,

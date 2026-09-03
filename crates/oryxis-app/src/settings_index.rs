@@ -69,6 +69,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Interface, "default_host_icon", "default host icon avatar style"),
     e(S::Interface, "close_button_position", "tab close button position left right"),
     e(S::Interface, "pinned_tab_style", "pinned tab style compact icon"),
+    e(S::Interface, "restore_tabs_on_launch", "restore reopen tabs session launch startup previous"),
     e(S::Interface, "tab_number_style", "tab number index numbering prefix badge icon slot ctrl digit"),
     e(S::Interface, "tab_number_slot_align", "align shortcuts ctrl digit home slot offset first tab"),
     e(S::Interface, "duplicate_tab_position", "duplicate tab position next beside end start append copy"),
@@ -103,6 +104,11 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Interface, "renderer_backend", "renderer graphics backend gpu vulkan opengl software"),
     e(S::Interface, "performance_mode", "performance mode fps battery speed"),
     e(S::Interface, "terminal_hints", "hints tips toast teaching links help"),
+    e(
+        S::Interface,
+        "pane_end_action",
+        "split pane session ended disconnected exited restart close",
+    ),
     // ── Terminal ───────────────────────────────────────────────────
     e(S::Terminal, "copy_on_select", "copy select clipboard mouse selection"),
     e(S::Terminal, "terminal_right_click", "right click paste context menu mouse"),
@@ -119,6 +125,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Terminal, "scrollback_reset_output", "scrollback reset output activity jump bottom"),
     e(S::Terminal, "bold_bright", "bold bright colors text intensity"),
     e(S::Terminal, "pane_border_inactive", "pane border outline split inactive unfocused separator divider"),
+    e(S::Terminal, "pane_headers", "pane header title bar split label status close restart"),
     e(S::Terminal, "pane_gap", "pane gap gutter spacing split padding between panes"),
     e(S::Terminal, "keyword_highlight", "keyword highlight color url ip path automatic"),
     e(S::Terminal, "highlight_rules", "highlight rules keyword pattern regex color trigger action notify beep sound snippet watch alert error warn"),
@@ -189,6 +196,11 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Security, "session_logging", "session logging record terminal history"),
     e(S::Security, "session_log_full", "detailed recording replay full session cast"),
     e(S::Security, "session_log_compress", "compress recordings gzip session log size"),
+    e(
+        S::Security,
+        "session_log_file",
+        "session log plain text file live append tail export unencrypted",
+    ),
     e(S::Security, "connection_history", "connection history log recent hosts track"),
     e(S::Security, "log_retention_label", "log retention auto delete purge age cleanup"),
     e(S::Security, "log_size_cap_label", "log size cap limit disk space quota recording storage"),
@@ -243,6 +255,11 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Sftp, "operation_timeout", "sftp operation timeout seconds stall"),
     // ── Monitoring ─────────────────────────────────────────────────
     e(S::Monitoring, "monitor_all_hosts", "monitoring all hosts enable global vitals"),
+    e(
+        S::Monitoring,
+        "monitor_dash_live_only",
+        "monitoring dashboard live session only connected hosts no dial connect",
+    ),
     e(S::Monitoring, "monitor_interval", "monitoring interval seconds probe poll"),
     e(S::Monitoring, "monitor_status_bar", "monitoring status bar vitals cpu memory widget"),
     // ── SSH Agent ──────────────────────────────────────────────────

@@ -471,6 +471,28 @@ impl Pane {
             PaneOrigin::QuickHost(_) | PaneOrigin::Local(_) | PaneOrigin::Ephemeral => None,
         }
     }
+
+    /// What to CALL this pane: the shell's own title when auto-title is
+    /// on and it set one, else the pane's connection label.
+    ///
+    /// The pane-scoped twin of `TerminalTab::auto_label`, which answers
+    /// the same question for a whole tab and reaches into
+    /// `self.active()` to do it. A pane has no `custom_name` to
+    /// outrank either source, because renaming is a tab gesture.
+    ///
+    /// `auto_title` is resolved by the caller (`Oryxis::tab_auto_title`)
+    /// because it depends on the focused host's override, which a
+    /// `Pane` cannot reach. Every pane of one tab therefore takes that
+    /// tab's answer, which is also what the tab chip does.
+    pub fn display_label(&self, auto_title: bool) -> &str {
+        if auto_title
+            && let Some(t) = self.osc_title.as_deref()
+            && !t.is_empty()
+        {
+            return t;
+        }
+        &self.label
+    }
 }
 
 /// What one highlight rule has done on one pane this session (C6).
@@ -562,10 +584,37 @@ pub(crate) struct Pane {
     /// appends a resize mark (output-batch path, or the flush-cadence
     /// fallback for a resize with no output after it).
     pub session_log_last_size: Option<(u16, u16)>,
+    /// Plain-text mirror of this recording on disk, resolved on the
+    /// first flush that has bytes for it and kept for the rest of the
+    /// session so the name cannot drift mid-recording. `None` while the
+    /// mirror is off, or before the first flush.
+    pub session_log_file: Option<std::path::PathBuf>,
     /// What this pane reconnects to when restored from a saved session group.
     /// Defaults to `Ephemeral`; the creating site overrides it to `Host` or
     /// `Local` when the pane is referenceable.
     pub origin: PaneOrigin,
+    /// This pane's session ended and the pane is still here, waiting for
+    /// the user to restart it or close it (issue #208).
+    ///
+    /// Set on any pane of a SPLIT tab, and on a LOCAL shell that is a tab
+    /// on its own, whichever origin opened that shell (the picker, a
+    /// saved Local host, a quick-connect one). Not on a lone remote pane:
+    /// that tab is relabelled "(disconnected)" and the auto-reconnect
+    /// sweep picks it up, which is a better answer and only possible
+    /// because it has no siblings.
+    /// Neither of those can serve a split tab, since both are tab-wide
+    /// and `ReconnectTab` rebuilds the tab, taking the live siblings with
+    /// it. So the pane keeps the verdict instead, and the grid draws it.
+    ///
+    /// Cleared by the restart that replaces the session, so a pane that is
+    /// dialling again never shows the card it was raised from.
+    pub ended: bool,
+    /// Which local PTY this pane is currently listening to. Bumped every
+    /// time one is wired in; `LocalPaneEnded` carries the value it was
+    /// armed with, so the exit of a PTY this pane has already replaced
+    /// is discarded instead of declaring a live shell dead. Unused by
+    /// remote panes, which have a transport handle to test instead.
+    pub local_generation: u64,
     /// True while a one-shot `TerminalSyncFlush` timer is armed for this
     /// pane. A DEC `?2026` synchronized update buffers output in vte until
     /// the matching ESU, a 2 MiB overflow, or a host-driven flush; an app
@@ -794,7 +843,10 @@ impl Pane {
             session_log_marks: Vec::new(),
             session_log_resizes: Vec::new(),
             session_log_last_size: None,
+            session_log_file: None,
             origin: PaneOrigin::Ephemeral,
+            ended: false,
+            local_generation: 0,
             sync_flush_scheduled: false,
             osc_title: None,
             bell_flash: false,
@@ -844,6 +896,10 @@ impl Pane {
         self.session_log_marks.clear();
         self.session_log_resizes.clear();
         self.session_log_last_size = None;
+        // A reconnect reuses the pane and starts a NEW recording, so the
+        // mirror starts a new file too rather than appending the next
+        // session onto the end of the last one.
+        self.session_log_file = None;
     }
 }
 

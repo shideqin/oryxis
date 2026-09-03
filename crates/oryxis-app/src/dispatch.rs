@@ -171,6 +171,11 @@ impl Oryxis {
         // `ordered_tab_refs`, which is derived from the freshly-synced
         // `tab_order`.
         self.reconcile_tab_mru();
+        // Re-snapshot the strip for restore-on-launch, but only when it
+        // actually changed: one funnel for every path that opens or
+        // closes a tab, gated by a signature so the ordinary message
+        // costs a hash and nothing else (issue #206).
+        self.persist_open_tabs_if_changed();
         // Republish the cursor-forwarding gate from the post-update
         // state. Doing it here, once, after every message, means the
         // flag can never drift from the drag/fullscreen state that

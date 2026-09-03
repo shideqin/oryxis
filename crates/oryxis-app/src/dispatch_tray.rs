@@ -104,17 +104,11 @@ impl Oryxis {
                             (shown.replace('&', "&&"), i.to_string())
                         })
                         .collect();
-                    // Recent hosts: top 10 by last_used desc.
-                    // Hosts that were never connected drop to
-                    // the bottom and get sliced off, so the
-                    // menu only lists hosts the user actually
-                    // touched.
-                    let mut recent_pairs: Vec<&oryxis_core::models::connection::Connection> =
-                        self.connections.iter().filter(|c| c.last_used.is_some()).collect();
-                    recent_pairs.sort_by_key(|c| std::cmp::Reverse(c.last_used));
-                    let recent: Vec<(String, String)> = recent_pairs
+                    // Recent hosts: top 10, through the one
+                    // authority every recency surface reads.
+                    let recent: Vec<(String, String)> = self
+                        .recent_connections(10)
                         .iter()
-                        .take(10)
                         .map(|c| {
                             let shown =
                                 self.privacy_display_label(&c.label, &c.label, &privacy_terms);
@@ -468,12 +462,7 @@ impl Oryxis {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
-        let mut recent: Vec<&oryxis_core::models::connection::Connection> = self
-            .connections
-            .iter()
-            .filter(|c| c.last_used.is_some())
-            .collect();
-        recent.sort_by_key(|c| std::cmp::Reverse(c.last_used));
+        let recent = self.recent_connections(10);
         // JumpList titles are persisted by the shell, so they go
         // through the same Privacy Mode redactor as the tab strip
         // (issue #78); the entry still launches by uuid, so a
@@ -482,7 +471,6 @@ impl Oryxis {
         let privacy_terms = self.privacy_terms();
         let entries: Vec<(String, uuid::Uuid)> = recent
             .iter()
-            .take(10)
             .map(|c| {
                 (
                     self.privacy_display_label(&c.label, &c.label, &privacy_terms),

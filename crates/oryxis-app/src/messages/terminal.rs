@@ -85,6 +85,10 @@ pub enum TerminalMessage {
     FocusPane(iced::widget::pane_grid::Pane),
     /// Drag a pane divider to resize.
     ResizePane(iced::widget::pane_grid::ResizeEvent),
+    /// Rearrange the panes of ONE tab by dragging a pane's header
+    /// (issue #208 item 4). The grid resolves the target itself, so the
+    /// event arrives already carrying where the pane was dropped.
+    PaneDrag(iced::widget::pane_grid::DragEvent),
     /// Split the focused pane of the active tab along an axis, opening the
     /// connection picker to fill the new pane.
     SplitPane(iced::widget::pane_grid::Axis),
@@ -98,6 +102,24 @@ pub enum TerminalMessage {
     /// gone entirely, a safe no-op). `None` closes the focused pane of
     /// the active tab (the hotkey path).
     ClosePane(Option<Uuid>),
+    /// Re-dial ONE pane in place, keeping its terminal and scrollback
+    /// (issue #208). The pane-scoped counterpart of `ReconnectTab`,
+    /// which is tab-wide and rebuilds a split tab's live siblings along
+    /// with the dead pane. Raised by the ended-pane card's Restart
+    /// button and by the Reconnect action when the focused pane of a
+    /// split tab has ended.
+    RestartPane(Uuid),
+    /// A local pane's shell exited, reported by the child-exit signal
+    /// `PtyHandle` hands out. Deliberately not driven by the output
+    /// stream ending: a pty's reader cannot see a child die (see
+    /// `PtyHandle::take_child_exit`), so the stream would only ever
+    /// report teardown.
+    ///
+    /// The generation is the guard, like `LoginScriptTick`'s: swapping a
+    /// pane's `TerminalState` drops the old PTY, so a restart-in-place
+    /// ends the OLD session and this message arrives for a pane that is
+    /// alive again. A stale generation is discarded.
+    LocalPaneEnded(Uuid, u64),
     /// Move focus to the adjacent pane in a direction (keyboard nav).
     FocusPaneDir(iced::widget::pane_grid::Direction),
     /// Expand the focused pane to the whole tab, and back. `None` targets

@@ -348,6 +348,13 @@ impl Oryxis {
                     if self.prefs.pane_border_inactive { "true" } else { "false" },
                 );
             }
+            SettingsMessage::TogglePaneHeaders => {
+                self.prefs.pane_headers = !self.prefs.pane_headers;
+                self.persist_setting(
+                    "pane_headers",
+                    if self.prefs.pane_headers { "true" } else { "false" },
+                );
+            }
             SettingsMessage::OpenTerminalThemeGallery => {
                 self.panels.terminal_theme_gallery = true;
                 // A stale filter from the last visit would open the
@@ -476,6 +483,16 @@ impl Oryxis {
                 if let Some(mode) = HintMode::ALL.iter().find(|m| t(m.label_key()) == name) {
                     self.prefs.hint_mode = *mode;
                     self.persist_setting("terminal_hint_mode", mode.code());
+                }
+            }
+            SettingsMessage::PaneEndActionChanged(name) => {
+                use crate::i18n::t;
+                use crate::util::PaneEndAction;
+                if let Some(action) =
+                    PaneEndAction::ALL.iter().find(|a| t(a.label_key()) == name)
+                {
+                    self.prefs.pane_end_action = *action;
+                    self.persist_setting("pane_end_action", action.code());
                 }
             }
             SettingsMessage::ToggleSmartContrast => {

@@ -327,6 +327,19 @@ pub struct Oryxis {
     /// strip whichever kind it was. See [`crate::state::ClosedTab`] for
     /// why it holds a pin spec and why it is not persisted.
     pub(crate) closed_tabs: Vec<crate::state::ClosedTab>,
+    /// Signature of the strip the `open_tabs` setting was last written
+    /// from (issue #206). The snapshot is taken after every `update`
+    /// that CHANGED the strip, the way `refresh_jumplist` gates its own
+    /// work, so a crash or a kill still leaves the last arrangement on
+    /// disk instead of only the four orderly exit doors doing.
+    pub(crate) open_tabs_signature: u64,
+    /// Whether the restore-on-launch pass has already run in this
+    /// process. `load_data_from_vault` re-runs on connection save, sync
+    /// and vault reload; pins survive that because they dedupe by pin
+    /// identity, and ordinary tabs cannot (two tabs on one host are
+    /// legitimate), so this is what stops a re-run from recreating tabs
+    /// the user has closed since boot.
+    pub(crate) open_tabs_restored: bool,
     /// Where the tab a Duplicate is about to spawn should land in the
     /// STRIP (never in `self.tabs`, whose indices half the app holds).
     /// Armed by `handle_duplicate_tab`, consumed by
@@ -1631,6 +1644,25 @@ impl Oryxis {
             };
             (x.max(0.0), self.dashboard_dropdown_anchor_y())
         }
+    }
+
+    /// The `n` saved hosts used most recently, newest first.
+    ///
+    /// One authority for every recency surface, because there are four of
+    /// them now and they were already two copies of the same filter and
+    /// sort: the tray's "Recent hosts" submenu, the Windows JumpList, and
+    /// the two tab popovers. Hosts that were never connected carry no
+    /// timestamp and are dropped rather than sorted last, so a list of
+    /// recents never pads itself out with hosts nobody opened.
+    pub(crate) fn recent_connections(
+        &self,
+        n: usize,
+    ) -> Vec<&oryxis_core::models::connection::Connection> {
+        let mut recent: Vec<&oryxis_core::models::connection::Connection> =
+            self.connections.iter().filter(|c| c.last_used.is_some()).collect();
+        recent.sort_by_key(|c| std::cmp::Reverse(c.last_used));
+        recent.truncate(n);
+        recent
     }
 
     pub(crate) fn snippet_injection_tab(&self) -> Option<usize> {

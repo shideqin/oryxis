@@ -359,6 +359,19 @@ impl Oryxis {
                         // The SOFT lock deliberately keeps it, along with
                         // the tabs and sessions it also keeps.
                         self.closed_tabs.clear();
+                        // And so does the restore-on-launch snapshot,
+                        // for the same reason and by the same rule
+                        // (issue #206): the strip it names is the one
+                        // this lock just severed, and it is a row a
+                        // LOCKED vault can still be read for. The gate
+                        // below would write the emptied strip out on
+                        // the next message anyway; saying it here is
+                        // what makes it a decision rather than a
+                        // side effect.
+                        if self.prefs.restore_tabs_on_launch {
+                            self.persist_setting("open_tabs", "[]");
+                            self.open_tabs_signature = 0;
+                        }
                         self.clear_terminal_tab_memory();
                         self.active_view = View::Dashboard;
                         // Mirror the soft-lock UI sweep: the manual lock

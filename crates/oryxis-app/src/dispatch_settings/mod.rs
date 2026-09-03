@@ -12,11 +12,10 @@
 pub(crate) use iced::Task;
 
 pub(crate) use std::sync::{Arc, Mutex};
-pub(crate) use tokio_stream::wrappers::UnboundedReceiverStream;
 
 pub(crate) use oryxis_terminal::widget::TerminalState;
 
-pub(crate) use crate::app::{SettingsMessage, TabsMessage, TerminalMessage, SshMessage, VaultMessage, Message, Oryxis, DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS};
+pub(crate) use crate::app::{SettingsMessage, TabsMessage, SshMessage, VaultMessage, Message, Oryxis, DEFAULT_TERM_COLS, DEFAULT_TERM_ROWS};
 pub(crate) use crate::state::{TerminalTab, View};
 pub(crate) use crate::theme::AppTheme;
 pub(crate) use crate::util::sanitize_uint;
@@ -223,6 +222,7 @@ impl Oryxis {
             | SettingsMessage::SettingToggleSidebarAutoOpen
             | SettingsMessage::SettingToggleHostMonitoring
             | SettingsMessage::SettingToggleMonitorAllHosts
+            | SettingsMessage::SettingToggleMonitorDashLiveOnly
             | SettingsMessage::SettingToggleTmuxManager
             | SettingsMessage::SettingToggleConnectionReuse
             | SettingsMessage::SettingToggleMonitorStatusBar
@@ -248,6 +248,7 @@ impl Oryxis {
             | SettingsMessage::SettingTogglePinnedTabsTopBar
             | SettingsMessage::SettingToggleSideHideTopBar
             | SettingsMessage::SettingToggleSideFullHeight
+            | SettingsMessage::SettingToggleRestoreTabsOnLaunch
             | SettingsMessage::SettingToggleShowTabStatusDot
             | SettingsMessage::SettingNavOrientationChanged(..)
             | SettingsMessage::ToggleNavRailExpanded
@@ -266,6 +267,7 @@ impl Oryxis {
             | SettingsMessage::TerminalTextThicknessChanged(..)
             | SettingsMessage::PackFontReady(..)
             | SettingsMessage::HintModeChanged(..)
+            | SettingsMessage::PaneEndActionChanged(..)
             | SettingsMessage::ToggleCopyOnSelect
             | SettingsMessage::ToggleRightClickCopy
             | SettingsMessage::ToggleMiddleClickPaste
@@ -292,6 +294,7 @@ impl Oryxis {
             | SettingsMessage::TerminalBgFitChanged(..)
             | SettingsMessage::TerminalBgDimChanged(..)
             | SettingsMessage::TogglePaneBorderInactive
+            | SettingsMessage::TogglePaneHeaders
             | SettingsMessage::PaneGapChanged(..)
             | SettingsMessage::OpenTerminalThemeGallery
             | SettingsMessage::CloseTerminalThemeGallery
@@ -378,6 +381,9 @@ impl Oryxis {
             SettingsMessage::SettingToggleSessionLogging
             | SettingsMessage::SettingToggleSessionLogFull
             | SettingsMessage::SettingToggleSessionLogCompress
+            | SettingsMessage::SettingToggleSessionLogFile
+            | SettingsMessage::PickSessionLogFileDir
+            | SettingsMessage::SessionLogFileDirPicked(..)
             | SettingsMessage::SettingToggleConnectionHistory
             | SettingsMessage::LogsRetentionChanged(..)
             | SettingsMessage::LogsSizeCapChanged(..)

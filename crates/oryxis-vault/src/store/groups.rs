@@ -164,6 +164,21 @@ impl VaultStore {
         Ok(groups)
     }
 
+    /// Stamp a session group as used, now. Narrow UPDATE for the same
+    /// reason [`Self::mark_connection_used`] is one: opening a group is
+    /// not an edit to it.
+    pub fn mark_session_group_used(
+        &self,
+        id: &Uuid,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), VaultError> {
+        self.db.execute(
+            "UPDATE session_groups SET last_used = ?1 WHERE id = ?2",
+            params![at.to_rfc3339(), id.to_string()],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_session_group(&self, id: &Uuid) -> Result<(), VaultError> {
         self.db.execute(
             "DELETE FROM session_groups WHERE id = ?1",

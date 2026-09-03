@@ -104,6 +104,33 @@ impl Oryxis {
         }
     }
 
+    /// Stamp a saved host as used, now, in memory and in the vault.
+    ///
+    /// `Connection.last_used` had three readers and no writer: the tray's
+    /// "Recent hosts" submenu and the Windows JumpList both filter on
+    /// `is_some()`, and the new-tab picker sorts by it, so recency was a
+    /// column three surfaces asked and nothing ever answered.
+    ///
+    /// Called from the TOP of both connect switches, above the protocol
+    /// match, so Telnet / Raw / Serial / Local / remote desktop and the
+    /// SSM short-circuit all feed it and a protocol added later inherits
+    /// it without a second site to remember. Membership is the lookup
+    /// itself rather than a check on the caller's origin: an ad-hoc
+    /// quick-connect host is not in `connections`, so it cannot be
+    /// stamped, which is the same answer a pin gives it.
+    pub(crate) fn mark_host_used(&mut self, id: uuid::Uuid) {
+        let now = chrono::Utc::now();
+        let Some(conn) = self.connections.iter_mut().find(|c| c.id == id) else {
+            return;
+        };
+        conn.last_used = Some(now);
+        if let Some(vault) = &self.vault
+            && let Err(e) = vault.mark_connection_used(&id, now)
+        {
+            tracing::warn!("marking host {id} as used failed: {e}");
+        }
+    }
+
     /// Open a new tab for `conn` and drive the SSH connect pipeline into
     /// it (progress view, host-key / KBI bridges, PTY stream). Shared by
     /// saved hosts (`ConnectSsh`, `origin = Saved(idx)`) and ad-hoc quick
@@ -116,6 +143,9 @@ impl Oryxis {
         origin: crate::state::ProgressOrigin,
     ) -> Task<Message> {
         let is_quick = matches!(origin, crate::state::ProgressOrigin::Quick(_));
+        // Above everything, including the SSM short-circuit below: a
+        // session opened is a host used, whatever carries it.
+        self.mark_host_used(conn.id);
         // SSM Session transport short-circuits the SSH
         // pipeline entirely, it goes through
         // `session-manager-plugin` instead of opening a
@@ -1011,6 +1041,7 @@ impl Oryxis {
             return Task::none();
         };
         state.set_palette(self.terminal_palette.clone());
+        let exited = state.pty.as_mut().and_then(|p| p.take_child_exit());
         let terminal = Arc::new(Mutex::new(state));
         let label = pick
             .as_ref()
@@ -1028,8 +1059,11 @@ impl Oryxis {
             return Task::none();
         };
         self.active_tab = Some(tab_idx);
-        let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
-        Task::stream(stream).map(move |bytes| Message::Terminal(TerminalMessage::PtyOutput(pane_id, bytes)))
+        // This spawn lives in the SSH module but is a LOCAL shell, which
+        // is exactly how it got missed once (issue #208): it is the pane
+        // a split fills from the picker, so it is also the one most
+        // likely to sit next to a live sibling when its shell exits.
+        self.local_pane_stream(pane_id, exited, rx)
     }
 
     /// Resolve the `Connection` a pane was opened from, via its `PaneOrigin`
@@ -1319,6 +1353,9 @@ impl Oryxis {
         tab_idx: usize,
         pane_id: Uuid,
     ) -> Task<Message> {
+        // The split / in-place-reconnect half of the recency feed, above
+        // the protocol split for the reason the tab half is.
+        self.mark_host_used(conn.id);
         // C5: resolve quirks for this pane's host before the protocol
         // split, so SSH / Telnet / Serial panes (split, quick-connect, and
         // in-place reconnect) all read the right modes. RemoteDesktop is

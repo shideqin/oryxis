@@ -146,6 +146,9 @@ pub enum SettingsMessage {
     /// Settings: terminal hint mode picker changed. Carries the localized
     /// option label; the dispatch handler maps it back to a `HintMode`.
     HintModeChanged(String),
+    /// Settings: the "when a split pane's session ends" picker changed.
+    /// Carries the localized option label, like `HintModeChanged`.
+    PaneEndActionChanged(String),
     /// Flip the reveal/eye state of a secret input field.
     ToggleSecretVisibility(crate::state::SecretField),
     /// Trash on a custom theme card: RAISES THE CONFIRM, it does not
@@ -250,6 +253,9 @@ pub enum SettingsMessage {
     ToggleCarefulPaste,
     ToggleBoldIsBright,
     TogglePaneBorderInactive,
+    /// Settings: give every pane of a split tab its own title bar
+    /// (issue #208).
+    TogglePaneHeaders,
     PaneGapChanged(String),
     OpenTerminalThemeGallery,
     CloseTerminalThemeGallery,
@@ -298,6 +304,9 @@ pub enum SettingsMessage {
     SettingToggleHostMonitoring,
     /// Monitoring section: "Enable for all hosts" (issue #83).
     SettingToggleMonitorAllHosts,
+    /// Monitoring section: limit the dashboard to hosts a tab is already
+    /// logged in to, so it never dials on its own (issue #197).
+    SettingToggleMonitorDashLiveOnly,
     /// Settings > Connection: reuse a live SSH connection for a second
     /// tab to the same host (F2).
     SettingToggleConnectionReuse,
@@ -386,6 +395,8 @@ pub enum SettingsMessage {
     SettingTogglePinnedTabsTopBar,
     SettingToggleSideHideTopBar,
     SettingToggleSideFullHeight,
+    /// Bring last session's tabs back at launch (issue #206).
+    SettingToggleRestoreTabsOnLaunch,
     SettingToggleShowTabStatusDot,
     SettingToggleSftpEnabled,
     SettingNavOrientationChanged(String),
@@ -520,6 +531,12 @@ pub enum SettingsMessage {
     SettingToggleSessionLogFull,
     /// Toggle deflate compression of recorded chunks at flush time.
     SettingToggleSessionLogCompress,
+    /// Toggle the plain-text mirror of a live recording (issue #187).
+    SettingToggleSessionLogFile,
+    /// Pick the folder those plain-text session logs are written to.
+    PickSessionLogFileDir,
+    /// The folder the picker came back with (`None` = cancelled).
+    SessionLogFileDirPicked(Option<String>),
     /// Toggle the global "record connection events" (history) setting.
     SettingToggleConnectionHistory,
     // ── Login automations (issue #122) ──

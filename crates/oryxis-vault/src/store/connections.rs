@@ -578,6 +578,27 @@ impl VaultStore {
         Ok(conns)
     }
 
+    /// Stamp a connection as used, now.
+    ///
+    /// A narrow UPDATE like [`Self::set_detected_os`] rather than a
+    /// [`Self::save_connection`] round trip, for a reason beyond the
+    /// columns it would rewrite: that call takes the caller's in-memory
+    /// copy of every field, so a dial started from a stale list would
+    /// write the stale list back, and it carries `updated_at`, which is
+    /// what sync compares under last-writer-wins. Connecting is not an
+    /// edit, and it must not out-rank one a peer made in the meantime.
+    pub fn mark_connection_used(
+        &self,
+        id: &Uuid,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), VaultError> {
+        self.db.execute(
+            "UPDATE connections SET last_used = ?1 WHERE id = ?2",
+            params![at.to_rfc3339(), id.to_string()],
+        )?;
+        Ok(())
+    }
+
     /// Update just the detected OS for a connection, used by the background
     /// OS-detection task so we don't overwrite other columns (e.g. last_used).
     pub fn set_detected_os(&self, id: &Uuid, os: Option<&str>) -> Result<(), VaultError> {

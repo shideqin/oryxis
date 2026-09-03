@@ -276,6 +276,8 @@ impl Oryxis {
                 quick_host_input: String::new(),
                 tabs: Vec::new(),
                 closed_tabs: Vec::new(),
+                open_tabs_signature: 0,
+                open_tabs_restored: false,
                 pending_tab_placement: None,
                 pending_pane_split: None,
                 quick_connect_protocol:

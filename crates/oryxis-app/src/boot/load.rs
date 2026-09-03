@@ -23,6 +23,10 @@ impl Oryxis {
 
         // Recreate pinned tabs (dormant; reopen on first select).
         self.restore_pinned_tabs_dormant();
+        // Then last session's ordinary tabs, also dormant, when the user
+        // asked for them (issue #206). After the pins, which is what
+        // lets it skip an entry a pin already put back.
+        self.restore_open_tabs_dormant();
     }
 
     /// Auto-archive sweep (uses the previously-loaded orphan setting)
@@ -477,6 +481,9 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("pane_border_inactive") {
                 self.prefs.pane_border_inactive = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("pane_headers") {
+                self.prefs.pane_headers = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("pane_gap") {
                 self.prefs.pane_gap = v;
             }
@@ -807,6 +814,9 @@ impl Oryxis {
             {
                 self.prefs.tab_number_style = v;
             }
+            if let Ok(Some(v)) = vault.get_setting("restore_tabs_on_launch") {
+                self.prefs.restore_tabs_on_launch = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("show_tab_status_dot") {
                 self.prefs.show_tab_status_dot = v == "true";
             }
@@ -873,6 +883,9 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("monitor_all_hosts") {
                 self.prefs.monitor_all_hosts = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("monitor_dash_live_only") {
+                self.prefs.monitor_dash_live_only = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("tmux_manager_enabled") {
                 self.prefs.tmux_manager = v == "true";
@@ -1172,6 +1185,9 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("terminal_hint_mode") {
                 self.prefs.hint_mode = crate::util::HintMode::from_code(&v);
             }
+            if let Ok(Some(v)) = vault.get_setting("pane_end_action") {
+                self.prefs.pane_end_action = crate::util::PaneEndAction::from_code(&v);
+            }
             if let Ok(Some(v)) = vault.get_setting("cloud_auto_refresh_enabled") {
                 self.prefs.cloud_auto_refresh_enabled = v == "true";
             }
@@ -1217,6 +1233,13 @@ impl Oryxis {
             }
             if let Ok(Some(v)) = vault.get_setting("session_log_compress") {
                 self.prefs.session_log_compress = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("session_log_file") {
+                self.prefs.session_log_file = v == "true";
+            }
+            if let Ok(Some(v)) = vault.get_setting("session_log_file_dir") {
+                self.prefs.session_log_file_dir =
+                    (!v.trim().is_empty()).then(|| v.trim().to_string());
             }
             if let Ok(Some(v)) = vault.get_setting("connection_history") {
                 self.prefs.connection_history = v == "true";
