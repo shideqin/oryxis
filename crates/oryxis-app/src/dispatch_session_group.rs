@@ -389,6 +389,21 @@ impl Oryxis {
             return Task::none();
         };
 
+        // A group is used when it is opened, not when a pane inside it
+        // dials: the panes stamp their own hosts on the way through the
+        // connect switch, and the group is the thing the user picked.
+        // Same dead-column story as `Connection.last_used`, one field
+        // over (`SessionGroup.last_used` had no writer either).
+        let now = chrono::Utc::now();
+        if let Some(g) = self.session_groups.get_mut(idx) {
+            g.last_used = Some(now);
+        }
+        if let Some(vault) = &self.vault
+            && let Err(e) = vault.mark_session_group_used(&group.id, now)
+        {
+            tracing::warn!("marking session group {} as used failed: {e}", group.id);
+        }
+
         // Prune leaves whose host reference no longer resolves.
         let conn_ids: std::collections::HashSet<uuid::Uuid> =
             self.connections.iter().map(|c| c.id).collect();

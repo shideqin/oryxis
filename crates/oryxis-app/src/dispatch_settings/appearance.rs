@@ -212,6 +212,25 @@ impl Oryxis {
                     if self.prefs.show_tab_host_address { "true" } else { "false" },
                 );
             }
+            SettingsMessage::SettingToggleRestoreTabsOnLaunch => {
+                self.prefs.restore_tabs_on_launch = !self.prefs.restore_tabs_on_launch;
+                self.persist_setting(
+                    "restore_tabs_on_launch",
+                    if self.prefs.restore_tabs_on_launch { "true" } else { "false" },
+                );
+                if self.prefs.restore_tabs_on_launch {
+                    // Take the first snapshot from the strip on screen,
+                    // so turning it on and quitting right away restores
+                    // what is open NOW rather than nothing.
+                    self.persist_open_tabs();
+                } else {
+                    // And drop the list on the way out: a preference the
+                    // user turned off must not leave their hosts written
+                    // down beside a vault that can be read locked.
+                    self.persist_setting("open_tabs", "[]");
+                    self.open_tabs_signature = 0;
+                }
+            }
             SettingsMessage::SettingToggleShowTabStatusDot => {
                 self.prefs.show_tab_status_dot = !self.prefs.show_tab_status_dot;
                 self.persist_setting(

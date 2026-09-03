@@ -290,6 +290,11 @@ pub(crate) struct AppPrefs {
     /// Pinned-tab visual style: "compact" (Chrome-style icon-only chip) or
     /// "full" (a normal tab with a special pinned border, stuck to the left).
     pub(crate) pinned_tab_style: String,
+    /// Bring last session's tabs back at launch, dormant (issue #206).
+    /// Off by default: a strip that refills itself changes what opening
+    /// the app means, and pinning is the answer for the tabs a user
+    /// wants every time. While off, nothing is written to `open_tabs`.
+    pub(crate) restore_tabs_on_launch: bool,
     /// Where "Duplicate Tab" puts the copy: `"next"` (default, beside the
     /// original), `"end"` (the pre-#110 append) or `"start"`. Parsed by
     /// [`crate::state::TabPlacement::from_setting`]; ordering only, never
@@ -667,6 +672,7 @@ impl Default for AppPrefs {
             minimize_to_tray: false,
             tab_close_button_side: "left".into(),
             pinned_tab_style: "compact".into(),
+            restore_tabs_on_launch: false,
             duplicate_tab_position: "next".into(),
             tab_slot_includes_home: false,
             tab_number_style: "off".into(),

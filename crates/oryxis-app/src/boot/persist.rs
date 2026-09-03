@@ -31,6 +31,11 @@ impl Oryxis {
         // on hide-to-tray: a later tray Quit exits without passing
         // through the close path again).
         self.persist_window_geometry();
+        // The strip, unconditionally rather than through the signature
+        // gate: what that gate cannot see is a rename or a change of
+        // which pane a split has focused, and this is the last chance to
+        // record either (issue #206).
+        self.persist_open_tabs();
     }
 
     /// Gracefully drain the plugin subprocesses (flush logs / close SDK
@@ -155,6 +160,167 @@ impl Oryxis {
         }
         let json = serde_json::to_string(&specs).unwrap_or_else(|_| "[]".into());
         self.persist_setting("pinned_tabs", &json);
+    }
+
+    /// Snapshot the tabs that are merely OPEN into the `open_tabs`
+    /// setting, so the next launch can put the strip back (issue #206).
+    ///
+    /// What it may hold is exactly what a pin may hold, and for the same
+    /// reason: this row lives in `settings`, which is read WITHOUT
+    /// unlocking the vault, so a saved host is a uuid and the label the
+    /// user gave it, and an ad-hoc quick-connect target, being a
+    /// `user@host` its owner deliberately chose not to save, is not
+    /// written down at all. `pin_spec` already draws that line, so the
+    /// snapshot is its answer rather than a second opinion.
+    ///
+    /// Pinned tabs are skipped because `pinned_tabs` restores them
+    /// already, and a tab in both lists would come back twice. Panels
+    /// are skipped for the reason they are skipped there: a restart
+    /// opens on real work, not on the settings screen.
+    ///
+    /// Nothing is written while the setting is off, and the toggle
+    /// clears the row on its way out, so a user who never asked for this
+    /// has no list of their hosts sitting next to a locked vault.
+    pub(crate) fn persist_open_tabs(&self) {
+        if !self.prefs.restore_tabs_on_launch {
+            return;
+        }
+        let mut specs: Vec<crate::state::PinnedTabSpec> = Vec::new();
+        for r in &self.tab_order {
+            let spec = match r {
+                crate::state::TabRef::Terminal(id) => self
+                    .tabs
+                    .iter()
+                    .find(|t| t._id == *id)
+                    .filter(|t| !t.pinned)
+                    .and_then(|t| t.pin_spec()),
+                crate::state::TabRef::Sftp(id) => self
+                    .sftp_tabs
+                    .iter()
+                    .position(|t| t.id == *id)
+                    .filter(|&i| !self.sftp_tabs[i].pinned)
+                    .and_then(|i| self.sftp_pin_spec(i)),
+                crate::state::TabRef::Panel(_) => None,
+            };
+            if let Some(spec) = spec {
+                specs.push(spec);
+            }
+        }
+        let json = serde_json::to_string(&specs).unwrap_or_else(|_| "[]".into());
+        self.persist_setting("open_tabs", &json);
+    }
+
+    /// Take the snapshot again when the strip has actually changed.
+    ///
+    /// Called after every `update` (next to `reconcile_tab_order`), so
+    /// the signature is what keeps it from being a disk write per
+    /// message: the same shape `refresh_jumplist` uses for the same
+    /// reason. It covers every path that opens or closes a tab, present
+    /// and future, instead of a call at each of the eight sites that
+    /// push one, which is the arrangement `persist_pinned_tabs` has and
+    /// the reason a ninth site would silently not persist.
+    ///
+    /// The strip's identity is chip ids plus their pinned flags: order,
+    /// membership and which of the two lists a tab belongs to. It
+    /// deliberately does NOT cover labels (an auto-titled tab would
+    /// write to disk on every prompt) nor which pane of a split has
+    /// focus, both of which the snapshot does read. `persist_before_exit`
+    /// takes an unconditional one for exactly that reason.
+    pub(crate) fn persist_open_tabs_if_changed(&mut self) {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        if !self.prefs.restore_tabs_on_launch {
+            return;
+        }
+        let mut h = DefaultHasher::new();
+        for r in &self.tab_order {
+            r.strip_id().hash(&mut h);
+            let pinned = match r {
+                crate::state::TabRef::Terminal(id) => {
+                    self.tabs.iter().any(|t| t._id == *id && t.pinned)
+                }
+                crate::state::TabRef::Sftp(id) => {
+                    self.sftp_tabs.iter().any(|t| t.id == *id && t.pinned)
+                }
+                crate::state::TabRef::Panel(_) => false,
+            };
+            pinned.hash(&mut h);
+        }
+        let signature = h.finish();
+        if signature == self.open_tabs_signature {
+            return;
+        }
+        self.open_tabs_signature = signature;
+        self.persist_open_tabs();
+    }
+
+    /// Recreate last session's non-pinned tabs as dormant placeholders,
+    /// once per process (issue #206).
+    ///
+    /// They come back DORMANT, never dialling, which is the whole reason
+    /// this can exist without an answer to "what happens when eleven
+    /// hosts each want a host-key prompt at launch": a restored chip is
+    /// the same placeholder a pin restores as, and it connects when it
+    /// is selected. It is still opt-in, because a strip that refills
+    /// itself is a change to what launching the app means.
+    pub(crate) fn restore_open_tabs_dormant(&mut self) {
+        // Set before the setting is consulted, not after: turning the
+        // preference on mid-session must not make the next re-run of
+        // `load_data_from_vault` (a connection save, a sync round)
+        // paste the previous session's strip over the current one.
+        if std::mem::replace(&mut self.open_tabs_restored, true) {
+            return;
+        }
+        if !self.prefs.restore_tabs_on_launch {
+            return;
+        }
+        let json = self
+            .vault
+            .as_ref()
+            .and_then(|v| v.get_setting("open_tabs").ok().flatten());
+        let Some(json) = json else { return };
+        let specs: Vec<crate::state::PinnedTabSpec> =
+            serde_json::from_str(&json).unwrap_or_default();
+        // Whatever a pin already restored stays that pin's: a host that
+        // was both pinned and open in a second tab is legitimate, but a
+        // pin restored from `pinned_tabs` and an entry here naming the
+        // same tab would be one chip too many. The pins are in the strip
+        // by now (`restore_pinned_tabs_dormant` runs first).
+        let mut pinned_keys: std::collections::HashSet<String> = self
+            .tabs
+            .iter()
+            .filter(|t| t.pinned)
+            .filter_map(|t| t.pin_spec().map(|s| s.dedupe_key()))
+            .collect();
+        pinned_keys.extend(
+            (0..self.sftp_tabs.len())
+                .filter(|&i| self.sftp_tabs[i].pinned)
+                .filter_map(|i| self.sftp_pin_spec(i).map(|s| s.dedupe_key())),
+        );
+        for spec in specs {
+            if pinned_keys.contains(&spec.dedupe_key()) {
+                continue;
+            }
+            let label = spec.label().to_string();
+            if matches!(spec, crate::state::PinnedTabSpec::Sftp { .. }) {
+                let tab = crate::state::SftpTab::new_dormant(label, spec);
+                self.tab_order.push(crate::state::TabRef::Sftp(tab.id));
+                self.sftp_tabs.push(tab);
+            } else {
+                let tab = crate::state::TerminalTab::new_dormant(
+                    label,
+                    spec,
+                    "restored_tab_dormant_hint",
+                );
+                self.tab_order.push(crate::state::TabRef::Terminal(tab._id));
+                self.tabs.push(tab);
+            }
+        }
+        // Like the pins above: the chips sit in the strip and the app
+        // still opens on Hosts. Restoring what was open is not the same
+        // promise as resuming where the user left off, and dialling on
+        // arrival is the thing this deliberately does not do.
     }
 
     /// Recreate pinned tabs as dormant placeholders at boot. They show in the

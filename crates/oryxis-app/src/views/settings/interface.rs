@@ -257,6 +257,16 @@ impl Oryxis {
                 |v| Message::Settings(SettingsMessage::SettingPinnedTabStyleChanged(v)),
             ),
             Space::new().height(8),
+            self.nav_toggle_row(
+                crate::i18n::t("restore_tabs_on_launch"),
+                self.prefs.restore_tabs_on_launch,
+                Message::Settings(SettingsMessage::SettingToggleRestoreTabsOnLaunch),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("restore_tabs_on_launch_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
             self.nav_pick_row(
                 crate::i18n::t("tab_number_style"),
                 vec!["off".to_string(), "prefix".to_string(), "icon".to_string()],

@@ -353,10 +353,10 @@ pub(crate) struct SftpTab {
     pub custom_name: Option<String>,
     /// Pinned SFTP tabs render first in the strip.
     pub pinned: bool,
-    /// Set on a dormant pinned SFTP tab recreated at boot: reopens (re-mounts
-    /// its panes) the first time it's selected, then clears. Reserved for
-    /// pin-restore-on-boot (deferred); not read yet.
-    #[allow(dead_code)]
+    /// Set on a dormant SFTP tab recreated at boot (a pin, or the strip
+    /// the last session left behind) or asked back from the closed-tab
+    /// stack: it re-mounts its panes the first time it is selected
+    /// (`SelectSftpTab` takes it), then clears.
     pub pending_reopen: Option<PinnedTabSpec>,
     /// Parked state while this tab is not focused; a default placeholder while
     /// it IS the active tab (live state hoisted to `Oryxis::sftp`).
@@ -539,16 +539,30 @@ impl TerminalTab {
         }
     }
 
-    /// A dormant pinned tab recreated at boot: shows in the strip with the
-    /// saved label but holds no live session. The placeholder pane carries a
-    /// hint; selecting the tab the first time fires `spec` to reopen it.
-    pub fn new_dormant_pinned(label: String, spec: PinnedTabSpec) -> Self {
+    /// A dormant tab recreated at boot: it shows in the strip with the
+    /// saved label but holds no live session, and the first select fires
+    /// `spec` to reopen it. The placeholder pane carries `hint_key`,
+    /// which is the one thing the two restore paths disagree about: a
+    /// chip has to say what put it there, a pin the user made or the
+    /// strip the last session left behind (issue #206).
+    ///
+    /// `pinned` stays the caller's to set, because it is what
+    /// `reopen_dormant_tab` carries onto the live tab: a restored tab
+    /// that pinned itself on first select would quietly re-arrange the
+    /// strip the restore was supposed to reproduce.
+    pub fn new_dormant(label: String, spec: PinnedTabSpec, hint_key: &str) -> Self {
         let mut term = TerminalState::new_no_pty(80, 24).unwrap();
-        let hint = format!("\x1b[2m  {}\x1b[0m\r\n", crate::i18n::t("pinned_tab_dormant_hint"));
+        let hint = format!("\x1b[2m  {}\x1b[0m\r\n", crate::i18n::t(hint_key));
         term.process(hint.as_bytes());
         let mut tab = Self::new_single(label, Arc::new(Mutex::new(term)));
-        tab.pinned = true;
         tab.pending_reopen = Some(spec);
+        tab
+    }
+
+    /// The pinned half of [`Self::new_dormant`].
+    pub fn new_dormant_pinned(label: String, spec: PinnedTabSpec) -> Self {
+        let mut tab = Self::new_dormant(label, spec, "pinned_tab_dormant_hint");
+        tab.pinned = true;
         tab
     }
 

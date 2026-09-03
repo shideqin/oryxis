@@ -395,6 +395,8 @@ pub enum SettingsMessage {
     SettingTogglePinnedTabsTopBar,
     SettingToggleSideHideTopBar,
     SettingToggleSideFullHeight,
+    /// Bring last session's tabs back at launch (issue #206).
+    SettingToggleRestoreTabsOnLaunch,
     SettingToggleShowTabStatusDot,
     SettingToggleSftpEnabled,
     SettingNavOrientationChanged(String),

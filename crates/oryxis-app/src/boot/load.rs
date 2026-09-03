@@ -23,6 +23,10 @@ impl Oryxis {
 
         // Recreate pinned tabs (dormant; reopen on first select).
         self.restore_pinned_tabs_dormant();
+        // Then last session's ordinary tabs, also dormant, when the user
+        // asked for them (issue #206). After the pins, which is what
+        // lets it skip an entry a pin already put back.
+        self.restore_open_tabs_dormant();
     }
 
     /// Auto-archive sweep (uses the previously-loaded orphan setting)
@@ -809,6 +813,9 @@ impl Oryxis {
                 && (v == "off" || v == "prefix" || v == "icon")
             {
                 self.prefs.tab_number_style = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("restore_tabs_on_launch") {
+                self.prefs.restore_tabs_on_launch = v == "true";
             }
             if let Ok(Some(v)) = vault.get_setting("show_tab_status_dot") {
                 self.prefs.show_tab_status_dot = v == "true";

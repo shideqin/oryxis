@@ -1127,3 +1127,55 @@ fn mosh_options_round_trip_and_a_plain_host_stores_nothing() {
     assert_eq!(back.port_range, "60000:60010");
     assert_eq!(back.command, "tmux new -A -s main");
 }
+
+#[test]
+fn marking_a_connection_used_leaves_updated_at_alone() {
+    let vault = unlocked_vault();
+    let mut conn = Connection::new("h", "example.com");
+    conn.last_used = None;
+    vault.save_connection(&conn, None).unwrap();
+    let before = vault
+        .list_connections()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.id == conn.id)
+        .expect("connection listed");
+    assert!(before.last_used.is_none(), "a fresh host was never used");
+
+    let at = chrono::Utc::now();
+    vault.mark_connection_used(&conn.id, at).unwrap();
+
+    let after = vault
+        .list_connections()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.id == conn.id)
+        .expect("connection listed");
+    assert_eq!(
+        after.last_used.map(|d| d.to_rfc3339()),
+        Some(at.to_rfc3339()),
+        "the stamp round-trips through the column"
+    );
+    // The point of the narrow UPDATE: connecting is not an edit. If it
+    // moved `updated_at`, every dial would out-rank a peer's real change
+    // the next time sync compared the two under last-writer-wins.
+    assert_eq!(
+        after.updated_at, before.updated_at,
+        "marking a host used must not look like editing it"
+    );
+    // And it touches nothing else on the row.
+    assert_eq!(after.label, before.label);
+    assert_eq!(after.hostname, before.hostname);
+}
+
+#[test]
+fn marking_a_missing_connection_used_is_not_an_error() {
+    let vault = unlocked_vault();
+    // The app calls this from the top of both connect switches, where an
+    // ad-hoc quick-connect host reaches it with an id no row carries.
+    // Zero rows updated is the right answer, never a failure that would
+    // log on every quick connect.
+    vault
+        .mark_connection_used(&Uuid::new_v4(), chrono::Utc::now())
+        .unwrap();
+}

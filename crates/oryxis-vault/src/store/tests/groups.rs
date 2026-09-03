@@ -203,3 +203,34 @@ fn a_group_without_defaults_stores_null() {
     vault.save_group(&group).unwrap();
     assert!(vault.list_groups().unwrap()[0].defaults.is_none());
 }
+
+#[test]
+fn marking_a_session_group_used_leaves_updated_at_alone() {
+    let vault = unlocked_vault();
+    let group = SessionGroup::new(
+        "work",
+        PaneLayout::Leaf(PaneMember {
+            source: PaneSource::LocalShell {
+                program: "bash".to_string(),
+                args: Vec::new(),
+                label: "Local".to_string(),
+            },
+            initial_script: None,
+        }),
+    );
+    vault.save_session_group(&group).unwrap();
+
+    let at = chrono::Utc::now();
+    vault.mark_session_group_used(&group.id, at).unwrap();
+
+    let after = vault
+        .list_session_groups()
+        .unwrap()
+        .into_iter()
+        .find(|g| g.id == group.id)
+        .expect("session group listed");
+    assert_eq!(after.last_used.map(|d| d.to_rfc3339()), Some(at.to_rfc3339()));
+    // Same rule as the connection stamp: opening a group is not editing
+    // it, so the column sync compares must not move.
+    assert_eq!(after.updated_at, group.updated_at);
+}

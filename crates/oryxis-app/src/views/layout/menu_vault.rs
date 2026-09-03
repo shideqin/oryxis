@@ -480,6 +480,61 @@ impl Oryxis {
         items.into()
     }
 
+    /// Recent-host rows for the two tab popovers (issue #206), newest
+    /// first, under a hairline.
+    ///
+    /// The list is [`Self::recent_connections`], the same one the tray
+    /// submenu and the JumpList read, so "recent" has one meaning and no
+    /// store of its own. Empty until a host has actually been connected,
+    /// which keeps rows that do nothing off a popover opened for the
+    /// first time, the rule the reopen row already follows here.
+    ///
+    /// `nav` picks the row builder rather than leaving it to the caller,
+    /// because the two popovers disagree on purpose: the strip menu is a
+    /// keynav surface and records its rows, while the `+` popover is a
+    /// hover popover `modal_nav_surface` deliberately declines.
+    fn recent_host_rows(&self, nav: bool) -> Vec<Element<'static, Message>> {
+        let recent = self.recent_connections(RECENT_MENU_MAX);
+        if recent.is_empty() {
+            return Vec::new();
+        }
+        let privacy_terms = self.privacy_terms();
+        let secondary = OryxisColors::t().text_secondary;
+        let mut rows: Vec<Element<'static, Message>> = vec![menu_divider()];
+        for c in recent {
+            // `ConnectSsh` takes a position in `connections`, resolved in
+            // the same frame the row is drawn, which is how every other
+            // host row in the app reaches it (the picker's included).
+            let Some(idx) = self.connections.iter().position(|x| x.id == c.id) else {
+                continue;
+            };
+            let label =
+                elide_menu_label(&self.privacy_display_label(&c.label, &c.label, &privacy_terms));
+            let msg = Message::Ssh(SshMessage::ConnectSsh(idx));
+            // A terminal glyph, not a clock: the row's subject is the
+            // host and its verb is "open a session on it". Recency is
+            // what ORDERS the list, not what each row is.
+            rows.push(if nav {
+                self.menu_item_owned(iced_fonts::lucide::terminal(), label, msg, secondary)
+            } else {
+                crate::widgets::context_menu_item_owned(
+                    iced_fonts::lucide::terminal(),
+                    label,
+                    msg,
+                    secondary,
+                )
+            });
+        }
+        rows
+    }
+
+    /// Height of the recent-host block in `overlay_menu_height`'s row
+    /// units, next to its builder for the reason `split_menu_rows` is.
+    fn recent_host_menu_rows(&self) -> f32 {
+        let n = self.recent_connections(RECENT_MENU_MAX).len();
+        if n == 0 { 0.0 } else { n as f32 + DIVIDER_ROWS }
+    }
+
     pub(crate) fn build_menu_split(&self) -> Element<'_, Message> {
         let mut items = column![
             context_menu_item(iced_fonts::lucide::plus(), crate::i18n::t("new_tab"), Message::Tabs(TabsMessage::ShowNewTabPicker), OryxisColors::t().text_secondary),
@@ -498,6 +553,14 @@ impl Oryxis {
         if !self.closed_tabs.is_empty() {
             items = items.push(context_menu_item(iced_fonts::lucide::rotate_ccw(), crate::i18n::t("reopen_closed_tab"), Message::Tabs(TabsMessage::ReopenClosedTab), OryxisColors::t().text_secondary));
         }
+        // Below the hairline, because they answer a different question
+        // than the rows above: those act on the tab that exists, these
+        // name a host to open. "New tab" still leads the popover, so the
+        // recents are a shortcut past the picker, never a replacement
+        // for it (issue #206).
+        for row in self.recent_host_rows(false) {
+            items = items.push(row);
+        }
         // Keep the popover open while the cursor is over it (hover
         // bridge from the `+` button into the menu).
         MouseArea::new(items)
@@ -510,14 +573,14 @@ impl Oryxis {
     /// estimate follows its conditional rows instead of drifting from
     /// them (`overlay_menu_height`).
     pub(crate) fn split_menu_rows(&self) -> f32 {
-        let mut rows = 1.0;
+        let mut rows: f32 = 1.0;
         if self.active_tab.is_some() {
             rows += 2.0;
         }
         if !self.closed_tabs.is_empty() {
             rows += 1.0;
         }
-        rows
+        rows + self.recent_host_menu_rows()
     }
 
     /// Right-click on the tab strip's empty area (issue #186). Nothing
@@ -534,13 +597,19 @@ impl Oryxis {
         if !self.closed_tabs.is_empty() {
             items = items.push(self.menu_item(iced_fonts::lucide::rotate_ccw(), crate::i18n::t("reopen_closed_tab"), Message::Tabs(TabsMessage::ReopenClosedTab), OryxisColors::t().text_secondary));
         }
+        // Same block as the `+` popover's, recorded for keynav here
+        // because this surface is one and that one is not.
+        for row in self.recent_host_rows(true) {
+            items = items.push(row);
+        }
         items.into()
     }
 
     /// Row count of the strip menu, next to its builder for the reason
     /// `split_menu_rows` is.
     pub(crate) fn tab_bar_menu_rows(&self) -> f32 {
-        if self.closed_tabs.is_empty() { 1.0 } else { 2.0 }
+        let base: f32 = if self.closed_tabs.is_empty() { 1.0 } else { 2.0 };
+        base + self.recent_host_menu_rows()
     }
 
     pub(crate) fn build_menu_sort(&self, kind: crate::state::SortMenuKind) -> Element<'_, Message> {
@@ -555,27 +624,7 @@ impl Oryxis {
         // Inlined as four explicit calls so the icon widget's
         // lifetime stays 'static (a closure would force the
         // icon to outlive the returned Element borrow).
-        // Hairline divider: the colored fill must sit on the
-        // inner 1 px Space, not the outer padded container,
-        // otherwise the breathing-room padding inherits the
-        // border colour and the line reads ~9 px tall.
-        let divider: Element<'_, Message> = container(
-            container(Space::new().width(Length::Fill).height(1))
-                .width(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(Background::Color(
-                        OryxisColors::t().border,
-                    )),
-                    ..Default::default()
-                }),
-        )
-        .padding(Padding {
-            top: 4.0,
-            right: 4.0,
-            bottom: 4.0,
-            left: 4.0,
-        })
-        .into();
+        let divider = menu_divider();
         column![
             self.sort_row(
                 kind,
@@ -1327,5 +1376,86 @@ impl Oryxis {
                 c.error,
             ));
         items.into()
+    }
+}
+
+/// How many recent hosts the two tab popovers offer.
+///
+/// Five, not the tray submenu's ten: this is a shortcut past the picker
+/// for the handful of hosts a session revolves around, and a popover
+/// long enough to need scanning is a picker with no search field.
+const RECENT_MENU_MAX: usize = 5;
+
+/// Longest recent-host label a popover row shows before it is cut.
+///
+/// The popover is a fixed 210 px (`overlay_menu_width`), and a label is
+/// whatever the user named a host, so an uncut one wraps to two or three
+/// lines and takes the height estimate with it. The tray has the same
+/// list and no such limit because a native submenu sizes itself.
+const RECENT_LABEL_MAX: usize = 24;
+
+/// The hairline used to separate a popover's sections.
+///
+/// The coloured fill must sit on the inner 1 px `Space`, not on the
+/// padded container around it, or the breathing room inherits the border
+/// colour and the line reads about nine pixels tall.
+fn menu_divider() -> Element<'static, Message> {
+    container(
+        container(Space::new().width(Length::Fill).height(1))
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            }),
+    )
+    .padding(Padding { top: 4.0, right: 4.0, bottom: 4.0, left: 4.0 })
+    .into()
+}
+
+/// Cut a label to [`RECENT_LABEL_MAX`] characters, marking the cut.
+/// Counts CHARS rather than bytes: a host labelled in Chinese or Arabic
+/// would otherwise be sliced mid-codepoint, which panics.
+fn elide_menu_label(label: &str) -> String {
+    if label.chars().count() <= RECENT_LABEL_MAX {
+        return label.to_string();
+    }
+    let mut out: String = label.chars().take(RECENT_LABEL_MAX - 1).collect();
+    out.push('\u{2026}');
+    out
+}
+
+/// Height of [`menu_divider`] in `overlay_menu_height`'s row units
+/// (1 px line plus 4 px of padding either side, against a 30 px row).
+const DIVIDER_ROWS: f32 = 0.3;
+
+#[cfg(test)]
+mod tests {
+    use super::{elide_menu_label, RECENT_LABEL_MAX};
+
+    #[test]
+    fn a_short_label_is_left_alone() {
+        assert_eq!(elide_menu_label("web01"), "web01");
+        let exact: String = "a".repeat(RECENT_LABEL_MAX);
+        assert_eq!(elide_menu_label(&exact), exact);
+    }
+
+    #[test]
+    fn a_long_label_is_cut_and_says_so() {
+        let long: String = "a".repeat(RECENT_LABEL_MAX + 10);
+        let cut = elide_menu_label(&long);
+        assert_eq!(cut.chars().count(), RECENT_LABEL_MAX);
+        assert!(cut.ends_with('\u{2026}'));
+    }
+
+    #[test]
+    fn a_multibyte_label_is_cut_by_character() {
+        // The reason this counts chars: every one of these is three
+        // bytes, so a byte slice would land inside a codepoint and
+        // panic, on a host labelled the way a good share of this app's
+        // users label them.
+        let long: String = "\u{670d}".repeat(RECENT_LABEL_MAX + 5);
+        let cut = elide_menu_label(&long);
+        assert_eq!(cut.chars().count(), RECENT_LABEL_MAX);
+        assert!(cut.ends_with('\u{2026}'));
     }
 }

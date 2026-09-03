@@ -436,12 +436,14 @@ impl Oryxis {
                 self.active_view = View::Dashboard;
             } else {
                 let i = idx.min(self.tabs.len() - 1);
-                // A dormant pinned tab (pinned, never opened, still
-                // carries its reopen spec) is a placeholder, not a
-                // real session to fall back onto: land on Home
-                // instead of "focusing" an unopened pin.
+                // A dormant tab (never opened, still carrying its
+                // reopen spec) is a placeholder, not a real session to
+                // fall back onto: land on Home instead of "focusing"
+                // something that would dial on arrival. Pinned or
+                // restored from the last session, the answer is the
+                // same; only the spec matters.
                 let fallback = &self.tabs[i];
-                if fallback.pinned && fallback.pending_reopen.is_some() {
+                if fallback.pending_reopen.is_some() {
                     self.active_tab = None;
                     self.active_view = View::Dashboard;
                 } else {
@@ -908,10 +910,14 @@ impl Oryxis {
         (open, cloud)
     }
 
-    /// First select of a dormant pinned tab: drop the placeholder and fire
-    /// the saved spec to reopen it (connect host / spawn local shell). The
-    /// freshly-opened tab inherits the pin.
+    /// First select of a dormant tab: drop the placeholder and fire the
+    /// saved spec to reopen it (connect host / spawn local shell). The
+    /// freshly-opened tab inherits the placeholder's pin, which since
+    /// issue #206 is not always set: a tab restored from the last
+    /// session is dormant without being pinned, and pinning it here
+    /// would rewrite an arrangement the user never asked to change.
     fn reopen_dormant_tab(&mut self, idx: usize) -> Task<Message> {
+        let was_pinned = self.tabs.get(idx).is_some_and(|t| t.pinned);
         let Some(spec) = self
             .tabs
             .get_mut(idx)
@@ -968,7 +974,7 @@ impl Oryxis {
             let live = self.tabs.pop().expect("a tab was just appended");
             let at = idx.min(self.tabs.len());
             self.tabs.insert(at, live);
-            self.tabs[at].pinned = true;
+            self.tabs[at].pinned = was_pinned;
             // Keep the reopened tab at the dormant's spot in the unified strip
             // order (else reconcile would append the new id at the end).
             let live_id = self.tabs[at]._id;
