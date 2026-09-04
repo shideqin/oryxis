@@ -238,6 +238,21 @@ impl Oryxis {
                 Message::Terminal(TerminalMessage::ToggleMaximizePane(Some(idx))),
                 OryxisColors::t().text_secondary,
             ));
+            // Break the focused pane out into a tab of its own (issue
+            // #208 item 4). Offered here as well as on the pane itself
+            // because the pane's own menu only exists under the Menu
+            // right-click scheme, and this action has nothing to do with
+            // what the terminal does with a right-click: a user who
+            // keeps right-click on Paste would otherwise have no way to
+            // reach it. Focused pane, like the zoom above it.
+            if let Some(pane_id) = self.tabs.get(idx).map(|t| t.active().id) {
+                items = items.push(self.menu_item(
+                    iced_fonts::lucide::external_link(),
+                    crate::i18n::t("pane_to_new_tab"),
+                    Message::Terminal(TerminalMessage::MovePaneToNewTab(pane_id)),
+                    OryxisColors::t().text_secondary,
+                ));
+            }
         }
         // Broadcast input across the tab's panes (C2): a check glyph +
         // warning tint mark the armed state, matching the pane borders and
@@ -1263,6 +1278,16 @@ impl Oryxis {
                     OryxisColors::t().text_secondary,
                 ));
             }
+            // Break this pane out into a tab of its own (issue #208
+            // item 4). Above Close because it is the non-destructive
+            // half of the same idea, "this pane should not be here":
+            // one keeps the session, the other ends it.
+            items = items.push(self.menu_item(
+                iced_fonts::lucide::external_link(),
+                crate::i18n::t("pane_to_new_tab"),
+                Message::Terminal(TerminalMessage::MovePaneToNewTab(pane_id)),
+                OryxisColors::t().text_secondary,
+            ));
             items = items.push(self.menu_item(
                 iced_fonts::lucide::x(),
                 crate::i18n::t("close_pane"),

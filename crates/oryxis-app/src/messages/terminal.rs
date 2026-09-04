@@ -133,6 +133,22 @@ pub enum TerminalMessage {
     /// Flip the orientation of the split that separates this pane from
     /// its neighbour (stacked <-> side by side).
     FlipPaneSplit(Uuid),
+    /// Break a pane out of its split into a tab of its own (issue #208
+    /// item 4). Carries the right-clicked pane's id for the same reason
+    /// `ClosePane` does: the menu overlay is not modal, so focus and the
+    /// active tab can move out from under it.
+    ///
+    /// Nothing about the session ends, so this is not a close followed
+    /// by a connect: the pane itself moves, whole.
+    MovePaneToNewTab(Uuid),
+    /// Right-click on a pane's HEADER: raise that pane's context menu.
+    ///
+    /// The same menu the canvas offers, reached from a strip no terminal
+    /// setting governs, so the pane's own actions stay available with
+    /// right-click left on Paste. Carries no coordinates because a
+    /// `MouseArea` reports THAT a right press happened, not where; the
+    /// handler anchors it on the tracked cursor.
+    ShowPaneHeaderMenu(Uuid),
     /// Periodic flush of buffered session-log output to the vault.
     SessionLogFlushTick,
     /// Emitted by the terminal widget when the user right-clicks. The

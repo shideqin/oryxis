@@ -1331,6 +1331,15 @@ pub struct Oryxis {
     pub(crate) pending_ecs_autoconnect: Option<crate::state::PendingEcsAutoConnect>,
     /// In-progress tab reorder drag (see `TabDrag`). `None` when not dragging.
     pub(crate) tab_drag: Option<crate::state::TabDrag>,
+    /// Which tab a pane being dragged by its header came FROM, and its
+    /// handle there (issue #208 item 4). Recorded when the widget picks
+    /// the pane up, read when it reports the release.
+    ///
+    /// Not derivable at release time: a `pane_grid::Pane` handle is
+    /// minted per grid and is only unique within one, so the tab cannot
+    /// be found by searching for the handle, and the handle only means
+    /// something next to the tab it was minted in.
+    pub(crate) pane_drag_from: Option<(uuid::Uuid, iced::widget::pane_grid::Pane)>,
     /// Live width of the right-side editor drawer (host / key / identity /
     /// snippet / port-forward / cloud forms, all of them: they share one
     /// width, like they shared one constant). Defaults to `PANEL_WIDTH`,
@@ -1405,6 +1414,10 @@ pub struct Oryxis {
     /// When the current `toast` should auto-dismiss. Reset on every new
     /// toast so the latest one always gets its full dwell.
     pub(crate) toast_deadline: Option<std::time::Instant>,
+    /// Native OS notifications queued during this `update`, handed to a
+    /// blocking task each at its end (`dispatch_global::take_os_notice_tasks`).
+    /// Never shown from the UI thread: see `Oryxis::push_os_notice`.
+    pub(crate) os_notices: Vec<crate::dispatch_global::OsNotice>,
 
     /// CJK language codes (`"ko"`/`"zh"`/`"ja"`) whose font has already
     /// been requested this session, so switching language back and forth

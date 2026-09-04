@@ -180,6 +180,11 @@ pub enum Message {
     ToastClear,
     /// Immediate dismissal (clicking the chip), regardless of deadline.
     ToastDismiss,
+    /// Raise the toast chip with this text. Fired by work that runs off
+    /// the UI thread and only learns late that an in-app notice is owed:
+    /// an OS notification the OS refused to carry
+    /// (`dispatch_global::take_os_notice_tasks`).
+    ToastShow(String),
     /// Dismiss the blocking error dialog (`Oryxis.error_dialog`). Fired
     /// by the OK button or by clicking the scrim.
     ErrorDialogDismiss,

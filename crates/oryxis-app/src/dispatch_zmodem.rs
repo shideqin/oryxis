@@ -322,7 +322,7 @@ impl Oryxis {
                 // without finishing, same as a failure.
                 let notified = finished
                     .as_ref()
-                    .is_some_and(|(title, body)| self.notify_away(title, body));
+                    .is_some_and(|(title, body)| self.notify_away(title, body, toast.clone()));
                 if let Some(text) = toast
                     && !notified
                 {

@@ -239,11 +239,32 @@ impl Oryxis {
                 }
             }
             TerminalMessage::PaneDrag(ev) => {
-                // Only the drop carries anything to do. `Picked` and
-                // `Canceled` describe a gesture the WIDGET is already
-                // tracking in its own `Action::Dragging`, including the
-                // preview it paints, so answering them would be a second
-                // opinion about a drag we do not own.
+                // `Canceled` is the release that landed on no pane, which
+                // is also the release that landed on the TAB STRIP. If a
+                // chip was under it the pane joins that tab (issue #208
+                // item 4); anywhere else it stays where it is, which is
+                // what the widget already means by cancelling.
+                //
+                // `Picked` only records where the pane came from. The
+                // drag itself is still entirely the widget's, preview
+                // included; what cannot be recovered later is the SOURCE,
+                // because a pane handle is minted per grid and unique
+                // only within one.
+                if let iced::widget::pane_grid::DragEvent::Picked { pane } = ev {
+                    if let Some(id) = self.active_tab.and_then(|i| self.tabs.get(i)).map(|t| t._id)
+                    {
+                        self.pane_drag_from = Some((id, pane));
+                    }
+                    return Task::none();
+                }
+                if let iced::widget::pane_grid::DragEvent::Canceled { pane } = ev {
+                    let from = self.pane_drag_from.take();
+                    if self.move_pane_to_hovered_tab(from, pane) {
+                        return self.tab_scroll_to_active();
+                    }
+                    return Task::none();
+                }
+                self.pane_drag_from = None;
                 if let iced::widget::pane_grid::DragEvent::Dropped { pane, target } = ev
                     && let Some(tab_idx) = self.active_tab
                     && let Some(tab) = self.tabs.get_mut(tab_idx)
@@ -372,28 +393,13 @@ impl Oryxis {
                         _ => None,
                     };
                 }
-                if let Some((_closed, sibling)) = tab.pane_grid.close(target) {
-                    // Only a close of the focused pane moves focus;
-                    // closing a background pane from its context menu
-                    // must not yank the keyboard to its sibling.
-                    if tab.focused == target {
-                        tab.focused = sibling;
-                    }
-                }
-                // Back to a single pane: disarm broadcast (its control
-                // surfaces are hidden for unsplit tabs, so a lingering
-                // armed state would be invisible) and drop the survivor's
-                // opt-out so a later re-arm starts clean.
-                if !tab.broadcast_capable() && tab.broadcast {
-                    tab.broadcast = false;
-                    for pane in tab.pane_grid.panes.values_mut() {
-                        pane.broadcast_opt_out = false;
-                    }
-                }
-                // A collapsed split has to re-anchor the tab on the pane
-                // that is left: the unsplit label comes from the TAB, which
-                // was named after the pane that just closed (issue #108).
-                tab.sync_label_to_sole_pane();
+                // Take the pane out and let the tab settle: focus onto the
+                // promoted sibling if the closed one held it, broadcast
+                // disarmed once the tab can no longer do it, and the label
+                // re-anchored on the survivor (issue #108). The same three
+                // repairs a pane MOVED to another tab owes, which is why
+                // they live on the tab rather than here.
+                let _ = tab.take_pane(target);
                 if let Some(log_id) = ended_log
                     && let Some(vault) = &self.vault
                 {
@@ -510,6 +516,77 @@ impl Oryxis {
                     let handle = *handle;
                     tab.flip_split_at(handle);
                 }
+            }
+            TerminalMessage::MovePaneToNewTab(pane_id) => {
+                self.overlay = None;
+                let Some(src_idx) = self.pane_tab_index(pane_id) else {
+                    return Task::none();
+                };
+                let Some(src) = self.tabs.get(src_idx) else {
+                    return Task::none();
+                };
+                // A lone pane is already a tab of its own. The menu row
+                // is only offered on a split, so this is the overlay
+                // racing a close rather than a reachable choice.
+                if src.pane_count() <= 1 {
+                    return Task::none();
+                }
+                let Some((&handle, _)) =
+                    src.pane_grid.panes.iter().find(|(_, p)| p.id == pane_id)
+                else {
+                    return Task::none();
+                };
+                let keepalive = src.ssm_keepalive;
+                // The pane's recorded output is flushed while its own tab
+                // still owns the log bookkeeping. Nothing is ENDING here,
+                // so the log id travels with the pane and keeps writing
+                // to the same row from its new tab.
+                self.flush_session_logs_final();
+                let Some(pane) = self.tabs[src_idx].take_pane(handle) else {
+                    return Task::none();
+                };
+                // Everything a close would do to the session is exactly
+                // what must NOT happen: no `session.close()`, no ended
+                // log, no `monitor_reset_host`, no `prune_quick_connects`.
+                // The pane is moving, not dying, and it carries all of
+                // that with it.
+                let mut tab = crate::state::TerminalTab::adopting(pane);
+                // An SSM / ECS session stays alive by being nudged on a
+                // timer, and the flag is per TAB, so a pane leaving a
+                // keepalive tab would quietly start idling out. Same
+                // carry `merge_dragged_tab_if_proposed` makes in the
+                // opposite direction.
+                tab.ssm_keepalive = keepalive;
+                // Beside the tab it came from, not at the far end of the
+                // strip: the pane was on screen a moment ago and the eye
+                // should not have to hunt for where it went.
+                //
+                // Armed rather than spliced. `Oryxis::tabs` is append-only
+                // by design, so that no `active_tab` / `last_terminal_tab`
+                // / `connecting.tab_idx` index goes stale; the strip's
+                // order is `tab_order`, and `place_new_tab_ref` is the one
+                // door every new tab walks through to get its slot.
+                let source_id = self.tabs[src_idx]._id;
+                self.pending_tab_placement = Some(crate::state::PendingTabPlacement {
+                    source_id,
+                    placement: crate::state::TabPlacement::NextToOriginal,
+                    armed_at: std::time::Instant::now(),
+                });
+                let dest_idx = self.tabs.len();
+                self.tabs.push(tab);
+                // A pane still dialling keeps its connect screen, and
+                // that screen is drawn over the TAB the progress names,
+                // so the progress has to name the tab the pane is in now
+                // or the dial keeps covering the tab it left.
+                if let Some(progress) = self.connecting.as_mut()
+                    && progress.pane_id == pane_id
+                {
+                    progress.tab_idx = dest_idx;
+                }
+                self.active_tab = Some(dest_idx);
+                self.remember_terminal_tab_focus(dest_idx);
+                self.active_view = crate::state::View::Terminal;
+                return self.tab_scroll_to_active();
             }
             TerminalMessage::TerminalBellFlashEnd(pane_id) => {
                 if let Some(pane) = self
@@ -699,6 +776,16 @@ impl Oryxis {
                     Some(_) => paste_trace("resolved", "clipboard empty", "", None),
                     None => paste_trace("resolved", "clipboard unavailable", "", None),
                 }
+            }
+            TerminalMessage::ShowPaneHeaderMenu(pane_id) => {
+                // Anchored on the tracked cursor, which is where the
+                // press was: a `MouseArea` reports the button, not the
+                // point. No selection travels, because the header is not
+                // the grid and nothing was selected by clicking it.
+                let at = self.mouse_position;
+                return self.update(Message::Terminal(
+                    TerminalMessage::ShowTerminalContextMenu(pane_id, at.x, at.y, None),
+                ));
             }
             TerminalMessage::ShowTerminalContextMenu(pane_id, x, y, selection) => {
                 // Focus the right-clicked pane first (standard context-menu
