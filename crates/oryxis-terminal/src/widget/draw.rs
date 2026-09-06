@@ -73,7 +73,7 @@ where
                     .get()
                     .is_some_and(|e| e != content_epoch);
                 if changed && s.viewport_offset() != 0 {
-                    s.scroll_viewport(alacritty_terminal::grid::Scroll::Bottom);
+                    s.scroll_viewport_to(0);
                 }
             }
             // Draw is `&self`, hence the `Cell`s.

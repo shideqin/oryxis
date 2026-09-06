@@ -169,7 +169,7 @@ pub struct TerminalWidgetState {
     /// Mirror of the grid's `display_offset` (lines above the live edge,
     /// 0 = bottom) as of the last write or the last draw. The grid is the
     /// authority: every scroll gesture goes through
-    /// `TerminalState::scroll_viewport`, which is what lets alacritty keep
+    /// `TerminalState::scroll_viewport_by` / `_to`, which lets alacritty keep
     /// the same rows on screen while output runs (including once the
     /// scrollback is full), across a resize, a clear-scrollback and an
     /// alt-screen round trip. This copy serves the sites with no lock in

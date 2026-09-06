@@ -780,8 +780,7 @@ where
                     // Positive = older content. The grid clamps to its
                     // history; the mirror serves the hit-tests that run
                     // before the next frame.
-                    let offset = s
-                        .scroll_viewport(alacritty_terminal::grid::Scroll::Delta(lines));
+                    let offset = s.scroll_viewport_by(lines);
                     widget_state.scroll_offset.set(offset);
                 }
                 in_alt
@@ -1144,8 +1143,7 @@ where
                         // Above the top edge reveals older rows, below the
                         // bottom edge newer ones; the grid clamps both ends.
                         let step = if rel.y < top_edge { step } else { -step };
-                        let offset = state
-                            .scroll_viewport(alacritty_terminal::grid::Scroll::Delta(step));
+                        let offset = state.scroll_viewport_by(step);
                         widget_state.scroll_offset.set(offset);
                     }
                     // Clamp back into the widget for cell mapping (the
@@ -1331,8 +1329,7 @@ where
                             // Above the thumb pages up (older), below it
                             // pages down; the grid clamps both ends.
                             let step = if pos.y < sb.thumb_y { page } else { -page };
-                            let offset = state
-                                .scroll_viewport(alacritty_terminal::grid::Scroll::Delta(step));
+                            let offset = state.scroll_viewport_by(step);
                             widget_state.scroll_offset.set(offset);
                         }
                         return Some(CanvasAction::request_redraw().and_capture());
@@ -1611,7 +1608,7 @@ where
                 } else {
                     -page
                 };
-                let offset = s.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(lines));
+                let offset = s.scroll_viewport_by(lines);
                 widget_state.scroll_offset.set(offset);
                 Some(CanvasAction::request_redraw().and_capture())
             }

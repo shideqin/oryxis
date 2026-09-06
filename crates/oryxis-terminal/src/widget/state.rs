@@ -585,29 +585,44 @@ impl TerminalState {
     /// taller window keeps the same rows in view), a clear-scrollback (0)
     /// and the alternate screen (a grid of its own, so the primary
     /// buffer's position survives a vim round trip). 0 at the live edge.
+    ///
+    /// Read through a clamp to the history: `Grid::scroll_up` bumps the
+    /// raw offset before it asks whether the region being scrolled starts
+    /// at the top row, so a program scrolling under a fixed header
+    /// (DECSTBM with a top margin) raises it without adding a line to
+    /// history, and a value past the top would index rows the storage
+    /// does not hold. Below the cap that excess is exactly what the clamp
+    /// removes; at the cap the bump is bounded by the history itself.
     pub fn viewport_offset(&self) -> i32 {
-        self.backend.term.grid().display_offset() as i32
+        use alacritty_terminal::grid::Dimensions;
+        let grid = self.backend.term.grid();
+        (grid.display_offset() as i32).min(grid.history_size() as i32)
     }
 
-    /// Move the viewport and hand back where it landed. Every scroll
-    /// gesture goes through here rather than through a widget-side
+    /// Move the viewport by `lines` (positive = older content) and hand
+    /// back where it landed. Every scroll gesture goes through here or
+    /// [`Self::scroll_viewport_to`] rather than through a widget-side
     /// counter, so the grid's bookkeeping above covers all of them.
-    /// alacritty clamps to `[0, history]`; the alternate grid has no
-    /// history, so a scroll there stays at 0.
-    pub(crate) fn scroll_viewport(&mut self, scroll: alacritty_terminal::grid::Scroll) -> i32 {
-        self.backend.term.scroll_display(scroll);
-        self.viewport_offset()
+    pub(crate) fn scroll_viewport_by(&mut self, lines: i32) -> i32 {
+        let target = self.viewport_offset().saturating_add(lines);
+        self.scroll_viewport_to(target)
     }
 
     /// Scroll to an absolute offset, resolved against the grid as it is
     /// now: a target past the top lands on the oldest screen the grid
     /// holds (`i32::MAX` is how the transcript viewer asks for the top),
-    /// and 0 is the live edge.
+    /// 0 is the live edge, and the alternate grid, with no history, stays
+    /// at 0. The delta is measured from the RAW offset, so an excess the
+    /// region bump left past the top (see [`Self::viewport_offset`]) is
+    /// normalized by the first gesture instead of absorbing it.
     pub(crate) fn scroll_viewport_to(&mut self, target: i32) -> i32 {
         use alacritty_terminal::grid::Dimensions;
-        let history = self.backend.term.grid().history_size() as i32;
-        let delta = target.clamp(0, history) - self.viewport_offset();
-        self.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(delta))
+        let grid = self.backend.term.grid();
+        let history = grid.history_size() as i32;
+        let raw = grid.display_offset() as i32;
+        let delta = target.clamp(0, history) - raw;
+        self.backend.term.scroll_display(alacritty_terminal::grid::Scroll::Delta(delta));
+        self.viewport_offset()
     }
 
     /// Drop the scrollback history, keeping the visible screen (the PuTTY
@@ -1221,7 +1236,7 @@ mod tests {
 
         // A scrolled viewport follows the exact three rows that the widget
         // would draw rather than silently snapping back to the live edge.
-        state.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(2));
+        state.scroll_viewport_by(2);
         assert_eq!(state.visible_text(), "one\ntwo\nthree");
     }
 
@@ -1233,7 +1248,7 @@ mod tests {
 
         // A scroll past the top of the buffer stops at the oldest screen the
         // grid can show, never a range half outside it.
-        state.scroll_viewport(alacritty_terminal::grid::Scroll::Delta(9));
+        state.scroll_viewport_by(9);
         assert_eq!(state.visible_text(), "one\ntwo\nthree");
 
         // Dropping the history lands on the live edge: there is nothing

@@ -689,11 +689,11 @@
     /// rotation until the rows themselves leave the buffer.
     #[test]
     fn a_full_scrollback_still_holds_the_rows() {
-        use alacritty_terminal::grid::{Dimensions, Scroll};
+        use alacritty_terminal::grid::Dimensions;
         let mut s = TerminalState::new_no_pty_with_scrollback(80, 3, 5).unwrap();
         numbered(&mut s, 0..8);
         assert_eq!(s.backend.term.grid().history_size(), 5, "at the cap");
-        s.scroll_viewport(Scroll::Delta(2));
+        s.scroll_viewport_by(2);
         let before = top_row(&s);
 
         numbered(&mut s, 8..11);
@@ -714,10 +714,9 @@
     /// the user scrolls again.
     #[test]
     fn clear_scrollback_lands_on_the_live_edge() {
-        use alacritty_terminal::grid::Scroll;
         let mut s = TerminalState::new_no_pty_with_scrollback(80, 3, 100).unwrap();
         numbered(&mut s, 0..10);
-        s.scroll_viewport(Scroll::Delta(4));
+        s.scroll_viewport_by(4);
         assert_eq!(s.viewport_offset(), 4);
         s.clear_scrollback();
         assert_eq!(s.viewport_offset(), 0);
@@ -730,10 +729,9 @@
     /// lines back and the offset falls, down to the live edge.
     #[test]
     fn a_resize_keeps_the_rows_in_view() {
-        use alacritty_terminal::grid::Scroll;
         let mut s = TerminalState::new_no_pty_with_scrollback(80, 5, 100).unwrap();
         numbered(&mut s, 0..10);
-        s.scroll_viewport(Scroll::Delta(3));
+        s.scroll_viewport_by(3);
         let before = top_row(&s);
         s.resize(80, 3);
         assert_eq!(s.viewport_offset(), 5, "two rows pushed into history");
@@ -747,15 +745,39 @@
     /// buffer's position is back untouched on the way out.
     #[test]
     fn alt_screen_round_trip_keeps_the_primary_offset() {
-        use alacritty_terminal::grid::Scroll;
         let mut s = TerminalState::new_no_pty_with_scrollback(80, 3, 100).unwrap();
         numbered(&mut s, 0..10);
-        s.scroll_viewport(Scroll::Delta(3));
+        s.scroll_viewport_by(3);
         s.process(b"\x1b[?1049h\x1b[Happ frame");
         assert_eq!(s.viewport_offset(), 0);
-        assert_eq!(s.scroll_viewport(Scroll::Delta(2)), 0, "nothing to scroll into");
+        assert_eq!(s.scroll_viewport_by(2), 0, "nothing to scroll into");
         s.process(b"\x1b[?1049l");
         assert_eq!(s.viewport_offset(), 3);
+    }
+
+    /// A program scrolling a region that does not start at the top row (a
+    /// fixed header under DECSTBM) bumps the grid's raw offset without
+    /// adding a line to history. What the widget reads never passes the
+    /// top, the visible-screen export stays inside the buffer, and the
+    /// first gesture after it measures from the row on screen rather than
+    /// from the raw excess.
+    #[test]
+    fn a_region_scroll_never_reads_past_the_top() {
+        use alacritty_terminal::grid::Dimensions;
+        let mut s = TerminalState::new_no_pty_with_scrollback(80, 4, 100).unwrap();
+        numbered(&mut s, 0..10);
+        s.scroll_viewport_by(3);
+        s.process(b"\x1b[2;4r\x1b[4;1H");
+        for i in 0..10 {
+            s.process(format!("R{i}\n").as_bytes());
+        }
+        let grid = s.backend.term.grid();
+        let history = grid.history_size() as i32;
+        assert!(grid.display_offset() as i32 > history, "the raw offset passed the top");
+        assert_eq!(s.viewport_offset(), history, "read at the top, never past it");
+        assert_eq!(top_row(&s), "L0", "the oldest row the grid holds");
+        assert_eq!(s.visible_text(), "L0\nL1\nL2\nL3");
+        assert_eq!(s.scroll_viewport_by(-3), history - 3, "a wheel-down moves from the row on screen");
     }
 
     /// A queued absolute target resolves against the grid as it is when
