@@ -199,6 +199,12 @@ pub struct TerminalWidgetState {
     /// alt-screen change only invalidates a band that was ALREADY there;
     /// one created after the change (in the new layout) must be kept.
     sel_present_last_draw: std::cell::Cell<bool>,
+    /// The grid's monotonic `scrolled_lines` count (an alacritty patch: the
+    /// ring keeps counting once the scrollback is full) as of the last
+    /// draw. The upkeep pass translates a band by this counter's growth,
+    /// which is the one signal that survives both a pinned viewport and a
+    /// full scrollback.
+    last_scrolled: std::cell::Cell<usize>,
     /// Mirror of the grid's `display_offset` (lines above the live edge,
     /// 0 = bottom) as of the last write or the last draw. The grid is the
     /// authority: every scroll gesture goes through

@@ -293,10 +293,10 @@ where
                 let g = state.backend.term.grid();
                 self.upkeep_selection_for_draw(
                     widget_state,
-                    scroll_offset,
                     g.columns() as u16,
                     g.screen_lines() as u16,
                     g.total_lines() as i32,
+                    g.scrolled_lines(),
                     in_alt_screen,
                 );
             }

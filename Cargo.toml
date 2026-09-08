@@ -57,7 +57,16 @@ russh = { version = "0.62.5", features = ["des"] }
 # Terminal parsing
 # Our fork's master: upstream tracking plus the windows-sys 0.61 bump,
 # which upstream still has at 0.59.
-alacritty_terminal = { git = "https://github.com/wilsonglasser/alacritty" }
+#
+# TEMPORARY pointer for the selection-scroll-counter work, until the
+# companion alacritty PR merges upstream:
+#   https://github.com/wilsonglasser/alacritty/pull/1
+# The oryxis-terminal selection upkeep needs the monotonic
+# `Grid::scrolled_lines()` counter from that patch, which only exists on
+# this fork commit for now. Once the PR is merged upstream, switch back to:
+#   alacritty_terminal = { git = "https://github.com/wilsonglasser/alacritty" }
+# and run `cargo update -p alacritty_terminal`.
+alacritty_terminal = { git = "https://github.com/shideqin/alacritty", rev = "aab1bb92a61352e12d9dfdc1d8b3fc940b67fe53" }
 vte = "0.15"
 
 # PTY

@@ -503,21 +503,26 @@
         );
     }
 
-    /// The grid geometry `(columns, screen_lines, total_lines)` the draw
-    /// pass compares against the stored selection state every frame.
-    fn grid_dims(term: &Arc<Mutex<TerminalState>>) -> (u16, u16, i32) {
+    /// The grid geometry `(columns, screen_lines, total_lines)` plus the
+    /// monotonic scroll counter — everything the draw pass's upkeep
+    /// compares against the stored selection state each frame.
+    fn grid_dims(term: &Arc<Mutex<TerminalState>>) -> (u16, u16, i32, usize) {
         use alacritty_terminal::grid::Dimensions;
         let s = term.lock().unwrap();
         let g = s.backend.term.grid();
-        (g.columns() as u16, g.screen_lines() as u16, g.total_lines() as i32)
+        (
+            g.columns() as u16,
+            g.screen_lines() as u16,
+            g.total_lines() as i32,
+            g.scrolled_lines(),
+        )
     }
 
     /// The live edge has no offset drift to follow: the viewport sits at 0
     /// and output simply pushes rows past the bottom of the screen, so the
-    /// only trace of that rotation the draw pass can see is `total_lines`
-    /// growth. A completed band has to ride it, or the highlight stays
-    /// frozen on the same SCREEN rows while the text it marked scrolls away
-    /// under it.
+    /// draw pass has to translate the band by the grid's monotonic scroll
+    /// counter or the highlight stays frozen on the same SCREEN rows while
+    /// the text it marked scrolls away under it.
     #[test]
     fn upkeep_follows_the_output_at_the_live_edge() {
         let term = Arc::new(Mutex::new(
@@ -528,7 +533,7 @@
         }
         let view: TerminalView<()> = TerminalView::new(Arc::clone(&term));
         let mut ws = TerminalWidgetState::default();
-        let (cols, rows, total) = grid_dims(&term);
+        let (cols, rows, total, scrolled) = grid_dims(&term);
 
         // A band over the first two screen rows, at the live edge.
         let sel = Selection { start: (0, 0), end: (1, 1), block: false };
@@ -538,20 +543,21 @@
         ws.primary_ghost.set(Some((sel, cols, total as usize)));
         ws.selection_base.set(0);
         ws.last_geom.set((cols, rows, total));
+        ws.last_scrolled.set(scrolled);
         ws.sel_present_last_draw.set(true);
 
         // Output at the edge: the viewport does not move, the content does.
         term.lock().unwrap().process(b"l6\r\nl7\r\n");
         assert_eq!(term.lock().unwrap().viewport_offset(), 0, "the edge holds");
-        let (cols2, rows2, total2) = grid_dims(&term);
-        let grown = total2 - total;
-        assert!(grown > 0, "the buffer grew while the rows rotated");
-        view.upkeep_selection_for_draw(&ws, 0, cols2, rows2, total2, false);
+        let (cols2, rows2, total2, scrolled2) = grid_dims(&term);
+        let moved = scrolled2 - scrolled;
+        assert!(moved > 0, "the counter advanced while the rows rotated");
+        view.upkeep_selection_for_draw(&ws, cols2, rows2, total2, scrolled2, false);
 
         let sel = ws.selection.get().expect("the band survives");
         assert_eq!(
             (sel.start.1, sel.end.1),
-            (-grown, 1 - grown),
+            (-(moved as i32), 1 - moved as i32),
             "raw lines ride the rotation"
         );
         assert_eq!(
@@ -560,30 +566,39 @@
             "the highlight stays on the text it marked"
         );
         let (_, (_acol, aline)) = ws.select_anchor.get().expect("anchor kept");
-        assert_eq!(aline, -grown, "a held drag anchor rides with it");
+        assert_eq!(aline, -(moved as i32), "a held drag anchor rides with it");
         assert_eq!(ws.selection_base.get(), 0, "still measured from the edge");
-        // The ghost is left alone: its own capture-time `total` guard hides
-        // it while the total still grows, so translating it would only move
-        // a band that must not be painted.
+        // The ghost is translated too, but its capture-time `total` guard
+        // still says stale (the total grew), so it is not drawn.
         let ghost = ws.primary_ghost.get().expect("ghost kept");
-        assert_eq!((ghost.0.start.1, ghost.0.end.1), (0, 1));
+        assert_eq!(
+            (ghost.0.start.1, ghost.0.end.1),
+            (-(moved as i32), 1 - moved as i32)
+        );
         assert_eq!(ghost.2, total as usize, "guard still says stale");
 
-        // Mid-drag the band is the drag's business: every motion rewrites
-        // its ends from the pointer, so the upkeep must not also shift them.
+        // Mid-drag the upkeep translates too: between two motion events a
+        // band that is not moved with the content would slide off the rows
+        // the pointer is actually over (the next motion rewrites the end
+        // from the pointer, so there is no double-apply).
         let dragging = ws.selection.get().unwrap();
         ws.selecting = true;
         term.lock().unwrap().process(b"l8\r\n");
-        let (cols3, rows3, total3) = grid_dims(&term);
-        view.upkeep_selection_for_draw(&ws, 0, cols3, rows3, total3, false);
-        assert_eq!(ws.selection.get(), Some(dragging), "a drag moves itself");
+        let (cols3, rows3, total3, scrolled3) = grid_dims(&term);
+        view.upkeep_selection_for_draw(&ws, cols3, rows3, total3, scrolled3, false);
+        let sel = ws.selection.get().unwrap();
+        assert_eq!(
+            sel.start.1,
+            dragging.start.1 - (scrolled3 - scrolled2) as i32,
+            "a mid-drag rotation rides the band too"
+        );
     }
 
     /// With the scrollback FULL, `total_lines` stops moving and the raised
-    /// `display_offset` is the only proof the grid has that rows rotated
-    /// under a held viewport — so the draw pass must not have swallowed that
-    /// drift before upkeep runs. Regression guard for the frame's first lock
-    /// re-anchoring the selection base on what is really a content move.
+    /// `display_offset` only follows the rotation while the viewport is
+    /// pinned below the very top. The grid's monotonic scroll counter is
+    /// the one signal that keeps counting either way, so the upkeep must
+    /// translate the band by IT — this is the regression guard for that.
     #[test]
     fn upkeep_translates_a_held_band_once_the_scrollback_is_full() {
         let term = Arc::new(Mutex::new(
@@ -600,7 +615,7 @@
         term.lock().unwrap().scroll_viewport_by(3);
         let view: TerminalView<()> = TerminalView::new(Arc::clone(&term));
         let ws = TerminalWidgetState::default();
-        let (cols, rows, total) = grid_dims(&term);
+        let (cols, rows, total, scrolled) = grid_dims(&term);
         let offset = term.lock().unwrap().viewport_offset();
         let sel = Selection { start: (0, -3), end: (1, -1), block: false };
         let marked = term.lock().unwrap().get_selection_text(&sel);
@@ -608,23 +623,73 @@
         ws.selection_base.set(offset);
         ws.scroll_offset.set(offset);
         ws.last_geom.set((cols, rows, total));
+        ws.last_scrolled.set(scrolled);
         ws.sel_present_last_draw.set(true);
 
-        // Two lines of output: the total cannot grow, only the offset can.
+        // Two lines of output at the cap: the total cannot grow, only the
+        // monotonic counter can.
         term.lock().unwrap().process(b"l10\r\nl11\r\n");
-        let (cols2, rows2, total2) = grid_dims(&term);
-        let offset2 = term.lock().unwrap().viewport_offset();
+        let (cols2, rows2, total2, scrolled2) = grid_dims(&term);
         assert_eq!(total2, total, "the cap hides the rotation from the total");
-        assert_eq!(offset2, offset + 2, "the grid's offset carries the drift");
+        assert_eq!(scrolled2 - scrolled, 2, "the counter does not stop at the cap");
 
-        view.upkeep_selection_for_draw(&ws, offset2, cols2, rows2, total2, false);
+        view.upkeep_selection_for_draw(&ws, cols2, rows2, total2, scrolled2, false);
         let sel = ws.selection.get().expect("the band survives");
         assert_eq!(
             term.lock().unwrap().get_selection_text(&sel),
             marked,
             "the highlight stays on the text it marked"
         );
-        assert_eq!(ws.selection_base.get(), offset2, "re-anchored for the next frame");
+    }
+
+    /// The scrollback cap used to be a dead end at the live edge: the
+    /// offset stays 0 and `total_lines` freezes once the cap is hit, so
+    /// neither signal can see the rows keep rotating. The monotonic counter
+    /// (the alacritty patch) is the one that still can — this is the exact
+    /// scenario the patch exists for.
+    #[test]
+    fn upkeep_follows_at_the_live_edge_once_the_scrollback_is_full() {
+        let term = Arc::new(Mutex::new(
+            TerminalState::new_no_pty_with_scrollback(24, 3, 5).unwrap(),
+        ));
+        for i in 0..10 {
+            term.lock().unwrap().process(format!("l{i}\r\n").as_bytes());
+        }
+        assert_eq!(term.lock().unwrap().backend.term.grid().history_size(), 5);
+        assert_eq!(term.lock().unwrap().viewport_offset(), 0, "at the live edge");
+        let view: TerminalView<()> = TerminalView::new(Arc::clone(&term));
+        let ws = TerminalWidgetState::default();
+        let (cols, rows, total, scrolled) = grid_dims(&term);
+
+        // A band over the first two screen rows, at the live edge.
+        let sel = Selection { start: (0, 0), end: (1, 1), block: false };
+        let marked = term.lock().unwrap().get_selection_text(&sel);
+        ws.selection.set(Some(sel));
+        ws.selection_base.set(0);
+        ws.last_geom.set((cols, rows, total));
+        ws.last_scrolled.set(scrolled);
+        ws.sel_present_last_draw.set(true);
+
+        // Output at the edge: the total is pinned at the cap, only the
+        // monotonic counter moves.
+        term.lock().unwrap().process(b"l10\r\nl11\r\n");
+        assert_eq!(term.lock().unwrap().viewport_offset(), 0, "still the live edge");
+        let (cols2, rows2, total2, scrolled2) = grid_dims(&term);
+        assert_eq!(total2, total, "the total froze at the cap");
+        assert_eq!(scrolled2 - scrolled, 2, "the counter did not freeze");
+
+        view.upkeep_selection_for_draw(&ws, cols2, rows2, total2, scrolled2, false);
+        let sel = ws.selection.get().expect("the band survives");
+        assert_eq!(
+            (sel.start.1, sel.end.1),
+            (-2, -1),
+            "raw lines rode the rotation the total could not see"
+        );
+        assert_eq!(
+            term.lock().unwrap().get_selection_text(&sel),
+            marked,
+            "the band stays on its text across a full scrollback"
+        );
     }
 
     /// A column change re-wraps the buffer: no translation can put a stored
@@ -642,19 +707,20 @@
         }
         let view: TerminalView<()> = TerminalView::new(Arc::clone(&term));
         let ws = TerminalWidgetState::default();
-        let (cols, rows, total) = grid_dims(&term);
+        let (cols, rows, total, scrolled) = grid_dims(&term);
         let sel = Selection { start: (0, 0), end: (1, 1), block: false };
         ws.selection.set(Some(sel));
         ws.select_anchor.set(Some((SelectGranularity::Word, (0, 0))));
         ws.primary_ghost.set(Some((sel, cols, total as usize)));
         ws.last_geom.set((cols, rows, total));
+        ws.last_scrolled.set(scrolled);
         ws.sel_present_last_draw.set(true);
 
         // A narrower pane reindexes every line.
         term.lock().unwrap().resize(12, 3);
-        let (cols2, rows2, total2) = grid_dims(&term);
+        let (cols2, rows2, total2, scrolled2) = grid_dims(&term);
         assert_ne!(cols2, cols, "the reflow is what the draw sees");
-        view.upkeep_selection_for_draw(&ws, 0, cols2, rows2, total2, false);
+        view.upkeep_selection_for_draw(&ws, cols2, rows2, total2, scrolled2, false);
         assert!(ws.selection.get().is_none(), "a reflow drops the band");
         assert!(ws.select_anchor.get().is_none(), "and the drag anchor");
         assert!(ws.primary_ghost.get().is_none(), "and the ghost that predates it");
@@ -664,7 +730,7 @@
         // frame's upkeep must leave it alone.
         ws.selection.set(Some(Selection { start: (0, 0), end: (1, 0), block: false }));
         ws.sel_present_last_draw.set(true);
-        view.upkeep_selection_for_draw(&ws, 0, cols2, rows2, total2, false);
+        view.upkeep_selection_for_draw(&ws, cols2, rows2, total2, scrolled2, false);
         assert_eq!(
             ws.selection.get(),
             Some(Selection { start: (0, 0), end: (1, 0), block: false }),
@@ -688,32 +754,35 @@
         }
         let view: TerminalView<()> = TerminalView::new(Arc::clone(&term));
         let ws = TerminalWidgetState::default();
-        let (cols, rows, total) = grid_dims(&term);
+        let (cols, rows, total, scrolled) = grid_dims(&term);
         let sel = Selection { start: (0, 0), end: (1, 1), block: false };
         ws.selection.set(Some(sel));
         ws.select_anchor.set(Some((SelectGranularity::Word, (0, 0))));
         ws.primary_ghost.set(Some((sel, cols, total as usize)));
         ws.last_geom.set((cols, rows, total));
+        ws.last_scrolled.set(scrolled);
         ws.sel_present_last_draw.set(true);
 
-        // A full-screen app takes over.
+        // A full-screen app takes over. The alt grid has its own (young)
+        // scroll counter; the flip itself drops the band, so the counter
+        // jump must not translate anything.
         term.lock().unwrap().process(b"\x1b[?1049h\x1b[Happ frame");
-        let (acols, arows, atotal) = grid_dims(&term);
-        view.upkeep_selection_for_draw(&ws, 0, acols, arows, atotal, true);
+        let (acols, arows, atotal, ascrolled) = grid_dims(&term);
+        view.upkeep_selection_for_draw(&ws, acols, arows, atotal, ascrolled, true);
         assert!(ws.selection.get().is_none(), "the alt grid is not the band's grid");
         assert!(ws.select_anchor.get().is_none());
         let ghost = ws.primary_ghost.get().expect("the ghost waits it out");
         assert_eq!((ghost.0.start.1, ghost.0.end.1), (0, 1), "unmoved");
 
         // The app quits: the main grid comes back exactly as it was, so the
-        // total jumping back must NOT read as rotation, and the ghost's own
-        // guards match again.
+        // counter jumping back must NOT read as rotation, and the ghost's
+        // own guards match again.
         term.lock().unwrap().process(b"\x1b[?1049l");
-        let (cols2, rows2, total2) = grid_dims(&term);
+        let (cols2, rows2, total2, scrolled2) = grid_dims(&term);
         assert_eq!(total2, total, "the primary buffer was untouched");
         ws.selection.set(Some(sel));
         ws.sel_present_last_draw.set(true);
-        view.upkeep_selection_for_draw(&ws, 0, cols2, rows2, total2, false);
+        view.upkeep_selection_for_draw(&ws, cols2, rows2, total2, scrolled2, false);
         assert!(ws.selection.get().is_none(), "it belonged to the alt grid");
         let ghost = ws.primary_ghost.get().expect("it survived the round trip");
         assert_eq!((ghost.0.start.1, ghost.0.end.1), (0, 1), "still on its content");

@@ -109,21 +109,23 @@ impl<Message> TerminalView<Message> {
     ///   alone and simply isn't drawn until the alt app quits. Deleting
     ///   rows outright (a scrollback clear, a reflow that unwrapped lines:
     ///   `total_lines` fell) drops the band too.
-    /// * At the live edge (offset 0) the viewport offset never moves, but
-    ///   output still rotates rows past the bottom of the screen. That
-    ///   rotation is exactly the `total_lines` growth since the last draw
-    ///   (below the scrollback cap), so a completed band is translated by
-    ///   it, matching how a pinned viewport translates by its offset
-    ///   drift. Skipped while `selecting`: an active drag rewrites its own
-    ///   endpoints from the pointer every motion, and a mid-drag rotation
-    ///   is the drag's business.
+    /// * Output that rotated rows into history moves the content the raw
+    ///   lines name. The grid's own monotonic `scrolled_lines` counter
+    ///   (the alacritty patch behind it) is the ground truth for that
+    ///   rotation: unlike the `display_offset` it also counts while the
+    ///   viewport rides the live edge, and unlike `total_lines` it also
+    ///   counts once the scrollback is full and the oldest line starts
+    ///   being dropped. The band is translated by the counter's growth
+    ///   since the last draw — an active drag included, since a band that
+    ///   is not translated between two motion events would slide off the
+    ///   content the pointer is actually over.
     pub(super) fn upkeep_selection_for_draw(
         &self,
         widget_state: &TerminalWidgetState,
-        offset: i32,
         cols: u16,
         rows: u16,
         total: i32,
+        scrolled: usize,
         in_alt_screen: bool,
     ) {
         let (last_cols, last_rows, last_total) = widget_state.last_geom.get();
@@ -149,8 +151,8 @@ impl<Message> TerminalView<Message> {
         let shrank = !alt_changed && total < last_total;
         // A grid that never painted reports an all-zero geometry: the very
         // first frame has no previous layout to have been invalidated
-        // against, and `last_total` of 0 would otherwise read the whole
-        // buffer as one giant rotation.
+        // against, and the baseline counters of 0 would otherwise read the
+        // whole buffer as one giant rotation.
         let first_look = last_cols == 0 && last_rows == 0;
         if first_look {
             // Nothing to do but record this frame's state below.
@@ -176,30 +178,22 @@ impl<Message> TerminalView<Message> {
             }
         } else {
             // Same geometry as the last draw, and nothing deleted: whatever
-            // moved is content.
-            let drift = offset - widget_state.selection_base.get();
-            if drift != 0 {
-                // Scrolled-up viewport: rows reindexed and the grid raised
-                // its offset by exactly that amount. The only signal once
-                // the scrollback is full and `total_lines` stops moving.
-                Self::rotate_selection_space(widget_state, -drift);
-                widget_state.selection_base.set(offset);
-            } else if offset == 0 && !widget_state.selecting {
-                // Live edge: the offset is pinned at 0, but each line that
-                // scrolled past the screen grew total_lines by one (until
-                // the scrollback cap, where the growth stops and the band
-                // can no longer be told from a screen-pinned highlight).
-                // `total >= last_total` here, so this shifts UP or not at
-                // all, never down. The ghost is left to its own guards,
-                // which already hide it while a growing total means the
-                // rows moved; translating it would only move a band that
-                // must not be painted.
-                Self::shift_live_band(widget_state, last_total - total);
+            // moved is content. A manual viewport move (wheel, scrollbar,
+            // page keys) changes nothing here — it re-anchors the
+            // selection base instead — so the counter growth is pure
+            // rotation, however the rows were held.
+            let moved = scrolled.saturating_sub(widget_state.last_scrolled.get());
+            if moved > 0 {
+                Self::rotate_selection_space(widget_state, -(moved as i32));
             }
+            // The selection base is re-anchored to the grid's offset by the
+            // caller right after this, so the event handlers' own rebase
+            // keeps measuring only what rotated since the last draw.
         }
 
         widget_state.last_geom.set((cols, rows, total));
         widget_state.alt_was.set(in_alt_screen);
+        widget_state.last_scrolled.set(scrolled);
         widget_state
             .sel_present_last_draw
             .set(widget_state.selection.get().is_some());
