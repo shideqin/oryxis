@@ -134,7 +134,20 @@ pub fn take_privacy_mask_drawn() -> bool {
 #[derive(Default)]
 pub struct TerminalWidgetState {
     selecting: bool,
-    selection: Option<Selection>,
+    /// The live selection, stored in raw grid-line coordinates (negative =
+    /// history). A `Cell` because the immutable-`&self` draw pass must be
+    /// able to translate it when the grid rotates rows beneath a held
+    /// viewport (see [`TerminalView::rebase_selection`]).
+    selection: std::cell::Cell<Option<Selection>>,
+    /// The grid `display_offset` the current `selection`'s raw line
+    /// coordinates were resolved against. A viewport move (a scroll
+    /// gesture) changes the offset without moving content, so it
+    /// re-anchors this base; a grid rotation (output under a held
+    /// viewport) moves the content the same rows point at, and the draw
+    /// pass translates the stored lines by the drift between this base
+    /// and the grid's current offset, keeping the band on the same
+    /// absolute content. A `Cell`, like `scroll_offset`.
+    selection_base: std::cell::Cell<i32>,
     /// True once this widget has been rendered focused, and never false
     /// again. Distinguishes a pane that LOST focus (whose highlight is
     /// dropped, see `on_event`) from a surface that is unfocused by
@@ -156,16 +169,36 @@ pub struct TerminalWidgetState {
     /// once the live highlight is gone, illustrating what a PRIMARY
     /// paste will insert; a new selection replaces it. The column count
     /// guards a resize: reflow moves lines, so a stale range would band
-    /// unrelated cells. The line total guards grid ROTATION for the same
-    /// reason: our line coordinates are raw, so once output pushes the
-    /// screen (total_lines grows) the range points at different content.
-    /// Typing on the current line rotates nothing, so the
+    /// unrelated cells. The line total guards rotation while the
+    /// scrollback can still grow (output pushes the screen and the range
+    /// would point at newer content); once the scrollback is FULL the
+    /// total stops moving, and the range is instead translated in place
+    /// alongside a live band ([`TerminalView::rebase_selection`]) so the
+    /// ghost stays on the content it was captured from. Typing on the
+    /// current line rotates nothing, so the
     /// select-type-paste flow keeps its ghost. Never drawn in alt-screen
     /// (the region belongs to the main grid, which the alt app is
     /// covering). Drawn in BOTH clipboard modes: under `copy_on_select`
     /// the last selection IS the clipboard, so the band stays an honest
-    /// cue for the paste gestures either way.
-    primary_ghost: Option<(Selection, u16, usize)>,
+    /// cue for the paste gestures either way. A `Cell` because the
+    /// immutable-`&self` draw pass performs the translation.
+    primary_ghost: std::cell::Cell<Option<(Selection, u16, usize)>>,
+    /// Whether the grid was on the alternate screen the last time the draw
+    /// pass looked. A change (into or out of an alt app) swaps the grid the
+    /// raw lines refer to, so the band must be dropped rather than painted
+    /// over another screen's cells.
+    alt_was: std::cell::Cell<bool>,
+    /// The grid geometry `(columns, screen_lines, total_lines)` the last
+    /// draw painted. The draw pass compares it with the grid each frame:
+    /// a column change (reflow) or a row change reindexes the content the
+    /// raw lines point at, so the band is dropped; a total-line growth at
+    /// the live edge (where the viewport offset never moves) instead
+    /// translates the band with the scrolling content.
+    last_geom: std::cell::Cell<(u16, u16, i32)>,
+    /// Whether a live selection was present on the last draw. A geometry or
+    /// alt-screen change only invalidates a band that was ALREADY there;
+    /// one created after the change (in the new layout) must be kept.
+    sel_present_last_draw: std::cell::Cell<bool>,
     /// Mirror of the grid's `display_offset` (lines above the live edge,
     /// 0 = bottom) as of the last write or the last draw. The grid is the
     /// authority: every scroll gesture goes through
@@ -256,8 +289,15 @@ pub struct TerminalWidgetState {
     last_click: Option<(std::time::Instant, Point, u8)>,
     /// `Some((granularity, anchor_cell))` while a double/triple-click
     /// selection is active, so a drag extends by whole words/lines
-    /// instead of by cell. `None` for a plain single-click drag.
-    select_anchor: Option<(SelectGranularity, (u16, i32))>,
+    /// instead of by cell. `None` for a plain single-click drag. The raw
+    /// line rides the same content space as [`Self::selection`], so the
+    /// draw pass has to be able to translate it too: a `Cell` (the upkeep
+    /// pass does it beside the band itself). The cheaper alternative —
+    /// leave it a plain field and let the next motion event do the
+    /// translate, with the draw pass skipping the drift while a drag is
+    /// live — was rejected because it un-pins the highlight whenever the
+    /// button is held still while output keeps running.
+    select_anchor: std::cell::Cell<Option<(SelectGranularity, (u16, i32))>>,
     /// Last grid cell the word/line drag recomputed against. Throttles
     /// the union recompute to one per cell crossing (the recompute locks
     /// the mutex + runs two semantic searches; running it per pixel
@@ -299,6 +339,36 @@ pub struct TerminalWidgetState {
     /// the first draw. Stored in a `Cell` so the immutable-`&State` draw can
     /// update it. `RenderKey` is `Copy`, so no allocation on the hot path.
     last_render_key: std::cell::Cell<Option<RenderKey>>,
+}
+
+impl TerminalWidgetState {
+    /// Record the grid's current viewport offset as the mirror (for
+    /// the hit-tests and render key with no lock in hand) and as the
+    /// base the live selection's (and the stored ghost's) raw lines are
+    /// resolved against. Called after
+    /// a move that changed the VIEW without moving the content — a scroll
+    /// gesture, a snap, the reset-on-output jump, a draw reading the grid
+    /// back — because the selection's grid-line coordinates stay valid
+    /// then, they are only measured from a new offset. Grid rotations
+    /// (output under a held viewport) are NOT view moves:
+    /// [`TerminalView::rebase_selection`] translates the stored lines by
+    /// the drift this base would otherwise swallow.
+    pub fn set_viewport_offset(&self, offset: i32) {
+        self.scroll_offset.set(offset);
+        self.reanchor_selection_base();
+    }
+
+    /// Point the selection base at the mirrored offset without touching
+    /// the stored raw lines. Split out of
+    /// [`Self::set_viewport_offset`] for the draw pass's first lock, which
+    /// refreshes the mirror on EVERY frame: when the grid raised its own
+    /// offset because output rotated rows under a held viewport, that is a
+    /// CONTENT move, and swallowing its drift here would leave the upkeep
+    /// pass nothing to translate the band by.
+    pub fn reanchor_selection_base(&self) {
+        let offset = self.scroll_offset.get();
+        self.selection_base.set(offset);
+    }
 }
 
 /// Everything a single grid geometry depends on, other than the content

@@ -44,6 +44,18 @@ impl Selection {
         self.start == self.end
     }
 
+    /// Shift both endpoints `lines` rows in grid-line space (negative =
+    /// older content). Used to keep a stored range glued to the same
+    /// content when the grid rotates rows beneath a held (scrolled-up)
+    /// viewport: the raw line numbers follow the content, not the viewport.
+    pub fn shift_lines(&self, lines: i32) -> Selection {
+        Selection {
+            start: (self.start.0, self.start.1 + lines),
+            end: (self.end.0, self.end.1 + lines),
+            block: self.block,
+        }
+    }
+
     /// xterm right-click "extend": move the boundary NEARER to `click`
     /// onto the click point, keeping the far anchor fixed. Returns a new
     /// flowing selection anchored at the far end. Distance compares line

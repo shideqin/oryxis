@@ -28,6 +28,183 @@ impl<Message> TerminalView<Message> {
         visible_row as i32 - scroll_offset
     }
 
+    /// Move the live band and its word / line / paragraph drag anchor by
+    /// `lines` in raw grid-line space, so both keep naming the same content
+    /// after the grid rotated rows beneath them. Deliberately does NOT touch
+    /// the PRIMARY ghost: see [`Self::rotate_selection_space`] for when the
+    /// ghost rides along, and the live-edge arm of
+    /// [`Self::upkeep_selection_for_draw`] for when it must not.
+    fn shift_live_band(widget_state: &TerminalWidgetState, lines: i32) {
+        if lines == 0 {
+            return;
+        }
+        if let Some(sel) = widget_state.selection.get() {
+            widget_state.selection.set(Some(sel.shift_lines(lines)));
+        }
+        // The anchor is re-united with the pointer on the next motion
+        // event; if it still named the row the rotation evicted, a word /
+        // line drag would jump to unrelated content.
+        if let Some((granularity, (col, line))) = widget_state.select_anchor.get() {
+            widget_state.select_anchor.set(Some((granularity, (col, line + lines))));
+        }
+    }
+
+    /// [`Self::shift_live_band`], plus the PRIMARY ghost: the ghost IS the
+    /// last completed selection, so it lives in the same raw-line space and
+    /// rotates by the same amount. Right for every drift (offset) move,
+    /// where the ghost's capture-time guards cannot see the rotation — at
+    /// the scrollback cap the total stops growing, and the drift is left as
+    /// the only evidence the rows moved.
+    fn rotate_selection_space(widget_state: &TerminalWidgetState, lines: i32) {
+        if lines == 0 {
+            return;
+        }
+        Self::shift_live_band(widget_state, lines);
+        if let Some((ghost, cols, total)) = widget_state.primary_ghost.get() {
+            // `cols` / `total` stay at their capture-time values on
+            // purpose: they are the guard, not bookkeeping to keep fresh.
+            widget_state
+                .primary_ghost
+                .set(Some((ghost.shift_lines(lines), cols, total)));
+        }
+    }
+
+    /// Catch the stored live selection up to content that moved under it:
+    /// while the user is scrolled up, new output rotates rows into history
+    /// and the grid raises its own `display_offset` so the SAME content
+    /// stays on screen. The selection is stored in raw grid-line
+    /// coordinates, which drop by exactly that drift, so translate the
+    /// stored range by `-(offset - base)` to keep it glued to the same
+    /// absolute content, then re-anchor the base. A viewport move (wheel,
+    /// scrollbar, page keys, autoscroll, snaps) is not a content move and
+    /// re-anchors the base via [`TerminalWidgetState::set_viewport_offset`],
+    /// so a non-zero drift here is grid rotation, never a user scroll.
+    pub(super) fn rebase_selection(
+        &self,
+        widget_state: &TerminalWidgetState,
+        offset: i32,
+    ) {
+        let drift = offset - widget_state.selection_base.get();
+        if drift != 0 {
+            Self::rotate_selection_space(widget_state, -drift);
+            widget_state.selection_base.set(offset);
+        }
+    }
+
+    /// The draw pass's per-frame selection upkeep, run under the state
+    /// lock with the grid geometry this frame will actually paint.
+    ///
+    /// Three things move or invalidate the raw lines a stored band points
+    /// at, and only the grid knows about them:
+    ///
+    /// * A geometry change (columns OR rows) since the last draw means a
+    ///   reflow / resize reindexed the content: the band (and its word /
+    ///   line drag anchor) is dropped rather than painted over unrelated
+    ///   cells — a live band, unlike the ghost, has no capture-time guard.
+    ///   A band created AFTER the change (no band on the previous draw) is
+    ///   already in the new layout and survives.
+    /// * Flipping into / out of the alternate screen swaps which grid the
+    ///   raw lines live in: the band is dropped the same way, while the
+    ///   ghost (a memory of an older selection in the main grid) is left
+    ///   alone and simply isn't drawn until the alt app quits. Deleting
+    ///   rows outright (a scrollback clear, a reflow that unwrapped lines:
+    ///   `total_lines` fell) drops the band too.
+    /// * At the live edge (offset 0) the viewport offset never moves, but
+    ///   output still rotates rows past the bottom of the screen. That
+    ///   rotation is exactly the `total_lines` growth since the last draw
+    ///   (below the scrollback cap), so a completed band is translated by
+    ///   it, matching how a pinned viewport translates by its offset
+    ///   drift. Skipped while `selecting`: an active drag rewrites its own
+    ///   endpoints from the pointer every motion, and a mid-drag rotation
+    ///   is the drag's business.
+    pub(super) fn upkeep_selection_for_draw(
+        &self,
+        widget_state: &TerminalWidgetState,
+        offset: i32,
+        cols: u16,
+        rows: u16,
+        total: i32,
+        in_alt_screen: bool,
+    ) {
+        let (last_cols, last_rows, last_total) = widget_state.last_geom.get();
+        let geometry_changed = last_cols != cols || last_rows != rows;
+        let alt_changed = widget_state.alt_was.get() != in_alt_screen;
+        let band_existed = widget_state.sel_present_last_draw.get();
+
+        // Reflow / resize / alt-screen switch / rows deleted: the raw lines
+        // no longer name the content they were made against, and no
+        // translation can recover them. A buffer that got SHORTER is that
+        // deletion (`total_lines` fell: a scrollback clear, a reflow that
+        // unwrapped lines); the alt screen's own smaller total is not, since
+        // the alt flip invalidates the band on its own account.
+        //
+        // Dropping (never guessing a shift) is the point: a mistranslated
+        // band paints a highlight on text the user never picked, and the
+        // copy gestures read the band, so they would hand back that text
+        // too. The remembered PRIMARY TEXT is a separate field and stays
+        // put, so middle-click still pastes what was last selected.
+        // Only invalidate a band that was already on screen when the change
+        // happened, and never mid-drag (an active drag re-derives its own
+        // endpoints from the pointer every motion).
+        let shrank = !alt_changed && total < last_total;
+        // A grid that never painted reports an all-zero geometry: the very
+        // first frame has no previous layout to have been invalidated
+        // against, and `last_total` of 0 would otherwise read the whole
+        // buffer as one giant rotation.
+        let first_look = last_cols == 0 && last_rows == 0;
+        if first_look {
+            // Nothing to do but record this frame's state below.
+        } else if geometry_changed || alt_changed || shrank {
+            if band_existed && widget_state.selection.get().is_some()
+                && !widget_state.selecting
+            {
+                widget_state.selection.set(None);
+                widget_state.select_anchor.set(None);
+            }
+            // The ghost normally self-invalidates (it is only drawn when
+            // the grid still matches the columns and line total it was
+            // captured against), but a ROWS-only resize is the case that
+            // can leave `total = history + screen` where it was while
+            // reindexing every line, so drop it with the band. An
+            // alt-screen flip does not: the main grid is untouched under
+            // the alt app, so the faint band is waiting there when it
+            // quits, and the draw pass already hides it meanwhile. (The
+            // alt grid's own smaller total is NOT the deletion case below:
+            // treating it as one would wipe the ghost on every vim run.)
+            if geometry_changed || shrank {
+                widget_state.primary_ghost.set(None);
+            }
+        } else {
+            // Same geometry as the last draw, and nothing deleted: whatever
+            // moved is content.
+            let drift = offset - widget_state.selection_base.get();
+            if drift != 0 {
+                // Scrolled-up viewport: rows reindexed and the grid raised
+                // its offset by exactly that amount. The only signal once
+                // the scrollback is full and `total_lines` stops moving.
+                Self::rotate_selection_space(widget_state, -drift);
+                widget_state.selection_base.set(offset);
+            } else if offset == 0 && !widget_state.selecting {
+                // Live edge: the offset is pinned at 0, but each line that
+                // scrolled past the screen grew total_lines by one (until
+                // the scrollback cap, where the growth stops and the band
+                // can no longer be told from a screen-pinned highlight).
+                // `total >= last_total` here, so this shifts UP or not at
+                // all, never down. The ghost is left to its own guards,
+                // which already hide it while a growing total means the
+                // rows moved; translating it would only move a band that
+                // must not be painted.
+                Self::shift_live_band(widget_state, last_total - total);
+            }
+        }
+
+        widget_state.last_geom.set((cols, rows, total));
+        widget_state.alt_was.set(in_alt_screen);
+        widget_state
+            .sel_present_last_draw
+            .set(widget_state.selection.get().is_some());
+    }
+
     /// Compute a word- or line-granularity selection around `cell` using
     /// alacritty's native semantic / line search. `cell` is `(col, line)`
     /// in grid-line coordinates (negative line = scrollback). The current
@@ -481,9 +658,9 @@ where
         // focus keeps its selection (see the latch above).
         if !self.focused
             && widget_state.ever_focused
-            && (widget_state.selection.is_some() || widget_state.selecting)
+            && (widget_state.selection.get().is_some() || widget_state.selecting)
         {
-            widget_state.selection = None;
+            widget_state.selection.set(None);
             widget_state.selecting = false;
             return Some(CanvasAction::request_redraw());
         }
@@ -711,11 +888,11 @@ where
                                 | keyboard::key::Named::Meta
                         )
                     )
-                    && (widget_state.selection.is_some()
-                        || widget_state.select_anchor.is_some()) =>
+                    && (widget_state.selection.get().is_some()
+                        || widget_state.select_anchor.get().is_some()) =>
             {
-                widget_state.selection = None;
-                widget_state.select_anchor = None;
+                widget_state.selection.set(None);
+                widget_state.select_anchor.set(None);
                 widget_state.selecting = false;
                 return Some(CanvasAction::request_redraw());
             }
@@ -779,9 +956,11 @@ where
                 if !in_alt {
                     // Positive = older content. The grid clamps to its
                     // history; the mirror serves the hit-tests that run
-                    // before the next frame.
+                    // before the next frame. A wheel move changes the
+                    // viewport, not the content, so the selection's raw
+                    // lines stay valid and its base rides along.
                     let offset = s.scroll_viewport_by(lines);
-                    widget_state.scroll_offset.set(offset);
+                    widget_state.set_viewport_offset(offset);
                 }
                 in_alt
             };
@@ -832,11 +1011,21 @@ where
                         // selection state is unreachable from the app).
                         let sel_text = widget_state
                             .selection
-                            .as_ref()
+                            .get()
                             .filter(|s| !s.is_empty())
-                            .and_then(|sel| {
+                            .and_then(|_| {
                                 self.state.lock().ok().and_then(|state| {
-                                    let t = state.get_selection_text(sel);
+                                    // The menu row offers what the band is
+                                    // on NOW: translate the range against
+                                    // the grid (rotation under a held
+                                    // viewport drifts its raw lines).
+                                    let offset = state.viewport_offset();
+                                    self.rebase_selection(widget_state, offset);
+                                    let sel = widget_state
+                                        .selection
+                                        .get()
+                                        .expect("guarded above");
+                                    let t = state.get_selection_text(&sel);
                                     (!t.is_empty()).then_some(t)
                                 })
                             });
@@ -853,12 +1042,16 @@ where
                     // (or when the live selection is a block).
                     if let Some(pos) = cursor.position_in(bounds) {
                         let (col, vrow) = self.pixel_to_cell(pos);
-                        let line =
-                            Self::visible_row_to_line(vrow, widget_state.scroll_offset.get());
-                        if let Some(sel) = widget_state.selection.as_ref().filter(|s| !s.block)
-                        {
+                        // The click line is measured in mirror space;
+                        // re-anchor the stored range to the same offset
+                        // first (rotation under a held viewport drifts its
+                        // raw lines) so the far end stays put on content.
+                        let mirror = widget_state.scroll_offset.get();
+                        self.rebase_selection(widget_state, mirror);
+                        let line = Self::visible_row_to_line(vrow, mirror);
+                        if let Some(sel) = widget_state.selection.get().filter(|s| !s.block) {
                             let extended = sel.extended_to((col, line));
-                            widget_state.selection = Some(extended);
+                            widget_state.selection.set(Some(extended));
                             if let Ok(state) = self.state.lock() {
                                 let text = state.get_selection_text(&extended);
                                 drop(state);
@@ -880,17 +1073,24 @@ where
                     // `on_paste_request` (the paste hook).
                     if self.copy_on_select
                         && self.right_click_copy
-                        && let Some(sel) = widget_state.selection
-                        && !sel.is_empty()
+                        && widget_state.selection.get().is_some_and(|s| !s.is_empty())
                     {
                         if let Ok(state) = self.state.lock() {
-                            let text = state.get_selection_text(&sel);
-                            drop(state);
-                            if !text.is_empty() {
-                                set_clipboard_text(&text);
+                            // Copy what the band currently highlights: the
+                            // raw lines follow content rotation, so translate
+                            // the range against the grid as it is now before
+                            // reading it out.
+                            let offset = state.viewport_offset();
+                            self.rebase_selection(widget_state, offset);
+                            let sel = widget_state.selection.get();
+                            if let Some(sel) = sel.filter(|s| !s.is_empty()) {
+                                let text = state.get_selection_text(&sel);
+                                if !text.is_empty() {
+                                    set_clipboard_text(&text);
+                                }
                             }
                         }
-                        widget_state.selection = None;
+                        widget_state.selection.set(None);
                         return Some(CanvasAction::request_redraw().and_capture());
                     }
                     if let Some(msg) = self.on_paste_request.clone() {
@@ -927,9 +1127,9 @@ where
             // A double/triple-click selection is intentional even when
             // it lands on a single cell (a one-character word), so it
             // must still auto-copy despite `is_empty()`.
-            let was_semantic = widget_state.select_anchor.is_some();
+            let was_semantic = widget_state.select_anchor.get().is_some();
             widget_state.selecting = false;
-            widget_state.select_anchor = None;
+            widget_state.select_anchor.set(None);
             widget_state.last_extend_cell = None;
             // Text of the selection that just finished, read once and
             // shared by the two things that want it: the PRIMARY
@@ -939,10 +1139,16 @@ where
             // one-character word. The grid width rides along for the
             // ghost's resize guard.
             let finished = if was_selecting
-                && let Some(sel) = widget_state.selection
-                && (!sel.is_empty() || was_semantic)
+                && widget_state.selection.get().is_some_and(|s| !s.is_empty() || was_semantic)
                 && let Ok(state) = self.state.lock()
             {
+                // Output since the drag's last frame may have rotated the
+                // rows under a held viewport: translate the range to the
+                // content the band is on before its text is captured, so
+                // PRIMARY / auto-copy match what the user sees.
+                let offset = state.viewport_offset();
+                self.rebase_selection(widget_state, offset);
+                let sel = widget_state.selection.get().expect("guarded above");
                 use alacritty_terminal::grid::Dimensions;
                 let grid = state.backend.term.grid();
                 let cols = grid.columns() as u16;
@@ -966,7 +1172,12 @@ where
             // what a PRIMARY paste will insert.
             if let Some((ref text, sel, cols, total)) = finished {
                 widget_state.primary_selection = Some(text.clone());
-                widget_state.primary_ghost = Some((sel, cols, total));
+                // The ghost rides the same raw-line space as the live
+                // band, so `rebase_selection` keeps it translated (at the
+                // scrollback cap, where the `total_lines` guard below
+                // stops seeing rotation). Store it now, when the selection
+                // was just rebased to the current grid.
+                widget_state.primary_ghost.set(Some((sel, cols, total)));
                 // Where the platform has a real PRIMARY selection, hand it
                 // the same text: selecting here then middle-clicking in any
                 // other window is what a Linux user expects, and it is the
@@ -995,7 +1206,7 @@ where
             if self.privacy
                 && was_selecting
                 && !was_semantic
-                && widget_state.selection.as_ref().is_some_and(|s| s.is_empty())
+                && widget_state.selection.get().is_some_and(|s| s.is_empty())
                 && let Some(pos) = cursor.position_in(bounds)
             {
                 let (col, vrow) = self.pixel_to_cell(pos);
@@ -1027,7 +1238,7 @@ where
             if !widget_state.modifiers.control()
                 && was_selecting
                 && !was_semantic
-                && widget_state.selection.as_ref().is_some_and(|s| s.is_empty())
+                && widget_state.selection.get().is_some_and(|s| s.is_empty())
                 && let Some(cb) = &self.on_link_click_hint
                 && let Some(pos) = cursor.position_in(bounds)
             {
@@ -1092,12 +1303,19 @@ where
                     // hand even while output keeps raising the grid's own
                     // offset underneath.
                     let offset = state.scroll_viewport_to(start_offset - doffset);
-                    widget_state.scroll_offset.set(offset);
+                    widget_state.set_viewport_offset(offset);
                     return Some(CanvasAction::request_redraw().and_capture());
                 }
             }
             if widget_state.selecting
                 && let Some(abs) = cursor.position() {
+                    // Output under a held viewport rotates the grid's rows
+                    // between cursor events: re-anchor the stored selection
+                    // (and a word/line anchor) to the offset this drag maps
+                    // cells with, so it keeps extending from where its
+                    // content is now.
+                    let mirror = widget_state.scroll_offset.get();
+                    self.rebase_selection(widget_state, mirror);
                     // Use the absolute cursor position (not
                     // `position_in`, which is `None` outside the widget)
                     // so a drag that leaves the widget but stays in the
@@ -1144,7 +1362,7 @@ where
                         // bottom edge newer ones; the grid clamps both ends.
                         let step = if rel.y < top_edge { step } else { -step };
                         let offset = state.scroll_viewport_by(step);
-                        widget_state.scroll_offset.set(offset);
+                        widget_state.set_viewport_offset(offset);
                     }
                     // Clamp back into the widget for cell mapping (the
                     // pointer may be outside the bounds now).
@@ -1154,7 +1372,7 @@ where
                     );
                     let (col, vrow) = self.pixel_to_cell(clamped);
                     let line = Self::visible_row_to_line(vrow, widget_state.scroll_offset.get());
-                    if let Some((gran, anchor)) = widget_state.select_anchor {
+                    if widget_state.select_anchor.get().is_some() {
                         // Word/line drag: extend by unioning the anchor's
                         // word/line with the cursor's. Throttle to one
                         // recompute per cell crossing, it locks the mutex
@@ -1164,6 +1382,19 @@ where
                         if widget_state.last_extend_cell != Some((col, line)) {
                             widget_state.last_extend_cell = Some((col, line));
                             if let Ok(mut state) = self.state.lock() {
+                                // The lock is in hand: resolve BOTH ends
+                                // against the grid's own offset (the mirror
+                                // can lag it by output that landed since the
+                                // last frame) so the union grows from where
+                                // the anchor's content is now.
+                                let offset = state.viewport_offset();
+                                self.rebase_selection(widget_state, offset);
+                                let (gran, anchor) = widget_state
+                                    .select_anchor
+                                    .get()
+                                    .expect("anchor set above");
+                                let line =
+                                    Self::visible_row_to_line(vrow, offset);
                                 let head = self.semantic_selection(
                                     &mut state.backend, anchor, gran,
                                 );
@@ -1171,11 +1402,12 @@ where
                                     &mut state.backend, (col, line), gran,
                                 );
                                 drop(state);
-                                widget_state.selection =
-                                    Some(union_selection(head, tail));
+                                widget_state
+                                    .selection
+                                    .set(Some(union_selection(head, tail)));
                             }
                         }
-                    } else if let Some(ref mut sel) = widget_state.selection {
+                    } else if let Some(sel) = widget_state.selection.get_mut() {
                         sel.end = (col, line);
                     }
                     return Some(CanvasAction::request_redraw().and_capture());
@@ -1330,7 +1562,7 @@ where
                             // pages down; the grid clamps both ends.
                             let step = if pos.y < sb.thumb_y { page } else { -page };
                             let offset = state.scroll_viewport_by(step);
-                            widget_state.scroll_offset.set(offset);
+                            widget_state.set_viewport_offset(offset);
                         }
                         return Some(CanvasAction::request_redraw().and_capture());
                     }
@@ -1384,16 +1616,16 @@ where
                 // a quick shift+click can't be misread as a double-click
                 // word grab. Block-ness carries over.
                 if widget_state.modifiers.shift()
-                    && let Some(prev) = widget_state.selection
+                    && let Some(prev) = widget_state.selection.get()
                 {
-                    widget_state.select_anchor = None;
+                    widget_state.select_anchor.set(None);
                     widget_state.selecting = true;
                     widget_state.last_extend_cell = Some((col, line));
-                    widget_state.selection = Some(Selection {
+                    widget_state.selection.set(Some(Selection {
                         start: prev.start,
                         end: (col, line),
                         block: prev.block,
-                    });
+                    }));
                     return Some(CanvasAction::request_redraw().and_capture());
                 }
                 // Classify the press as single / double / triple / quad
@@ -1416,13 +1648,13 @@ where
                 widget_state.last_extend_cell = Some((col, line));
                 match count {
                     1 => {
-                        widget_state.select_anchor = None;
+                        widget_state.select_anchor.set(None);
                         // Alt+drag starts a rectangular (column) selection.
-                        widget_state.selection = Some(Selection {
+                        widget_state.selection.set(Some(Selection {
                             start: (col, line),
                             end: (col, line),
                             block: widget_state.modifiers.alt(),
-                        });
+                        }));
                     }
                     2 => {
                         if let Ok(mut state) = self.state.lock() {
@@ -1435,44 +1667,44 @@ where
                                 line,
                                 col,
                             ) {
-                                widget_state.select_anchor = None;
-                                widget_state.selection = Some(Selection {
+                                widget_state.select_anchor.set(None);
+                                widget_state.selection.set(Some(Selection {
                                     start: (c0, line),
                                     end: (c1, line),
                                     block: false,
-                                });
+                                }));
                             } else {
-                                widget_state.select_anchor =
-                                    Some((SelectGranularity::Word, (col, line)));
-                                widget_state.selection = Some(self.semantic_selection(
+                                widget_state.select_anchor
+                                    .set(Some((SelectGranularity::Word, (col, line))));
+                                widget_state.selection.set(Some(self.semantic_selection(
                                     &mut state.backend,
                                     (col, line),
                                     SelectGranularity::Word,
-                                ));
+                                )));
                             }
                         }
                     }
                     3 => {
-                        widget_state.select_anchor =
-                            Some((SelectGranularity::Line, (col, line)));
+                        widget_state.select_anchor
+                            .set(Some((SelectGranularity::Line, (col, line))));
                         if let Ok(mut state) = self.state.lock() {
-                            widget_state.selection = Some(self.semantic_selection(
+                            widget_state.selection.set(Some(self.semantic_selection(
                                 &mut state.backend,
                                 (col, line),
                                 SelectGranularity::Line,
-                            ));
+                            )));
                         }
                     }
                     // 4 (and the cycle restarts after): paragraph.
                     _ => {
-                        widget_state.select_anchor =
-                            Some((SelectGranularity::Paragraph, (col, line)));
+                        widget_state.select_anchor
+                            .set(Some((SelectGranularity::Paragraph, (col, line))));
                         if let Ok(mut state) = self.state.lock() {
-                            widget_state.selection = Some(self.semantic_selection(
+                            widget_state.selection.set(Some(self.semantic_selection(
                                 &mut state.backend,
                                 (col, line),
                                 SelectGranularity::Paragraph,
-                            ));
+                            )));
                         }
                     }
                 }
@@ -1491,13 +1723,21 @@ where
     ) -> Option<CanvasAction<Message>> {
         match action {
             TerminalChordAction::Copy => {
-                if let Some(ref sel) = widget_state.selection
-                    && !sel.is_empty()
+                if widget_state.selection.get().is_some_and(|s| !s.is_empty())
                     && let Ok(state) = self.state.lock()
                 {
-                    let text = state.get_selection_text(sel);
-                    if !text.is_empty() {
-                        set_clipboard_text(&text);
+                    // The grid may have rotated the rows the stored range
+                    // points at since the last frame (output under a held
+                    // viewport); translate it against the grid as it is now
+                    // so the copy matches the band the user sees.
+                    let offset = state.viewport_offset();
+                    self.rebase_selection(widget_state, offset);
+                    let sel = widget_state.selection.get();
+                    if let Some(sel) = sel.filter(|s| !s.is_empty()) {
+                        let text = state.get_selection_text(&sel);
+                        if !text.is_empty() {
+                            set_clipboard_text(&text);
+                        }
                     }
                 }
                 Some(CanvasAction::capture())
@@ -1522,8 +1762,8 @@ where
             TerminalChordAction::PasteSelection => {
                 // Same demote as middle-click: pasting consumes
                 // the live highlight, the ghost carries on.
-                widget_state.selection = None;
-                widget_state.select_anchor = None;
+                widget_state.selection.set(None);
+                widget_state.select_anchor.set(None);
                 widget_state.selecting = false;
                 // Where the platform owns a PRIMARY selection the host
                 // resolves the text (system PRIMARY, then this pane's
@@ -1564,12 +1804,16 @@ where
                     let top = grid.topmost_line().0;
                     let bot = grid.bottommost_line().0;
                     let last_col = grid.columns().saturating_sub(1) as u16;
-                    widget_state.selection = Some(Selection {
+                    // The full-buffer range is expressed against the grid
+                    // as it is now; align the selection base with it so a
+                    // later rotation translates from the right point.
+                    self.rebase_selection(widget_state, state.viewport_offset());
+                    widget_state.selection.set(Some(Selection {
                         start: (0, top),
                         end: (last_col, bot),
                         block: false,
-                    });
-                    widget_state.select_anchor = None;
+                    }));
+                    widget_state.select_anchor.set(None);
                 }
                 Some(CanvasAction::request_redraw().and_capture())
             }
@@ -1609,7 +1853,7 @@ where
                     -page
                 };
                 let offset = s.scroll_viewport_by(lines);
-                widget_state.scroll_offset.set(offset);
+                widget_state.set_viewport_offset(offset);
                 Some(CanvasAction::request_redraw().and_capture())
             }
         }

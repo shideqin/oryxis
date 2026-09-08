@@ -44,6 +44,11 @@ where
                 Err(p) => p.into_inner(),
             };
             let content_epoch = s.render_epoch();
+            // Whether THIS frame's lock moved the viewport itself (a queued
+            // snap, a reset-on-output jump). A rise in the grid's own offset
+            // is not a view move but a content rotation, and must keep its
+            // drift for the upkeep pass below.
+            let mut view_moved = false;
             // A search step / open queued a scroll target (the active
             // match's row), or the byte funnel queued the live edge for a
             // keypress snap: apply it before the render key so this frame
@@ -54,6 +59,7 @@ where
             // between the queue and this draw.
             if let Some(target) = s.pending_scroll.take() {
                 s.scroll_viewport_to(target);
+                view_moved = true;
             }
             // PuTTY "reset scrollback on display activity": the render
             // epoch advances only on terminal output (process / sync-flush
@@ -74,22 +80,31 @@ where
                     .is_some_and(|e| e != content_epoch);
                 if changed && s.viewport_offset() != 0 {
                     s.scroll_viewport_to(0);
+                    view_moved = true;
                 }
             }
-            // Draw is `&self`, hence the `Cell`s.
+            // Draw is `&self`, hence the `Cell`s. The mirror always follows
+            // the grid; the selection base only rides along with a move the
+            // VIEW made above (it does not move content), so a rotation's
+            // drift is still there for `upkeep_selection_for_draw` to
+            // translate the band with — at the scrollback cap, where
+            // `total_lines` stops growing, that drift is the only signal.
             widget_state.scroll_offset.set(s.viewport_offset());
+            if view_moved {
+                widget_state.reanchor_selection_base();
+            }
             (content_epoch, s.search_generation())
         };
         widget_state.last_draw_epoch.set(Some(content_epoch));
         let render_key = RenderKey {
             epoch: content_epoch,
             scroll_offset: widget_state.scroll_offset.get(),
-            selection: widget_state.selection,
+            selection: widget_state.selection.get(),
             // Unfocused panes hide the ghost (see the draw site below), so
             // the cache key has to agree or a pane keeps the cached image
             // that still has the band in it.
-            ghost: if widget_state.selection.is_none() && self.focused {
-                widget_state.primary_ghost.map(|(s, ..)| s)
+            ghost: if widget_state.selection.get().is_none() && self.focused {
+                widget_state.primary_ghost.get().map(|(s, ..)| s)
             } else {
                 None
             },
@@ -210,7 +225,6 @@ where
         let lock_dur;
         let cells_dur;
         let built = true;
-        let selection = &widget_state.selection;
 
         let mut cells: Vec<CellData> = DRAW_CELLS.take();
         cells.clear();
@@ -269,18 +283,39 @@ where
             // The grid's own viewport offset, read AFTER the resize above:
             // a taller or shorter window moves it to keep the same rows in
             // view, and the mirror has to agree with what this frame draws.
+            // Output that landed between this frame's first lock and this
+            // one (or the resize itself) may have rotated the rows the
+            // stored selection points at, so translate it against the
+            // offset this frame actually paints with.
             let scroll_offset = state.viewport_offset();
-            widget_state.scroll_offset.set(scroll_offset);
+            {
+                use alacritty_terminal::grid::Dimensions;
+                let g = state.backend.term.grid();
+                self.upkeep_selection_for_draw(
+                    widget_state,
+                    scroll_offset,
+                    g.columns() as u16,
+                    g.screen_lines() as u16,
+                    g.total_lines() as i32,
+                    in_alt_screen,
+                );
+            }
+            widget_state.set_viewport_offset(scroll_offset);
 
             // Faint PRIMARY ghost: the demoted rectangle of the
             // last selection, shown only when no live highlight is
             // up. Suppressed in alt-screen (the region belongs to
-            // the main grid the alt app is covering) and after a
-            // resize or a rotation (both move the lines the range
-            // points at). NOT gated on copy_on_select: the band
-            // means "what you last selected", which under that
-            // setting is what the clipboard holds, so it stays an
-            // honest cue for the paste gestures in both modes
+            // the main grid the alt app is covering) and when a
+            // resize or an output batch changed the grid the range
+            // was captured against (column count or line total
+            // moved). At the scrollback CAP the total stops moving
+            // while rows keep rotating under a held viewport; the
+            // rebase above has already translated the stored range
+            // with the live band in that case, so it still points
+            // at the content it was captured from. NOT gated on
+            // copy_on_select: the band means "what you last selected",
+            // which under that setting is what the clipboard holds, so it
+            // stays an honest cue for the paste gestures in both modes
             // (modulo an external copy replacing the clipboard,
             // which nothing render-side can see).
             // Also suppressed on an UNFOCUSED pane. The band answers
@@ -290,12 +325,13 @@ where
             // and reads like three live selections. The PRIMARY text
             // itself is untouched: middle-click paste still hands
             // back whichever pane you last selected in.
-            let ghost: Option<Selection> = if selection.is_none()
+            let ghost: Option<Selection> = if widget_state.selection.get().is_none()
                 && !in_alt_screen
                 && self.focused
             {
                 widget_state
                     .primary_ghost
+                    .get()
                     .filter(|(_, cols, total)| {
                         let grid = state.backend.term.grid();
                         *cols as usize == grid.columns()
@@ -386,7 +422,9 @@ where
                     if (c == ' ' || c == '\0')
                         && cell.bg == AnsiColor::Named(NamedColor::Background)
                         && !cell.flags.intersects(blank_visible_flags)
-                        && !selection
+                        && !widget_state
+                            .selection
+                            .get()
                             .as_ref()
                             .is_some_and(|s| Self::is_in_selection(s, col, line.0))
                         && !ghost
@@ -675,7 +713,9 @@ where
             // the selection follows scrolled content instead of staying
             // glued to viewport coordinates.
             let cell_line = Self::visible_row_to_line(cd.row, scroll_offset);
-            let is_selected = selection
+            let is_selected = widget_state
+                .selection
+                .get()
                 .as_ref()
                 .map(|s| Self::is_in_selection(s, cd.col, cell_line))
                 .unwrap_or(false);
