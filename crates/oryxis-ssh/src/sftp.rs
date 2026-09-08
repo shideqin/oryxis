@@ -54,18 +54,59 @@ pub struct SftpEntry {
 /// second copy, because two predicates guarding one threat drift, and
 /// the one that drifts is the one nobody is looking at.
 pub fn is_safe_entry_name(name: &str) -> bool {
+    is_safe_entry_name_on(name, cfg!(windows))
+}
+
+/// [`is_safe_entry_name`] with the platform named, so the Windows rules
+/// are testable on the Linux runner CI has.
+///
+/// Windows adds two shapes that are ordinary file names anywhere else.
+/// A reserved device name (`CON`, `NUL`, `COM1`, with or without an
+/// extension) opens the DEVICE rather than a file, so a download named
+/// `nul` writes nothing and one named `con` writes to the console. A
+/// trailing dot or space is stripped by the Win32 layer, so the file
+/// lands under a name other than the one that was checked. Both are
+/// refused on Windows only: `CON` is a legal name on unix.
+pub fn is_safe_entry_name_on(name: &str, windows: bool) -> bool {
     if name.is_empty() || name == "." || name == ".." {
         return false;
     }
     if name.contains('/') || name.contains('\\') || name.contains('\0') {
         return false;
     }
-    // Windows absolute/drive-relative forms ("C:foo") survive the
-    // separator check above but still re-root PathBuf::join there.
-    if name.as_bytes().get(1) == Some(&b':') {
-        return false;
+    if windows {
+        // A drive-relative form ("C:foo") survives the separator check
+        // above but still re-roots `PathBuf::join`. One byte before a
+        // colon is indistinguishable from a drive letter at this layer,
+        // so the shape is refused whole; elsewhere `a:b` is an ordinary
+        // name and a join treats it as one.
+        if name.as_bytes().get(1) == Some(&b':') {
+            return false;
+        }
+        if name.ends_with('.') || name.ends_with(' ') {
+            return false;
+        }
+        // The device name is the stem before the first dot, and Win32
+        // ignores trailing spaces on it too (`CON .txt` is still CON).
+        let stem = name.split('.').next().unwrap_or(name).trim_end();
+        if is_windows_device_name(stem) {
+            return false;
+        }
     }
     true
+}
+
+/// The names Win32 reserves for devices, case-insensitively: `CON`,
+/// `PRN`, `AUX`, `NUL`, and `COM0`..`COM9` / `LPT0`..`LPT9`.
+fn is_windows_device_name(stem: &str) -> bool {
+    let upper = stem.to_ascii_uppercase();
+    if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL") {
+        return true;
+    }
+    let bytes = upper.as_bytes();
+    bytes.len() == 4
+        && (upper.starts_with("COM") || upper.starts_with("LPT"))
+        && bytes[3].is_ascii_digit()
 }
 
 /// Destination-side policy for [`SftpClient::upload_from_options`].
@@ -92,6 +133,60 @@ pub struct UploadOptions {
     /// trip and a disk sync on every upload, and the callers that want
     /// the guarantee are the ones that say so.
     pub fsync: bool,
+}
+
+/// The OpenSSH extension that names users and groups by id.
+const USERS_GROUPS_BY_ID: &str = "users-groups-by-id@openssh.com";
+
+/// Encode a `users-groups-by-id@openssh.com` request body: two strings,
+/// each holding the packed big-endian `uint32` ids it asks about.
+fn encode_users_groups_by_id(uids: &[u32], gids: &[u32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(8 + 4 * (uids.len() + gids.len()));
+    for ids in [uids, gids] {
+        out.extend_from_slice(&(4 * ids.len() as u32).to_be_bytes());
+        for id in ids {
+            out.extend_from_slice(&id.to_be_bytes());
+        }
+    }
+    out
+}
+
+/// One name per id asked, in the order asked; `None` where the server
+/// could not resolve the id.
+type NameList = Vec<Option<String>>;
+
+/// Decode a `users-groups-by-id@openssh.com` reply body: two strings,
+/// each a packed list of length-prefixed names, one per id asked, in the
+/// order asked. An empty name is the server saying it could not resolve
+/// that id, and reads as `None`. Anything not shaped like that is `None`
+/// as a whole.
+fn parse_users_groups_by_id(data: &[u8]) -> Option<(NameList, NameList)> {
+    fn take_string<'a>(cur: &mut &'a [u8]) -> Option<&'a [u8]> {
+        let (len, rest) = cur.split_first_chunk::<4>()?;
+        let len = u32::from_be_bytes(*len) as usize;
+        let (string, rest) = rest.split_at_checked(len)?;
+        *cur = rest;
+        Some(string)
+    }
+    fn names(mut list: &[u8]) -> Option<NameList> {
+        let mut out = Vec::new();
+        while !list.is_empty() {
+            let name = take_string(&mut list)?;
+            out.push(if name.is_empty() {
+                None
+            } else {
+                Some(String::from_utf8_lossy(name).into_owned())
+            });
+        }
+        Some(out)
+    }
+    let mut cur = data;
+    let users = names(take_string(&mut cur)?)?;
+    let groups = names(take_string(&mut cur)?)?;
+    if !cur.is_empty() {
+        return None;
+    }
+    Some((users, groups))
 }
 
 /// Pull the owner and group out of an SFTP v3 `longname` line.
@@ -308,7 +403,19 @@ pub struct SftpClient {
     /// reconnecting. Caps how long the UI can stay in a "Loading…"
     /// state when the remote stops responding mid-request.
     op_timeout_secs: Arc<std::sync::atomic::AtomicU64>,
+    /// One raw session for the extension requests the high-level
+    /// session cannot speak (`owner_names`, `posix_rename`), opened on
+    /// first use and shared by every clone of this client, so a listing
+    /// that asks for owner names costs one channel per CLIENT rather than
+    /// one per call. Transfers never ride it: a streaming window must not
+    /// share a channel with a lookup. Forgotten after a failed request,
+    /// so the next one opens a fresh channel instead of failing the same
+    /// way again.
+    utility_raw: Arc<Mutex<Option<UtilityRaw>>>,
 }
+
+/// A raw session plus the extensions its server advertised.
+type UtilityRaw = (Arc<RawSftpSession>, std::collections::HashMap<String, String>);
 
 impl std::fmt::Debug for SftpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -330,6 +437,7 @@ impl SftpClient {
             // caller. Seconds-grained because that's what the settings
             // panel exposes.
             op_timeout_secs: Arc::new(std::sync::atomic::AtomicU64::new(30)),
+            utility_raw: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -473,12 +581,11 @@ impl SftpClient {
                         permissions: file.attrs.permissions,
                         uid: file.attrs.uid,
                         gid: file.attrs.gid,
-                        // The crate also parses `user` / `group` out of
-                        // the v4+ attribute fields; prefer those when a
-                        // server sends them, since they are the answer
-                        // rather than a reading of one.
-                        owner: file.attrs.user.or(owner),
-                        group: file.attrs.group.or(group),
+                        // The crate's decoder never fills `attrs.user` /
+                        // `attrs.group` (v3 carries no such fields), so
+                        // the longname reading is the only source here.
+                        owner,
+                        group,
                     });
                 }
             }
@@ -730,6 +837,28 @@ impl SftpClient {
         size_hint: Option<u64>,
         progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
     ) -> Result<(), SshError> {
+        self.download_to_progress_with(remote, local, size_hint, progress, false)
+            .await
+    }
+
+    /// [`download_to_progress`](Self::download_to_progress) with the
+    /// resume decision in the caller's hands.
+    ///
+    /// `force_resume` asks for the tail-verified resume attempt whatever
+    /// the file's size. The automatic rule skips it below
+    /// `STREAM_THRESHOLD` because the verification round trip costs more
+    /// than the bytes it saves, and that is the right default for a
+    /// transfer nobody asked to resume. The SFTP console's `reget` and
+    /// `get -a` ARE that ask, and a user who typed them expects the
+    /// partial to be continued, not re-sent because it was small.
+    pub async fn download_to_progress_with(
+        &self,
+        remote: &str,
+        local: &std::path::Path,
+        size_hint: Option<u64>,
+        progress: Option<std::sync::Arc<std::sync::atomic::AtomicU64>>,
+        force_resume: bool,
+    ) -> Result<(), SshError> {
         let label = format!("download({remote})");
         let size = match size_hint {
             Some(s) => s,
@@ -740,8 +869,9 @@ impl SftpClient {
         // Resume is attempted only on the windowed path. Below the
         // threshold the verification round trip costs more than re-sending
         // the bytes it would save, and this decision is automatic, so it
-        // should never spend a round trip it cannot repay.
-        let resume_from = if size >= STREAM_THRESHOLD {
+        // should never spend a round trip it cannot repay. A caller that
+        // asked for the resume by name pays it knowingly.
+        let resume_from = if force_resume || size >= STREAM_THRESHOLD {
             match tokio::fs::metadata(&part).await {
                 Ok(m) if m.len() > 0 => {
                     let have = resume_offset(size, m.len());
@@ -769,7 +899,10 @@ impl SftpClient {
             p.fetch_add(resume_from, std::sync::atomic::Ordering::Relaxed);
         }
 
-        if size < STREAM_THRESHOLD {
+        // A small file with a verified partial takes the windowed path
+        // too: the sequential pump below starts from zero by construction
+        // (`create` truncates), so it cannot honour a resume.
+        if size < STREAM_THRESHOLD && resume_from == 0 {
             let remote_file = self
                 .with_op_timeout(&label, async {
                     let s = self.inner.lock().await;
@@ -1020,7 +1153,9 @@ impl SftpClient {
 
         // A resume has to place its bytes at an offset, which is what the
         // windowed path does, so it takes that path at any size.
-        if size < STREAM_THRESHOLD && resume_from == 0 {
+        // `-f` takes the streaming path at any size: the fsync extension
+        // names a raw handle, and only that path holds one.
+        if size < STREAM_THRESHOLD && resume_from == 0 && !fsync {
             let local_file = tokio::fs::File::open(local)
                 .await
                 .map_err(|e| SshError::Channel(format!("open {}: {e}", local.display())))?;
@@ -1047,7 +1182,7 @@ impl SftpClient {
         // concurrent writes. TRUNCATE clears any prior contents once so a
         // smaller new file can't leave a stale tail; a resume must NOT ask
         // for it, since the bytes it is continuing from are the point.
-        let raw = self.open_raw_streaming().await?;
+        let (raw, extensions) = self.open_raw_session().await?;
         let mut flags = OpenFlags::WRITE | OpenFlags::CREATE;
         if resume_from == 0 {
             flags |= OpenFlags::TRUNCATE;
@@ -1104,16 +1239,22 @@ impl SftpClient {
         .await;
         // `-f`: ask the server to put the bytes on its disk before it
         // answers. It has to happen BEFORE the close, because the
-        // extension names an open handle, and it is folded into the
-        // result because a durability guarantee that failed quietly is
-        // worse than one nobody asked for.
-        let synced = if fsync {
+        // extension names an open handle. A server that does not offer
+        // the extension is told so rather than asked anyway, and the
+        // answer is REPORTED, never acted on: the bytes are on the
+        // server whatever the fsync said, so the upload is claimed and
+        // the durability the user asked for is what the error is about.
+        let synced = if !fsync {
+            Ok(())
+        } else if !extensions.contains_key("fsync@openssh.com") {
+            Err(SshError::Unsupported(format!(
+                "sftp fsync({target}): the server offers no fsync extension"
+            )))
+        } else {
             raw.fsync(handle.clone())
                 .await
                 .map(|_| ())
                 .map_err(|e| SshError::Channel(format!("sftp fsync({target}): {e}")))
-        } else {
-            Ok(())
         };
         // Close flushes the handle server-side; fold its error in so a
         // failed close after a clean copy still surfaces.
@@ -1122,7 +1263,7 @@ impl SftpClient {
             .await
             .map(|_| ())
             .map_err(|e| SshError::Channel(format!("sftp close({target}): {e}")));
-        let result = result.and(synced).and(close);
+        let result = result.and(close);
         if let Err(e) = result {
             self.discard_upload_partial(
                 &target,
@@ -1132,7 +1273,9 @@ impl SftpClient {
             .await;
             return Err(e);
         }
-        self.claim_upload_target(&target, remote, temp_name).await
+        self.claim_upload_target(&target, remote, temp_name)
+            .await
+            .and(synced)
     }
 
     /// What to do with the bytes an interrupted upload left behind.
@@ -1669,11 +1812,18 @@ impl SftpClient {
     /// specified to FAIL when the target exists, and many servers honour
     /// that, so a write-temp-then-replace flow needs this extension to
     /// stay atomic. The high-level `SftpSession` doesn't surface extended
-    /// requests, so this runs on a dedicated raw channel. Returns an error
-    /// (typically `OpUnsupported`) when the server lacks the extension;
-    /// callers that need portability fall back to remove + `rename`.
+    /// requests, so this runs on the shared utility raw session. A server
+    /// that does not advertise the extension answers
+    /// [`SshError::Unsupported`] before anything is sent, which is the
+    /// one error a caller may fall back from; every other error is the
+    /// rename's own.
     pub async fn posix_rename(&self, from: &str, to: &str) -> Result<(), SshError> {
-        let raw = self.open_raw_streaming().await?;
+        let (raw, extensions) = self.utility_raw().await?;
+        if !extensions.contains_key("posix-rename@openssh.com") {
+            return Err(SshError::Unsupported(format!(
+                "sftp posix-rename({from} → {to}): the server offers no posix-rename extension"
+            )));
+        }
         // posix-rename@openssh.com payload: `string oldpath; string
         // newpath`, each an SSH string (u32 big-endian length + bytes).
         let mut data = Vec::with_capacity(8 + from.len() + to.len());
@@ -1682,22 +1832,30 @@ impl SftpClient {
         data.extend_from_slice(&(to.len() as u32).to_be_bytes());
         data.extend_from_slice(to.as_bytes());
         let label = format!("posix_rename({from} → {to})");
-        self.with_op_timeout(&label, async {
-            match raw.extended("posix-rename@openssh.com", data).await {
-                Ok(Packet::Status(s)) if s.status_code == StatusCode::Ok => Ok(()),
-                Ok(Packet::Status(s)) => Err(SshError::Channel(format!(
-                    "sftp posix-rename({from} → {to}): {:?}",
-                    s.status_code
-                ))),
-                Ok(_) => Err(SshError::Channel(
-                    "sftp posix-rename: unexpected reply".into(),
-                )),
-                Err(e) => Err(SshError::Channel(format!(
-                    "sftp posix-rename({from} → {to}): {e}"
-                ))),
+        // A refusal (`Status`) is the server's answer over a healthy
+        // channel; only a transport failure or a timeout retires the
+        // shared session.
+        let reply = self
+            .with_op_timeout(&label, async {
+                raw.extended("posix-rename@openssh.com", data)
+                    .await
+                    .map_err(|e| SshError::Channel(format!("sftp posix-rename({from} → {to}): {e}")))
+            })
+            .await;
+        match reply {
+            Ok(Packet::Status(s)) if s.status_code == StatusCode::Ok => Ok(()),
+            Ok(Packet::Status(s)) => Err(SshError::Channel(format!(
+                "sftp posix-rename({from} → {to}): {:?}",
+                s.status_code
+            ))),
+            Ok(_) => Err(SshError::Channel(
+                "sftp posix-rename: unexpected reply".into(),
+            )),
+            Err(e) => {
+                self.forget_utility_raw().await;
+                Err(e)
             }
-        })
-        .await
+        }
     }
 
     /// Copy a remote file to another remote path on the SAME server.
@@ -1714,22 +1872,56 @@ impl SftpClient {
     /// to name them, which is why this opens a single raw channel and
     /// uses it for both ends.
     pub async fn copy_file(&self, from: &str, to: &str) -> Result<(), SshError> {
-        if from == to {
-            return Err(SshError::Channel(format!(
+        let same = || {
+            Err(SshError::Channel(format!(
                 "sftp copy({from}): source and destination are the same file"
-            )));
+            )))
+        };
+        if from == to {
+            return same();
         }
         let raw = self.open_raw_streaming().await?;
+        // Only a regular file copies. The server opens a directory for
+        // reading without complaint and the copy then fails on its first
+        // read, after the destination was created and truncated on the
+        // way in, which is `sftp(1)`'s own check on `copy`.
+        let source = raw
+            .stat(from)
+            .await
+            .map_err(|e| SshError::Channel(format!("sftp copy stat({from}): {e}")))?
+            .attrs;
+        let mode = source.permissions.unwrap_or(0);
+        if mode & 0o170000 != 0o100000 {
+            return Err(SshError::Channel(format!(
+                "sftp copy({from}): not a regular file"
+            )));
+        }
+        // The same file under two names (a symlink, a link, a path spelled
+        // twice) would be truncated before it is read. Asked of the
+        // server, which is the only side that can resolve the names; a
+        // destination that does not exist yet has nothing to resolve and
+        // cannot be the source.
+        if let (Ok(a), Ok(b)) = (raw.realpath(from).await, raw.realpath(to).await)
+            && let (Some(a), Some(b)) = (a.files.first(), b.files.first())
+            && a.filename == b.filename
+        {
+            return same();
+        }
         let src = raw
             .open(from, OpenFlags::READ, FileAttributes::empty())
             .await
             .map_err(|e| SshError::Channel(format!("sftp copy open({from}): {e}")))?
             .handle;
+        // The copy keeps the source's permission bits (a script stays a
+        // script), the same `0777` mask both transfer directions apply.
         let dst = raw
             .open(
                 to,
                 OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE,
-                FileAttributes::empty(),
+                FileAttributes {
+                    permissions: Some(mode & 0o777),
+                    ..FileAttributes::default()
+                },
             )
             .await
             .map_err(|e| SshError::Channel(format!("sftp copy open({to}): {e}")))?
@@ -1787,8 +1979,19 @@ impl SftpClient {
         loop {
             let data = match raw.read(src.to_string(), offset, CHUNK).await {
                 Ok(d) => d.data,
-                // EOF is reported as a status, not as an empty read.
-                Err(_) => break,
+                // EOF is reported as a status, not as an empty read, and
+                // it is the ONLY status that ends the loop. Any other
+                // failure is a copy that stopped short, and calling that
+                // done would leave a truncated file under the destination
+                // name with nothing said about it.
+                Err(russh_sftp::client::error::Error::Status(s))
+                    if s.status_code == StatusCode::Eof =>
+                {
+                    break;
+                }
+                Err(e) => {
+                    return Err(SshError::Channel(format!("sftp copy read({from}): {e}")));
+                }
             };
             if data.is_empty() {
                 break;
@@ -1798,13 +2001,6 @@ impl SftpClient {
                 .await
                 .map_err(|e| SshError::Channel(format!("sftp copy write({to}): {e}")))?;
             offset += len;
-        }
-        if offset == 0 {
-            // An empty source is a legitimate copy, but so is a read that
-            // failed on its first request. Tell them apart by asking.
-            raw.fstat(src.to_string())
-                .await
-                .map_err(|e| SshError::Channel(format!("sftp copy read({from}): {e}")))?;
         }
         Ok(())
     }
@@ -1854,6 +2050,15 @@ impl SftpClient {
     /// read/write length uncapped, so the 255 KiB per-request chunk is
     /// safe without negotiating the `limits@openssh.com` extension.
     async fn open_raw_streaming(&self) -> Result<Arc<RawSftpSession>, SshError> {
+        self.open_raw_session().await.map(|(raw, _)| raw)
+    }
+
+    /// [`Self::open_raw_streaming`] plus the extensions the server
+    /// advertised in its VERSION hello (name to version string), for the
+    /// requests that must ask before they speak.
+    async fn open_raw_session(
+        &self,
+    ) -> Result<(Arc<RawSftpSession>, std::collections::HashMap<String, String>), SshError> {
         let timeout = self.open_timeout;
         let op_secs = self.current_op_timeout().as_secs().max(10);
         let inner = async {
@@ -1871,18 +2076,92 @@ impl SftpClient {
             // op timeout so a single 255 KiB request on a slow link isn't
             // killed by the library's 10s default.
             raw.set_timeout(op_secs);
-            raw.init()
+            let version = raw
+                .init()
                 .await
                 .map_err(|e| SshError::Channel(format!("sftp raw init: {e}")))?;
-            Ok::<_, SshError>(raw)
+            Ok::<_, SshError>((raw, version.extensions))
         };
-        let raw = tokio::time::timeout(timeout, inner).await.map_err(|_| {
+        let (raw, extensions) = tokio::time::timeout(timeout, inner).await.map_err(|_| {
             SshError::Channel(format!(
                 "sftp raw open timed out after {}s",
                 timeout.as_secs()
             ))
         })??;
-        Ok(Arc::new(raw))
+        Ok((Arc::new(raw), extensions))
+    }
+
+    /// The shared utility raw session (see the field), opened on the
+    /// first request. The lock is held across the open on purpose: two
+    /// first requests at once would otherwise open two channels and keep
+    /// one.
+    async fn utility_raw(&self) -> Result<UtilityRaw, SshError> {
+        let mut slot = self.utility_raw.lock().await;
+        if let Some((raw, extensions)) = slot.as_ref() {
+            return Ok((Arc::clone(raw), extensions.clone()));
+        }
+        let (raw, extensions) = self.open_raw_session().await?;
+        *slot = Some((Arc::clone(&raw), extensions.clone()));
+        Ok((raw, extensions))
+    }
+
+    /// Drop the utility session after a request on it failed: a channel
+    /// the server closed, or one that stopped answering, would fail
+    /// every later request the same way, and a fresh open is cheap.
+    async fn forget_utility_raw(&self) {
+        *self.utility_raw.lock().await = None;
+    }
+
+    /// Owner and group NAMES for one uid/gid pair, through the
+    /// `users-groups-by-id@openssh.com` extension (OpenSSH 8.7 and later
+    /// advertise it as version "1").
+    ///
+    /// `Ok(None)` when the server does not offer it, which is the
+    /// caller's cue to show the numbers, the way `sftp(1)` does: an SFTP
+    /// v3 `stat` carries only ids, and the names exist elsewhere only in
+    /// a directory listing's `longname`, so reading a whole directory to
+    /// name one file is the wrong price. An id the server could not
+    /// resolve comes back as `None` inside the pair (the protocol's empty
+    /// string), and a reply that is not shaped like the specification is
+    /// an error rather than a guess.
+    pub async fn owner_names(
+        &self,
+        uid: u32,
+        gid: u32,
+    ) -> Result<Option<(Option<String>, Option<String>)>, SshError> {
+        let (raw, extensions) = self.utility_raw().await?;
+        if extensions.get(USERS_GROUPS_BY_ID).map(String::as_str) != Some("1") {
+            return Ok(None);
+        }
+        let reply = self
+            .with_op_timeout(USERS_GROUPS_BY_ID, async {
+                raw.extended(USERS_GROUPS_BY_ID, encode_users_groups_by_id(&[uid], &[gid]))
+                    .await
+                    .map_err(|e| SshError::Channel(format!("sftp {USERS_GROUPS_BY_ID}: {e}")))
+            })
+            .await;
+        let reply = match reply {
+            Ok(reply) => reply,
+            Err(e) => {
+                self.forget_utility_raw().await;
+                return Err(e);
+            }
+        };
+        let data = match reply {
+            Packet::ExtendedReply(reply) => reply.data,
+            other => {
+                return Err(SshError::Channel(format!(
+                    "sftp {USERS_GROUPS_BY_ID}: unexpected reply {other:?}"
+                )));
+            }
+        };
+        let (users, groups) = parse_users_groups_by_id(&data).ok_or_else(|| {
+            SshError::Channel(format!("sftp {USERS_GROUPS_BY_ID}: malformed reply"))
+        })?;
+        Ok(Some((
+            users.into_iter().next().flatten(),
+            groups.into_iter().next().flatten(),
+        )))
     }
 
     /// Run a one-shot command on a fresh exec channel. Multiplexed onto
@@ -2542,13 +2821,56 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        encode_attrs_v3, parse_longname_owner, pump_bytes, windowed_download_copy,
+        encode_attrs_v3, encode_users_groups_by_id, parse_longname_owner, parse_users_groups_by_id,
+        pump_bytes, windowed_download_copy,
         windowed_relay_copy, windowed_upload_copy, AttrUpdate, FsInfo, SshError,
     };
     use std::sync::{Arc, Mutex};
 
     /// The line OpenSSH's server sends, and the two fields worth reading
     /// out of it.
+    /// The extension's two bodies, both ways: ids go out packed in two
+    /// strings, names come back one per id, and an empty name is the
+    /// server's "I could not resolve this one".
+    #[test]
+    fn users_groups_by_id_round_trips_and_reads_an_empty_name_as_unknown() {
+        assert_eq!(
+            encode_users_groups_by_id(&[1000, 0], &[1000]),
+            [
+                0, 0, 0, 8, 0, 0, 3, 232, 0, 0, 0, 0, // uids: 1000, 0
+                0, 0, 0, 4, 0, 0, 3, 232, // gids: 1000
+            ]
+        );
+        let mut reply = Vec::new();
+        let users = [b"wilson".as_slice(), b"".as_slice()];
+        let mut packed = Vec::new();
+        for u in users {
+            packed.extend_from_slice(&(u.len() as u32).to_be_bytes());
+            packed.extend_from_slice(u);
+        }
+        reply.extend_from_slice(&(packed.len() as u32).to_be_bytes());
+        reply.extend_from_slice(&packed);
+        let group = b"staff";
+        reply.extend_from_slice(&(4 + group.len() as u32).to_be_bytes());
+        reply.extend_from_slice(&(group.len() as u32).to_be_bytes());
+        reply.extend_from_slice(group);
+        assert_eq!(
+            parse_users_groups_by_id(&reply),
+            Some((vec![Some("wilson".to_string()), None], vec![Some("staff".to_string())]))
+        );
+        // Empty sets are legal on either side.
+        assert_eq!(
+            parse_users_groups_by_id(&[0, 0, 0, 0, 0, 0, 0, 0]),
+            Some((Vec::new(), Vec::new()))
+        );
+        // A truncated or trailing body is refused, never read partially.
+        assert_eq!(parse_users_groups_by_id(&reply[..reply.len() - 1]), None);
+        let mut trailing = reply.clone();
+        trailing.push(0);
+        assert_eq!(parse_users_groups_by_id(&trailing), None);
+        assert_eq!(parse_users_groups_by_id(&[0, 0, 0, 9, 1]), None);
+    }
+
     #[test]
     fn a_longname_yields_the_owner_and_group() {
         assert_eq!(
@@ -3338,7 +3660,7 @@ mod resume_offset_tests {
 
 #[cfg(test)]
 mod entry_name_tests {
-    use super::is_safe_entry_name;
+    use super::{is_safe_entry_name, is_safe_entry_name_on};
 
     /// Every shape a hostile listing can use to escape the directory the
     /// user picked. The two Windows forms are the ones a `/`-only split
@@ -3354,17 +3676,36 @@ mod entry_name_tests {
             "/etc/passwd",
             "..\\..\\evil.exe",
             "dir\\evil",
-            "C:evil",
             "C:\\evil",
             "nul\0byte",
         ] {
             assert!(!is_safe_entry_name(bad), "accepted {bad:?}");
         }
-        // `a:b` is refused with the drive letters: one byte before a
-        // colon is indistinguishable from `C:foo` at this layer, and a
-        // remote file named that way is not worth the ambiguity.
         for good in ["file.txt", "..leading-dots", "école", "with space", "a.b:c"] {
             assert!(is_safe_entry_name(good), "rejected {good:?}");
+        }
+        // A drive-relative shape re-roots a join on Windows and nowhere
+        // else, so `a:b` is a name on unix and a refusal on Windows.
+        for drive in ["C:evil", "a:b.txt"] {
+            assert!(!is_safe_entry_name_on(drive, true), "Windows accepted {drive:?}");
+            assert!(is_safe_entry_name_on(drive, false), "unix rejected {drive:?}");
+        }
+    }
+
+    /// The Windows-only shapes: a device name opens the device, a
+    /// trailing dot or space is stripped by Win32 so the file lands under
+    /// a name other than the one checked. Legal everywhere else.
+    #[test]
+    fn windows_device_names_and_trailing_junk_are_refused_there_only() {
+        for bad in [
+            "CON", "con", "nul", "NUL.txt", "Con .log", "com1", "COM9.dat", "LPT3", "AUX",
+            "PRN.tar.gz", "trailing.", "trailing ",
+        ] {
+            assert!(!is_safe_entry_name_on(bad, true), "accepted on windows {bad:?}");
+            assert!(is_safe_entry_name_on(bad, false), "refused on unix {bad:?}");
+        }
+        for good in ["CONSOLE", "com", "COM10", "lpt", "nul-file", "aux-log", "prn_"] {
+            assert!(is_safe_entry_name_on(good, true), "refused on windows {good:?}");
         }
     }
 }

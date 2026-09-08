@@ -348,24 +348,21 @@ impl Oryxis {
             // draw snap back, but no draw fires while the tab is
             // off-screen). Explicit so a refocus is always clean.
             if let Some((cols, rows)) = self.ssm_keepalive_base.take() {
-                for tab in self.tabs.iter().filter(|t| t.ssm_keepalive) {
-                    for pane in tab.pane_grid.panes.values() {
-                        if let Ok(mut state) = pane.terminal.lock() {
-                            state.resize(cols, rows);
-                        }
+                for pane in self.plugin_panes() {
+                    if let Ok(mut state) = pane.terminal.lock() {
+                        state.resize(cols, rows);
                     }
                 }
             }
             // A notification toast raised while the window was unfocused
-            // is left up (no auto-dismiss timer) so it isn't gone before
-            // you look; clear it a few seconds after you return.
+            // was left up (`ToastClear` declines while the window is
+            // away) so it isn't gone before you look; give it a few
+            // seconds from the moment you return. Re-stamping the
+            // deadline is enough: the tick that clears it is already
+            // running, and only honours the deadline once focus is back.
             if self.toast.is_some() {
-                return iced::Task::perform(
-                    async {
-                        tokio::time::sleep(std::time::Duration::from_secs(4)).await;
-                    },
-                    |_| Message::ToastClear,
-                );
+                self.toast_deadline = std::time::Instant::now()
+                    .checked_add(std::time::Duration::from_secs(4));
             }
         } else {
             // Crash-safe geometry checkpoint: the exit paths all
@@ -381,20 +378,15 @@ impl Oryxis {
             // MRU tracking until the next real Ctrl-release).
             self.commit_tab_cycle();
             // Anchor the keepalive toggle to the size the window
-            // had when it lost focus. All plugin tabs share the
+            // had when it lost focus. All plugin panes share the
             // window, so the first one's size is representative.
-            self.ssm_keepalive_base = self
-                .tabs
-                .iter()
-                .filter(|t| t.ssm_keepalive)
-                .find_map(|t| {
-                    t.pane_grid.panes.values().next().and_then(|p| {
-                        p.terminal
-                            .lock()
-                            .ok()
-                            .map(|s| (s.cols(), s.rows()))
-                    })
-                });
+            let base = self.plugin_panes().find_map(|p| {
+                p.terminal
+                    .lock()
+                    .ok()
+                    .map(|s| (s.cols(), s.rows()))
+            });
+            self.ssm_keepalive_base = base;
         }
         Task::none()
     }
@@ -468,10 +460,10 @@ impl Oryxis {
     /// Every close verb lands here: the chrome's X, the side-dock
     /// header's X, Alt+F4 and the taskbar's Close (the `CloseRequested`
     /// subscription), because the window builder takes ownership of the
-    /// OS close event. Not guarded: the tray's Quit (the one deliberate
-    /// escape hatch once a window is hidden), and close-to-tray, which
-    /// keeps the sessions alive behind the hidden window, so there is
-    /// nothing to lose.
+    /// OS close event. The tray's Quit asks the same question on its own
+    /// path (`dispatch_tray`). Not guarded: close-to-tray, which keeps
+    /// the sessions alive behind the hidden window, so there is nothing
+    /// to lose.
     ///
     /// The confirmation fires `ConfirmCloseWindow`, a message of its
     /// own rather than a re-fired `WindowClose`: nothing else can
@@ -479,7 +471,10 @@ impl Oryxis {
     /// confirmation for a fresh close request, nor a later real request
     /// for a confirmation that already happened.
     pub(super) fn handle_window_close(&mut self) -> Task<Message> {
-        if self.prefs.confirm_close_session_tab && !self.tabs.is_empty() && !self.hides_to_tray() {
+        if self.prefs.confirm_close_session_tab
+            && !(self.tabs.is_empty() && self.sftp_tabs.is_empty())
+            && !self.hides_to_tray()
+        {
             let live = self.live_session_tab_count();
             if live > 0 {
                 self.overlay = None;
@@ -498,6 +493,18 @@ impl Oryxis {
             }
         }
         self.close_window_now()
+    }
+
+    /// Every plugin-backed pane in every tab (`Pane::plugin_backed`),
+    /// which is the set the idle keepalive nudges. The nudge is a
+    /// resize, so it stays off the SSH and local panes that share a
+    /// split with a plugin one: those have nothing to keep alive and
+    /// would only see their layout twitch.
+    pub(crate) fn plugin_panes(&self) -> impl Iterator<Item = &crate::state::Pane> {
+        self.tabs
+            .iter()
+            .flat_map(|t| t.pane_grid.panes.values())
+            .filter(|p| p.plugin_backed)
     }
 
     /// Whether the close verb hides the window instead of ending the

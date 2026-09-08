@@ -250,7 +250,19 @@ impl Oryxis {
                 .pane_grid
                 .panes
                 .values()
-                .any(|p| p.session.as_ref().is_some_and(|s| s.is_alive())))
+                // A plugin-backed pane (SSM, ECS Exec, kubectl) has no
+                // handle to ask; it is live until its verdict says
+                // otherwise. In a split that verdict is the pane's own
+                // `ended`; a lone pane ends by the TAB's label suffix
+                // instead, so both are read. Without this a split whose
+                // FOCUSED pane is a local shell reads as nothing to lose
+                // while the plugin sibling is mid-session.
+                .any(|p| {
+                    p.session.as_ref().is_some_and(|s| s.is_alive())
+                        || (p.plugin_backed
+                            && !p.ended
+                            && !t.label.ends_with(" (disconnected)"))
+                }))
     }
 
     /// How many of `idxs` would drop a live session.
@@ -264,9 +276,13 @@ impl Oryxis {
     /// behind the window-X and tray-Quit guards, which act on every
     /// tab at once.
     pub(crate) fn live_session_tab_count(&self) -> usize {
-        (0..self.tabs.len())
+        let terminals = (0..self.tabs.len())
             .filter(|&i| self.tab_has_live_session(i))
-            .count()
+            .count();
+        let sftp = (0..self.sftp_tabs.len())
+            .filter(|&i| self.sftp_tab_is_live(i))
+            .count();
+        terminals + sftp
     }
 
     /// The batch-close gate shared by "Close other tabs" and "Close all
@@ -583,6 +599,13 @@ impl Oryxis {
                 // resolves (SshConnected / SshDisconnected /
                 // PaneConnectError all clear it).
                 pane.connecting = true;
+                // The verdict the pane held is over: this dial replaces
+                // the session it was about. `wire_connected_pane` clears
+                // it again on success, but the Local arm never reaches
+                // that funnel, and a pane left `ended` under a live shell
+                // keeps its card and swallows the next real exit.
+                pane.ended = false;
+                pane.end_verdict = None;
                 if let Ok(mut state) = pane.terminal.lock() {
                     // Dim marker so the reconnect reads as a continuation
                     // of the same pane, not a wipe. The scrollback above
@@ -599,10 +622,8 @@ impl Oryxis {
                 // `SshDisconnected` path that normally does it.
                 pane.session_log_id.take()
             });
-            if let Some(log_id) = ended_log
-                && let Some(vault) = &self.vault
-            {
-                let _ = vault.end_session_log(&log_id);
+            if let Some(log_id) = ended_log {
+                self.end_session_log_now(log_id);
             }
             // The re-key above orphans the old id's tmux listing: the
             // view reads the NEW id (no entry, so the tab sat on the
@@ -688,7 +709,7 @@ impl Oryxis {
             } else if let Some(entry) = quick_entry {
                 Some(Message::Ssh(SshMessage::QuickConnect(Box::new(entry))))
             } else if local_respawn.is_none() {
-                tab.relaunch.as_deref().cloned()
+                tab.active().relaunch.as_deref().cloned()
             } else {
                 None
             };
@@ -805,7 +826,7 @@ impl Oryxis {
             }
             // Cloud tabs with no saved connection (ECS Exec,
             // kubectl pod) carry the message that re-opens them.
-            if let Some(relaunch) = tab.relaunch.as_deref() {
+            if let Some(relaunch) = tab.active().relaunch.as_deref() {
                 let msg = relaunch.clone();
                 self.arm_tab_placement(source_id);
                 return Task::done(msg);
@@ -967,6 +988,11 @@ impl Oryxis {
         self.adjust_last_terminal_tab_after_remove(idx);
 
         let before = self.tabs.len();
+        if open.is_none() {
+            // The host this chip named was deleted since it was saved;
+            // said out loud, or the chip simply vanishes on the click.
+            self.set_toast(crate::i18n::t("chain_hop_missing").to_string());
+        }
         let task = open.map(|m| self.update(m)).unwrap_or_else(Task::none);
         if self.tabs.len() > before {
             // A live tab was appended at the end; move it back to the

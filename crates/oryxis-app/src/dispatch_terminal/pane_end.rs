@@ -55,7 +55,7 @@ impl Oryxis {
     pub(crate) fn local_pane_stream(
         &mut self,
         pane_id: Uuid,
-        exited: Option<tokio::sync::oneshot::Receiver<()>>,
+        exited: Option<tokio::sync::oneshot::Receiver<Option<oryxis_terminal::ChildExit>>>,
         rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
     ) -> Task<Message> {
         let output = Task::stream(tokio_stream::wrappers::UnboundedReceiverStream::new(rx))
@@ -71,11 +71,11 @@ impl Oryxis {
         Task::batch([
             output,
             Task::perform(
-                async move {
-                    let _ = exited.await;
-                },
-                move |()| {
-                    Message::Terminal(TerminalMessage::LocalPaneEnded(pane_id, generation))
+                // A dropped sender (the handle went away first) ends the
+                // pane like an exit with nothing to report.
+                async move { exited.await.ok().flatten() },
+                move |exit| {
+                    Message::Terminal(TerminalMessage::LocalPaneEnded(pane_id, generation, exit))
                 },
             ),
         ])
@@ -93,7 +93,37 @@ impl Oryxis {
     /// Callers on the remote path have already done the session teardown
     /// by the time they reach here; the local path has its own, since a
     /// PTY leaves no transport handle behind to close.
-    pub(crate) fn note_pane_ended(&mut self, pane_id: Uuid) -> Task<Message> {
+    pub(crate) fn note_pane_ended(
+        &mut self,
+        pane_id: Uuid,
+        verdict: crate::state::PaneEndVerdict,
+    ) -> Task<Message> {
+        // Said in the grid in the words the header uses, so a local shell
+        // reads "exited with code 1" where a remote pane reads
+        // "disconnected".
+        let notice = format!("\r\n[{}]\r\n", verdict.text());
+        self.end_pane_with(pane_id, verdict, Some(notice))
+    }
+
+    /// [`Self::note_pane_ended`] without the line in the grid, for the
+    /// sites that already said their piece there (a plugin session's
+    /// hint, a failed dial's error). The verdict, the card and
+    /// `pane_end_action` are the same either way; only the wording in
+    /// the grid is the caller's.
+    pub(crate) fn end_pane_quietly(
+        &mut self,
+        pane_id: Uuid,
+        verdict: crate::state::PaneEndVerdict,
+    ) -> Task<Message> {
+        self.end_pane_with(pane_id, verdict, None)
+    }
+
+    fn end_pane_with(
+        &mut self,
+        pane_id: Uuid,
+        verdict: crate::state::PaneEndVerdict,
+        notice: Option<String>,
+    ) -> Task<Message> {
         let Some(tab_idx) = self.pane_tab_index(pane_id) else {
             return Task::none();
         };
@@ -130,8 +160,11 @@ impl Oryxis {
         }
         if let Some(pane) = self.tabs[tab_idx].pane_by_id_mut(pane_id) {
             pane.ended = true;
-            if let Ok(mut state) = pane.terminal.lock() {
-                state.process(b"\r\n[disconnected]\r\n");
+            pane.end_verdict = Some(verdict);
+            if let Some(notice) = notice
+                && let Ok(mut state) = pane.terminal.lock()
+            {
+                state.process(notice.as_bytes());
             }
         }
         Task::none()
@@ -146,8 +179,9 @@ impl Oryxis {
     /// `Pane::id`, so a fresh id sends those to an id no pane holds
     /// instead of stacking a second session onto this terminal.
     pub(crate) fn restart_pane(&mut self, pane_id: Uuid) -> Task<Message> {
-        // Dismiss the context menu when its "Restart pane" row fired
-        // this (a no-op on the card's own button).
+        // Reached from the card, the header and the Reconnect chord; none
+        // of them opens a menu, so this is a no-op today and a guard for
+        // the day one does.
         self.overlay = None;
         let Some(tab_idx) = self.pane_tab_index(pane_id) else {
             return Task::none();
@@ -174,6 +208,7 @@ impl Oryxis {
             }
             pane.id = new_pane_id;
             pane.ended = false;
+            pane.end_verdict = None;
             pane.connecting = true;
             if let Ok(mut state) = pane.terminal.lock() {
                 // Dim marker, so the restart reads as a continuation of
@@ -185,10 +220,8 @@ impl Oryxis {
             }
             pane.session_log_id.take()
         });
-        if let Some(log_id) = ended_log
-            && let Some(vault) = &self.vault
-        {
-            let _ = vault.end_session_log(&log_id);
+        if let Some(log_id) = ended_log {
+            self.end_session_log_now(log_id);
         }
         // The re-key orphans the old id's tmux listing: the view reads
         // the NEW id, so without this the old entry leaks in the map and

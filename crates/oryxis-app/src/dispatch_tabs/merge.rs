@@ -108,7 +108,11 @@ impl Oryxis {
     /// The inverse of the gesture above, and it reads the same way round:
     /// there, a whole tab is dragged onto a grid to become panes; here,
     /// one pane is dragged onto a chip to join that tab. Both are moves,
-    /// so neither tears a session down.
+    /// so neither tears a session down, and both refuse the same
+    /// destinations: a tab mid-dial (its connect screen replaces the
+    /// grid, and dismissing a failed card REMOVES that tab, sessions and
+    /// all) and a tab in Files mode (the SFTP surface would hide the
+    /// pane that just arrived).
     ///
     /// A chip says WHICH tab and nothing about where in it, so the pane
     /// lands on the destination's trailing edge: predictable without
@@ -153,16 +157,48 @@ impl Oryxis {
         if dest.pending_reopen.is_some() {
             return false;
         }
+        if self.connecting.as_ref().is_some_and(|c| c.tab_idx == dest_idx) {
+            return false;
+        }
+        if dest.files_mode {
+            return false;
+        }
         let Some(src) = self.tabs.get(src_idx) else {
             return false;
         };
+        // One console per tab: the surface switch answers "which
+        // console" by taking the first, so a second one would be
+        // unreachable from it.
+        if src
+            .pane_grid
+            .get(handle)
+            .is_some_and(|p| p.purpose == crate::state::PanePurpose::SftpConsole)
+            && dest.console_pane().is_some()
+        {
+            return false;
+        }
         // The last pane of a tab cannot leave this way: the tab would be
         // left empty, and the gesture cannot start on it anyway (a lone
         // pane grows no header, so there is no handle to drag).
         if src.pane_count() <= 1 {
             return false;
         }
-        let keepalive = src.ssm_keepalive;
+        // The source's Files browsing rides the session of the pane it
+        // resolves against. It follows that pane into a destination with
+        // no SFTP session of its own; a destination already browsing
+        // keeps what it has, and the move is refused rather than
+        // quietly dropping live browsing state, the same answer the
+        // one-console rule gives above.
+        let moving_id = src.pane_grid.get(handle).map(|p| p.id);
+        let carries_files = moving_id.is_some_and(|id| id == src.sftp_source().id)
+            && self.tab_has_sftp_session(src);
+        if carries_files && self.tab_has_sftp_session(dest) {
+            return false;
+        }
+        let files = match moving_id {
+            Some(id) if carries_files => self.take_tab_files_backed_by(src_idx, id),
+            _ => None,
+        };
         // Flushed while the pane's own tab still owns the bookkeeping.
         // Nothing is ending: the log id travels and keeps writing to the
         // row it already had.
@@ -172,18 +208,24 @@ impl Oryxis {
         };
         let pane_id = pane.id;
         let dest = &mut self.tabs[dest_idx];
-        // Per TAB rather than per pane, so a pane arriving from a
-        // keepalive tab would otherwise start idling out.
-        dest.ssm_keepalive |= keepalive;
+        if let Some((_, state)) = files {
+            // Mounted, not shown: the drag began on a header, which Files
+            // mode does not draw, so the source was on its terminal
+            // surface and the destination stays on its own.
+            dest.files_state = state;
+        }
         let landed = insert_panes(
             &mut dest.pane_grid,
             Target::Edge(Edge::Right),
             vec![pane],
         );
         // The arriving pane takes the destination's focus, so switching
-        // to that tab lands on what was just put there.
+        // to that tab lands on what was just put there. Through
+        // `focus_handle`, which carries the zoom: a destination zoomed on
+        // another pane would otherwise draw that one and hand the
+        // keyboard to a pane nobody can see.
         if let Some(first) = landed.first() {
-            dest.focused = *first;
+            dest.focus_handle(*first);
         }
         // A pane still dialling keeps its connect screen, and that
         // screen is drawn over the TAB the progress names, so the
@@ -263,10 +305,6 @@ impl Oryxis {
         let Some(dest_idx) = self.tabs.iter().position(|t| t._id == dest_id) else {
             return;
         };
-        // An SSM / ECS tab stays alive by being nudged on a timer; the
-        // flag is per TAB, so a pane arriving from a keepalive tab would
-        // quietly start idling out. Carry it over.
-        self.tabs[dest_idx].ssm_keepalive |= source.ssm_keepalive;
         let tab = &mut self.tabs[dest_idx];
         let landed = insert_panes(&mut tab.pane_grid, proposal.target, panes);
         if let Some(first) = landed.first() {

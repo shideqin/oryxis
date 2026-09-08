@@ -193,12 +193,12 @@ pub fn display_name(name: &str) -> String {
 /// `now` is passed in rather than read, so the six-month boundary is
 /// testable.
 ///
-/// **Owner and group are numeric, always.** The SFTP v3 listing carries a
-/// ready-made `ls -l` line in its `longname` field, with names already
-/// resolved by the server, and `russh-sftp`'s `ReadDir` discards it
-/// before we ever see it (`client/fs/dir.rs`). So the console formats
-/// from the numeric attributes, which is exactly what `ls -n` shows. The
-/// fix is upstream, not a fork.
+/// Owner and group are NAMES when the entry carries them and numbers
+/// otherwise. The SFTP v3 listing carries a ready-made `ls -l` line in
+/// its `longname` field, with the names the server resolved;
+/// `SftpClient::list_dir_long` reads it over a raw session, and every
+/// other listing leaves the fields `None`, which renders the ids the way
+/// `ls -n` does.
 pub fn render_listing(entries: &[SftpEntry], opts: &LsOpts, now: i64, cols: u16) -> String {
     // Sanitized up front, once, so the sort, the width arithmetic and
     // the bytes written can never be looking at different names.
@@ -206,6 +206,11 @@ pub fn render_listing(entries: &[SftpEntry], opts: &LsOpts, now: i64, cols: u16)
         .iter()
         .map(|e| SftpEntry {
             name: display_name(&e.name),
+            // The owner and group are the server's text as much as the
+            // name (a longname line, or the users-groups-by-id reply),
+            // and they reach the same terminal.
+            owner: e.owner.as_deref().map(display_name),
+            group: e.group.as_deref().map(display_name),
             ..e.clone()
         })
         .collect();
@@ -1225,8 +1230,9 @@ mod tests {
             permissions: None,
             uid: None,
             gid: None,
-            owner: None,
-            group: None,
+            // The names in the owner columns are the server's too.
+            owner: Some("wil\u{1b}]52;c;ZXZpbA==\u{7}son".to_string()),
+            group: Some("st\u{1b}[2Jaff".to_string()),
         };
         for opts in [
             LsOpts { long: true, ..Default::default() },

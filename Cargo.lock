@@ -5323,7 +5323,7 @@ dependencies = [
 
 [[package]]
 name = "oryxis-app"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -5338,6 +5338,7 @@ dependencies = [
  "iced",
  "iced_fonts",
  "iced_test",
+ "idna",
  "image",
  "libc",
  "notify-rust",
@@ -5652,6 +5653,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "dirs",
+ "dunce",
  "encoding_rs",
  "filetime",
  "getrandom 0.4.3",

@@ -869,6 +869,70 @@ impl Oryxis {
         }
     }
 
+    /// The Files browsing a tab keeps for ONE of its panes' sessions,
+    /// taken out of the tab when that pane leaves it.
+    ///
+    /// A tab's `files_state` is an SFTP channel multiplexed on the SSH
+    /// session of the pane that was focused when Files was mounted, so
+    /// it belongs with that pane's session rather than with the tab: a
+    /// pane moving out takes the browsing with it, and a pane closing
+    /// takes it down. Which pane that is is read off the MOUNT, the way
+    /// `hybrid_sftp_remount_dead` reads it: a side whose channel rides
+    /// the pane's own session handle, or (a mount whose channel already
+    /// died) one mounted on the pane's host label. Only a pane holding
+    /// an SSH handle can be that pane: the SFTP console beside a shell
+    /// has none (its session drives the console, not the pane) and
+    /// wears the shell's host label, so a label match from it would
+    /// take the shell's browsing down with the console. `sftp_source()`
+    /// is the pane a NEW mount would use, and in a split of two hosts
+    /// that is whichever shell is focused now, not the one the browsing
+    /// was opened from. Answers `None`, leaving the tab untouched, when
+    /// no side of the mount is the pane's.
+    ///
+    /// The state comes home first (parked out of the live buffer when
+    /// this tab owns it), the tab leaves Files mode, and an inherited
+    /// SFTP pin stops describing it, the same three steps
+    /// `close_tab_sftp_session` takes. Returns whether the tab was
+    /// SHOWING Files, so a pane broken out into a tab of its own can
+    /// arrive showing the same surface.
+    pub(crate) fn take_tab_files_backed_by(
+        &mut self,
+        tab_idx: usize,
+        pane_id: uuid::Uuid,
+    ) -> Option<(bool, Box<crate::state::SftpState>)> {
+        let tab = self.tabs.get(tab_idx)?;
+        let pane = tab.pane_grid.panes.values().find(|p| p.id == pane_id)?;
+        let own = pane.session.as_ref().and_then(|t| t.ssh())?;
+        let label = pane.label.trim_end_matches(" (disconnected)").to_string();
+        let tab_id = tab._id;
+        let st: &crate::state::SftpState = if self.hybrid_sftp_owner == Some(tab_id) {
+            &self.sftp
+        } else {
+            &tab.files_state
+        };
+        let backed = [&st.left, &st.right].into_iter().any(|side| {
+            side.is_remote
+                && match &side.session {
+                    Some(mounted) => std::sync::Arc::ptr_eq(mounted, own),
+                    // The channel died, or is being remounted: the host
+                    // label is what still names the pane it rode.
+                    None => side.host_label.as_deref() == Some(label.as_str()),
+                }
+        });
+        if !backed {
+            return None;
+        }
+        if self.hybrid_sftp_owner == Some(tab_id) {
+            self.park_hybrid_sftp();
+        }
+        // A one-shot directory hint aimed at this surface dies with it.
+        self.sftp_open_at_path = None;
+        let tab = &mut self.tabs[tab_idx];
+        let showing = std::mem::replace(&mut tab.files_mode, false);
+        tab.inherited_pin = None;
+        Some((showing, std::mem::take(&mut tab.files_state)))
+    }
+
     /// Make the hybrid terminal tab `tab_id` the owner of the live
     /// `self.sftp` buffer: park whichever owner (hybrid or standalone)
     /// holds it, then hoist this tab's `files_state`. No-op when it
@@ -1003,6 +1067,18 @@ impl Oryxis {
         })
     }
 
+    /// Whether the SFTP tab at `idx` holds a live remote session: a pane
+    /// mounted on an SSH connection that is still up. The question behind
+    /// the "close a tab or the app with a live session" guard, which
+    /// counts these tabs alongside the terminal ones.
+    pub(crate) fn sftp_tab_is_live(&self, idx: usize) -> bool {
+        self.sftp_tab_state(idx).is_some_and(|st| {
+            [&st.left, &st.right]
+                .iter()
+                .any(|p| p.session.as_ref().is_some_and(|s| s.is_alive()))
+        })
+    }
+
     /// Whether the SFTP tab at `idx` has unsaved work worth a close-guard:
     /// an in-flight transfer or a dirty edit-session. Reads the live buffer
     /// for the active tab, the parked slot otherwise.
@@ -1038,6 +1114,54 @@ impl Oryxis {
             return self.update(Message::Tabs(TabsMessage::SelectTab(idx)));
         }
         Task::none()
+    }
+
+    /// The session behind a tab's Files browsing dropped: say so on the
+    /// surface, in the slot the next operation's error would take.
+    ///
+    /// The mount itself is kept on purpose. It is what
+    /// [`Self::hybrid_sftp_remount_dead`] lands on when the pane
+    /// reconnects (the auto-reconnect of a lone pane, the restart of one
+    /// in a split), at the directory the user was in, and that remount
+    /// clears the notice. Matched by host label the way the remount is,
+    /// and only on a mount whose channel is actually dead, so a second
+    /// pane on the same host does not mark a browser it did not back.
+    pub(crate) fn hybrid_sftp_mark_dead(&mut self, tab_idx: usize, pane_id: uuid::Uuid) {
+        let Some(tab) = self.tabs.get(tab_idx) else {
+            return;
+        };
+        let tab_id = tab._id;
+        let Some(label) = tab
+            .pane_grid
+            .panes
+            .values()
+            .find(|p| p.id == pane_id)
+            .map(|p| p.label.trim_end_matches(" (disconnected)").to_string())
+        else {
+            return;
+        };
+        let hoisted = self.hybrid_sftp_owner == Some(tab_id);
+        for side in [
+            crate::state::SftpPaneSide::Left,
+            crate::state::SftpPaneSide::Right,
+        ] {
+            let st: &mut crate::state::SftpState = if hoisted {
+                &mut self.sftp
+            } else {
+                match self.tabs.get_mut(tab_idx) {
+                    Some(t) => &mut t.files_state,
+                    None => return,
+                }
+            };
+            let pane = st.pane_mut(side);
+            if !pane.is_remote || pane.host_label.as_deref() != Some(label.as_str()) {
+                continue;
+            }
+            if pane.session.as_ref().is_some_and(|s| s.is_alive()) {
+                continue;
+            }
+            pane.error = Some(crate::i18n::t("sftp_link_down").to_string());
+        }
     }
 
     /// Remount a hybrid terminal tab's dead SFTP mounts onto a freshly

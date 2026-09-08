@@ -28,6 +28,45 @@ pub(crate) enum PaneOrigin {
     Ephemeral,
 }
 
+/// How a pane's session ended, once it has (`Pane::ended`).
+///
+/// A remote pane loses its link; a local shell EXITS, and the OS says
+/// with what. The two used to share one word, "disconnected", which is
+/// the wrong word for a shell that was asked to leave and left with a
+/// code the user may want to read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PaneEndVerdict {
+    /// The remote session dropped.
+    Disconnected,
+    /// The local shell exited, with the status the OS reported when it
+    /// reported one.
+    Exited(Option<oryxis_terminal::ChildExit>),
+}
+
+impl PaneEndVerdict {
+    /// The words for it, as the header suffix and the grid notice show
+    /// them. A clean exit is just "exited": the code only appears when
+    /// it says something (non-zero, or a signal).
+    pub(crate) fn text(&self) -> String {
+        use crate::i18n::t;
+        match self {
+            Self::Disconnected => t("status_bar_disconnected").to_string(),
+            Self::Exited(None) => t("pane_exited").to_string(),
+            Self::Exited(Some(exit)) => match (&exit.signal, exit.code) {
+                (Some(signal), _) => t("pane_exited_signal").replacen("{signal}", signal, 1),
+                (None, 0) => t("pane_exited").to_string(),
+                // A code above `i32::MAX` is Windows reporting an
+                // NTSTATUS (`0xC0000005` for an access violation), which
+                // reads as one in hex and as noise in decimal.
+                (None, code) if code > i32::MAX as u32 => {
+                    t("pane_exited_code").replacen("{code}", &format!("0x{code:08X}"), 1)
+                }
+                (None, code) => t("pane_exited_code").replacen("{code}", &code.to_string(), 1),
+            },
+        }
+    }
+}
+
 /// What a pane's session is FOR, which is not the same question as what
 /// it connects to (`PaneOrigin`) or how (`TerminalTransport`).
 ///
@@ -589,6 +628,14 @@ pub(crate) struct Pane {
     /// session so the name cannot drift mid-recording. `None` while the
     /// mirror is off, or before the first flush.
     pub session_log_file: Option<std::path::PathBuf>,
+    /// The mirror failed for this recording and was switched off for it
+    /// (`flush_session_logs_inner`). Separate from `session_log_file`
+    /// being empty, which the resolver reads as "not resolved yet" and
+    /// would otherwise resolve again on the next flush: a folder that
+    /// went away would then be retried every tick, the toast re-stamped
+    /// each time, and a folder that came back would start a new file.
+    /// Cleared with the recording it belongs to.
+    pub session_log_file_stopped: bool,
     /// What this pane reconnects to when restored from a saved session group.
     /// Defaults to `Ephemeral`; the creating site overrides it to `Host` or
     /// `Local` when the pane is referenceable.
@@ -609,6 +656,31 @@ pub(crate) struct Pane {
     /// Cleared by the restart that replaces the session, so a pane that is
     /// dialling again never shows the card it was raised from.
     pub ended: bool,
+    /// HOW the session ended, for the header suffix and the notice in
+    /// the grid: `ended` says that it did, this says what happened. Set
+    /// together with `ended` and cleared with it, so a restarted pane
+    /// that later drops never shows the code of a shell two sessions
+    /// ago.
+    pub end_verdict: Option<PaneEndVerdict>,
+    /// True when the PTY runs a cloud plugin process (AWS
+    /// `session-manager-plugin` for SSM / ECS Exec, `kubectl exec`): the
+    /// pane carries no `session` handle because its transport IS that
+    /// local process. Two consequences ride on it. The session talks SSM
+    /// over a websocket whose idle timer kills it after ~20 min, so a
+    /// plugin pane gets the resize-based keepalive while the window is
+    /// unfocused (`TerminalTab::ssm_keepalive`); and a pane with a PTY
+    /// but no handle is only LOCAL when this is false. `spawn_plugin_tab`
+    /// is the one site that raises it. A fact of the PANE, not the tab:
+    /// a plugin pane moved into a split of SSH panes keeps it, and the
+    /// tab it left stops having it.
+    pub plugin_backed: bool,
+    /// Message that re-creates this pane's session, for Duplicate Tab,
+    /// the dormant reopen and the pin spec. Set only where no saved
+    /// `Connection` can be looked up: cloud exec sessions (ECS Exec,
+    /// `kubectl` pod) and quick-connect hosts. Connection-backed panes
+    /// leave it `None` and duplicate by host lookup instead. Travels
+    /// with the pane, since it describes the pane's own session.
+    pub relaunch: Option<Box<crate::messages::Message>>,
     /// Which local PTY this pane is currently listening to. Bumped every
     /// time one is wired in; `LocalPaneEnded` carries the value it was
     /// armed with, so the exit of a PTY this pane has already replaced
@@ -844,8 +916,12 @@ impl Pane {
             session_log_resizes: Vec::new(),
             session_log_last_size: None,
             session_log_file: None,
+            session_log_file_stopped: false,
             origin: PaneOrigin::Ephemeral,
             ended: false,
+            end_verdict: None,
+            plugin_backed: false,
+            relaunch: None,
             local_generation: 0,
             sync_flush_scheduled: false,
             osc_title: None,
@@ -900,6 +976,7 @@ impl Pane {
         // mirror starts a new file too rather than appending the next
         // session onto the end of the last one.
         self.session_log_file = None;
+        self.session_log_file_stopped = false;
     }
 }
 
@@ -998,6 +1075,27 @@ pub(crate) enum DropProgress {
     Done,
     Failed(String),
     Cancelled,
+}
+
+#[cfg(test)]
+mod verdict_tests {
+    use super::PaneEndVerdict;
+    use oryxis_terminal::ChildExit;
+
+    /// A clean exit is one word; a code or a signal is named when it
+    /// says something; a remote pane keeps the tab's own word.
+    #[test]
+    fn the_verdict_says_how_the_shell_ended() {
+        let exit = |code: u32, signal: Option<&str>| {
+            PaneEndVerdict::Exited(Some(ChildExit { code, signal: signal.map(str::to_string) }))
+        };
+        assert_eq!(exit(0, None).text(), "exited");
+        assert_eq!(exit(1, None).text(), "exited with code 1");
+        assert_eq!(exit(137, Some("SIGKILL")).text(), "ended by signal SIGKILL");
+        assert_eq!(exit(0xC000_0005, None).text(), "exited with code 0xC0000005");
+        assert_eq!(PaneEndVerdict::Exited(None).text(), "exited");
+        assert_eq!(PaneEndVerdict::Disconnected.text(), "disconnected");
+    }
 }
 
 #[cfg(test)]

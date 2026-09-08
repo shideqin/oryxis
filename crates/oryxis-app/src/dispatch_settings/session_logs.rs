@@ -56,7 +56,7 @@ impl Oryxis {
                 return Ok(Task::perform(
                     tokio::task::spawn_blocking(|| {
                         rfd::FileDialog::new()
-                            .set_title("Session log folder")
+                            .set_title(crate::i18n::t("session_log_folder_title"))
                             .pick_folder()
                             .map(|p| p.display().to_string())
                     }),
@@ -75,6 +75,13 @@ impl Oryxis {
                     // already are: a file cut in half at a folder change
                     // is worse than one that finishes where it started.
                 }
+            }
+            SettingsMessage::ClearSessionLogFileDir => {
+                // An empty value is what boot reads as "default", so the
+                // reset persists the same shape it will be read back as.
+                // Live recordings keep their folder, as above.
+                self.persist_setting("session_log_file_dir", "");
+                self.prefs.session_log_file_dir = None;
             }
             SettingsMessage::SettingToggleConnectionHistory => {
                 self.prefs.connection_history = !self.prefs.connection_history;

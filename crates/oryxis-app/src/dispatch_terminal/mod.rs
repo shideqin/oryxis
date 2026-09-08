@@ -29,6 +29,8 @@ mod session_file;
 mod triggers;
 
 pub(crate) use links::LinkConfirmCard;
+pub(crate) use output::PendingSessionRow;
+pub(crate) use session_file::{MirrorJob, MirrorWriter};
 pub(crate) use triggers::TriggerConfirmCard;
 
 use iced::Task;
@@ -368,6 +370,13 @@ impl Oryxis {
                 if self.tabs[tab_idx].pane_grid.panes.len() <= 1 {
                     return self.update(Message::Tabs(TabsMessage::CloseTab(tab_idx)));
                 }
+                // Files browsing multiplexed on this pane's session goes
+                // down with it, decided before the pane leaves the grid
+                // and the surface would resolve against a sibling it was
+                // never mounted on.
+                if let Some(closing) = self.tabs[tab_idx].pane_grid.get(target).map(|p| p.id) {
+                    let _ = self.take_tab_files_backed_by(tab_idx, closing);
+                }
                 // Persist the closing pane's recorded output before it goes.
                 self.flush_session_logs_final();
                 let tab = &mut self.tabs[tab_idx];
@@ -400,10 +409,8 @@ impl Oryxis {
                 // repairs a pane MOVED to another tab owes, which is why
                 // they live on the tab rather than here.
                 let _ = tab.take_pane(target);
-                if let Some(log_id) = ended_log
-                    && let Some(vault) = &self.vault
-                {
-                    let _ = vault.end_session_log(&log_id);
+                if let Some(log_id) = ended_log {
+                    self.end_session_log_now(log_id);
                 }
                 // The tmux listing is per PANE, so it goes with the pane
                 // unconditionally: no "is the host still open elsewhere"
@@ -431,7 +438,7 @@ impl Oryxis {
             TerminalMessage::RestartPane(pane_id) => {
                 return self.restart_pane(pane_id);
             }
-            TerminalMessage::LocalPaneEnded(pane_id, generation) => {
+            TerminalMessage::LocalPaneEnded(pane_id, generation, exit) => {
                 // A PTY this pane has already replaced: its EOF says
                 // nothing about the shell now running here.
                 let current = self
@@ -443,18 +450,35 @@ impl Oryxis {
                 }
                 // A local pane leaves no transport handle behind, so the
                 // end-of-session bookkeeping the remote path does before
-                // reaching `note_pane_ended` has to happen here.
-                self.flush_session_logs_final();
-                let log_id = self
-                    .pane_tab_index(pane_id)
-                    .and_then(|i| self.tabs[i].pane_by_id_mut(pane_id))
-                    .and_then(|p| p.session_log_id.take());
-                if let Some(log_id) = log_id
-                    && let Some(vault) = &self.vault
-                {
-                    let _ = vault.end_session_log(&log_id);
+                // reaching `note_pane_ended` has to happen here. Not
+                // under a soft lock, though: the flush cannot write then
+                // (see `flush_session_logs_inner`), and taking the log id
+                // now would orphan the bytes still buffered on the pane.
+                // The recording stays open on the pane and is closed by
+                // whatever closes or restarts it after the unlock.
+                if self.vault_ui.state == crate::state::VaultState::Unlocked {
+                    self.flush_session_logs_final();
+                    let log_id = self
+                        .pane_tab_index(pane_id)
+                        .and_then(|i| self.tabs[i].pane_by_id_mut(pane_id))
+                        .and_then(|p| p.session_log_id.take());
+                    if let Some(log_id) = log_id {
+                        self.end_session_log_now(log_id);
+                    }
                 }
-                return self.note_pane_ended(pane_id);
+                // The emulator's modes belong to the shell that armed
+                // them, and it is gone: the same reset the remote path
+                // does, or a `vim` killed from another pane leaves this
+                // one reporting the mouse to nobody instead of selecting
+                // the output it exited on.
+                if let Some(pane) = self
+                    .pane_tab_index(pane_id)
+                    .and_then(|i| self.tabs[i].pane_by_id(pane_id))
+                    && let Ok(mut state) = pane.terminal.lock()
+                {
+                    state.process(oryxis_terminal::SESSION_MODE_RESET);
+                }
+                return self.note_pane_ended(pane_id, crate::state::PaneEndVerdict::Exited(exit));
             }
             TerminalMessage::FocusPaneDir(dir) => {
                 if let Some(tab_idx) = self.active_tab
@@ -536,7 +560,11 @@ impl Oryxis {
                 else {
                     return Task::none();
                 };
-                let keepalive = src.ssm_keepalive;
+                // The tab's Files browsing rides the session of the pane
+                // it resolves against, so it leaves with that pane and
+                // keeps browsing from the new tab. Asked before the pane
+                // is taken, while the source still resolves to it.
+                let files = self.take_tab_files_backed_by(src_idx, pane_id);
                 // The pane's recorded output is flushed while its own tab
                 // still owns the log bookkeeping. Nothing is ENDING here,
                 // so the log id travels with the pane and keeps writing
@@ -551,12 +579,10 @@ impl Oryxis {
                 // The pane is moving, not dying, and it carries all of
                 // that with it.
                 let mut tab = crate::state::TerminalTab::adopting(pane);
-                // An SSM / ECS session stays alive by being nudged on a
-                // timer, and the flag is per TAB, so a pane leaving a
-                // keepalive tab would quietly start idling out. Same
-                // carry `merge_dragged_tab_if_proposed` makes in the
-                // opposite direction.
-                tab.ssm_keepalive = keepalive;
+                if let Some((showing, state)) = files {
+                    tab.files_state = state;
+                    tab.files_mode = showing;
+                }
                 // Beside the tab it came from, not at the far end of the
                 // strip: the pane was on screen a moment ago and the eye
                 // should not have to hunt for where it went.
@@ -574,6 +600,13 @@ impl Oryxis {
                 });
                 let dest_idx = self.tabs.len();
                 self.tabs.push(tab);
+                // The view follows the pane, and so does the surface it
+                // was showing: a tab arriving in Files mode owns the live
+                // buffer from its first frame.
+                if self.tabs[dest_idx].files_mode {
+                    let new_id = self.tabs[dest_idx]._id;
+                    self.hoist_hybrid_sftp(new_id);
+                }
                 // A pane still dialling keeps its connect screen, and
                 // that screen is drawn over the TAB the progress names,
                 // so the progress has to name the tab the pane is in now
@@ -600,6 +633,9 @@ impl Oryxis {
             }
             TerminalMessage::TerminalLinkActivated(pane_id, url) => {
                 return self.activate_terminal_link(pane_id, url);
+            }
+            TerminalMessage::TerminalLinkActivatedInRecording(url) => {
+                return self.activate_recorded_link(url);
             }
             TerminalMessage::TerminalLinkDecision(open) => {
                 return self.resolve_link_confirm(open);

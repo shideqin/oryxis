@@ -5,6 +5,16 @@ use tokio::sync::mpsc;
 
 use crate::backend::EventProxy;
 
+/// How a PTY child ended, as the OS reported it: the exit code, or the
+/// name of the signal that took it down (unix only; `code` is then
+/// whatever the platform pairs with the signal). Carried by the exit
+/// signal `PtyHandle::take_child_exit` hands out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChildExit {
+    pub code: u32,
+    pub signal: Option<String>,
+}
+
 /// Handle to a running PTY child process.
 pub struct PtyHandle {
     /// Single channel funnelling every byte that needs to reach the
@@ -16,16 +26,23 @@ pub struct PtyHandle {
     /// `Write` and lets every public method stay `&self`.
     write_tx: mpsc::UnboundedSender<Vec<u8>>,
     _master: Box<dyn MasterPty + Send>,
-    /// Kills the child on `Drop`, so closing a pane / tab tears down the
-    /// shell. Without it the reader thread holds a cloned master fd that
-    /// keeps the slave open, so on Unix the child never gets SIGHUP and a
-    /// long-running app (htop, a `tail -f`) survives the close with the
-    /// reader spinning forever on its output.
+    /// Asks the waiter thread to kill the child, so closing a pane / tab
+    /// tears down the shell. Without that the reader thread holds a
+    /// cloned master fd that keeps the slave open, so on Unix the child
+    /// never gets SIGHUP and a long-running app (htop, a `tail -f`)
+    /// survives the close with the reader spinning forever on its output.
     ///
-    /// A killer rather than the `Child` itself, because the child now
-    /// lives in the waiter thread below, blocked in `wait()`. That is the
-    /// split `ChildKiller` exists for.
-    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
+    /// A request to the thread that OWNS the child rather than a signal
+    /// sent from here, for two reasons. The waiter is the only thread
+    /// that knows whether the child is still alive: once it has reaped
+    /// it, the pid is the kernel's to hand to the next process, and a
+    /// `kill(pid)` from a handle that outlived the shell by an hour (the
+    /// end-of-session card sits there as long as the user leaves it)
+    /// would land on that stranger. And the kill the child's own handle
+    /// performs is the one portable-pty wrote for it: SIGHUP, a grace
+    /// period, then SIGKILL on unix, so a program that ignores the hangup
+    /// still goes; a bare signaller only ever sends the hangup.
+    kill_tx: std::sync::mpsc::Sender<()>,
     /// Fires once the child process has been reaped, whether it exited
     /// on its own or was killed. Taken by whoever wants to be told.
     ///
@@ -37,15 +54,15 @@ pub struct PtyHandle {
     /// stays blocked until the whole handle is dropped, which can be
     /// minutes after the shell died. Anything driven off the byte
     /// stream is therefore reporting teardown, not exit.
-    child_exit: Option<tokio::sync::oneshot::Receiver<()>>,
+    child_exit: Option<tokio::sync::oneshot::Receiver<Option<ChildExit>>>,
 }
 
 impl Drop for PtyHandle {
     fn drop(&mut self) {
-        // Best effort: SIGKILL the child. The waiter thread is blocked in
-        // `wait()` and reaps it, so there is no zombie and nothing to
-        // block on here.
-        let _ = self.killer.kill();
+        // Best effort, and never blocking: the waiter kills and reaps on
+        // its own thread. A send that fails means the waiter has already
+        // reaped the child and gone, so there is nothing left to kill.
+        let _ = self.kill_tx.send(());
     }
 }
 
@@ -118,7 +135,7 @@ impl PtyHandle {
         }
 
         let mut child = pair.slave.spawn_command(cmd)?;
-        let killer = child.clone_killer();
+        let (kill_tx, kill_rx) = std::sync::mpsc::channel::<()>();
 
         // Watch the child, so a shell that exits on its own is noticed.
         //
@@ -127,9 +144,9 @@ impl PtyHandle {
         // is open, so `exit` in a local shell produced no event at all:
         // the pane froze, the reader thread stayed blocked on a shell
         // that was already gone, and the only EOF it ever saw came from
-        // `Drop` killing a child that had died minutes earlier. That is
-        // why the reader's own log line can only say "child LIKELY
-        // exited"; it never actually knew.
+        // `Drop` killing a child that had died minutes earlier. The
+        // reader still cannot tell an exit from a kill on its own; this
+        // thread is what knows, and what tells.
         //
         // The answer is this thread and the oneshot it fires, not
         // anything the byte stream does. Closing the slave here does
@@ -138,13 +155,19 @@ impl PtyHandle {
         // `ClosePseudoConsole()` does not run and the reader stays
         // blocked regardless. Correctness must not rest on which of
         // those a platform does, so it rests on the signal instead.
+        //
+        // The thread also OWNS the kill (see `kill_tx`), which is why it
+        // polls `try_wait` at a short interval instead of parking in
+        // `wait()`: a parked thread could not hear the request, and a
+        // kill sent from the handle's own thread could reach a pid the
+        // kernel had already handed to someone else.
         let slave = pair.slave;
-        let (exit_tx, exit_rx) = tokio::sync::oneshot::channel();
+        let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<Option<ChildExit>>();
         let waiter_label = program.unwrap_or("<default>").to_string();
         std::thread::Builder::new()
             .name("pty-waiter".into())
             .spawn(move || {
-                let status = child.wait();
+                let exit = wait_for_child(&mut child, &kill_rx);
                 // Let the reader drain what the shell wrote on its way
                 // out before anyone is told it is gone, so the last of
                 // the session reaches the screen and the recording
@@ -152,9 +175,10 @@ impl PtyHandle {
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 tracing::debug!(
                     "PTY child exited for {} ({:?})",
-                    waiter_label, status,
+                    waiter_label, exit,
                 );
-                let _ = exit_tx.send(());
+                let _ = exit_tx.send(exit);
+                drop(child);
                 drop(slave);
             })?;
 
@@ -220,10 +244,23 @@ impl PtyHandle {
                             }
                         }
                         Err(e) => {
-                            tracing::warn!(
-                                "PTY read error for {} after {} bytes: {}",
-                                program_log, total_bytes, e,
-                            );
+                            // Linux answers a read on a pty whose slave
+                            // side has closed with EIO: that is the
+                            // waiter dropping the slave after the shell
+                            // left, the ordinary end of a session and
+                            // not a failure. Anything else is one.
+                            const EIO: i32 = 5;
+                            if cfg!(unix) && e.raw_os_error() == Some(EIO) {
+                                tracing::debug!(
+                                    "PTY closed for {} after {} bytes",
+                                    program_log, total_bytes,
+                                );
+                            } else {
+                                tracing::warn!(
+                                    "PTY read error for {} after {} bytes: {}",
+                                    program_log, total_bytes, e,
+                                );
+                            }
                             break;
                         }
                     }
@@ -279,7 +316,7 @@ impl PtyHandle {
             Self {
                 write_tx,
                 _master: pair.master,
-                killer,
+                kill_tx,
                 child_exit: Some(exit_rx),
             },
             rx,
@@ -287,8 +324,12 @@ impl PtyHandle {
     }
 
     /// Take the child-exit signal, once. `None` on every later call, so
-    /// two callers cannot both believe they are the one being told.
-    pub fn take_child_exit(&mut self) -> Option<tokio::sync::oneshot::Receiver<()>> {
+    /// two callers cannot both believe they are the one being told. The
+    /// value it resolves with is the child's exit status, or `None` when
+    /// the wait itself failed.
+    pub fn take_child_exit(
+        &mut self,
+    ) -> Option<tokio::sync::oneshot::Receiver<Option<ChildExit>>> {
         self.child_exit.take()
     }
 
@@ -310,5 +351,108 @@ impl PtyHandle {
             pixel_height: 0,
         })?;
         Ok(())
+    }
+}
+
+/// How often the waiter looks up from the child to hear a kill request.
+const WAIT_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Wait for the child to end, killing it when the handle asks, and say
+/// how it ended. `None` when the OS could not say: the pane still ends,
+/// with nothing to report.
+///
+/// The status travels with the exit signal so the pane can say HOW the
+/// shell ended and not only that it did. A kill request, or the handle
+/// going away without one, both mean the pane is done with the shell:
+/// the child was alive a moment ago (the wait just returned without it),
+/// so the kill cannot reach a recycled pid.
+#[cfg(not(windows))]
+fn wait_for_child(
+    child: &mut Box<dyn portable_pty::Child + Send + Sync>,
+    kill_rx: &std::sync::mpsc::Receiver<()>,
+) -> Option<ChildExit> {
+    use std::sync::mpsc::RecvTimeoutError;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Err(e) => break Err(e),
+            Ok(None) => {}
+        }
+        match kill_rx.recv_timeout(WAIT_POLL) {
+            // `kill` escalates from SIGHUP to SIGKILL, so a program
+            // that ignores the hangup still goes, and `wait` reaps
+            // whatever it left.
+            Ok(()) | Err(RecvTimeoutError::Disconnected) => {
+                let _ = child.kill();
+                break child.wait();
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+    };
+    status.ok().map(|s| ChildExit {
+        code: s.exit_code(),
+        signal: s.signal().map(str::to_string),
+    })
+}
+
+/// The Windows twin of the unix waiter, on the process handle itself.
+///
+/// portable-pty's own `try_wait`, `wait` and `kill` on Windows each
+/// duplicate the process handle first and unwrap the duplication, so a
+/// `DuplicateHandle` failure would take this thread down with it, the
+/// exit signal would fire with nothing, and the pane would read a live
+/// shell as exited. The child lends its raw handle instead, valid for
+/// as long as the child is (it stays the child's to close), and the
+/// wait, the exit code and the kill all go straight to the kernel with
+/// no duplication in the way. Same cadence as unix: a bounded wait, then
+/// a look at the kill channel.
+#[cfg(windows)]
+fn wait_for_child(
+    child: &mut Box<dyn portable_pty::Child + Send + Sync>,
+    kill_rx: &std::sync::mpsc::Receiver<()>,
+) -> Option<ChildExit> {
+    use std::sync::mpsc::TryRecvError;
+    use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, TerminateProcess, WaitForSingleObject, INFINITE,
+    };
+    let Some(handle) = child.as_raw_handle() else {
+        tracing::warn!("PTY child carries no process handle; its exit cannot be observed");
+        return None;
+    };
+    let handle = handle as HANDLE;
+    let exit_code = |handle: HANDLE| -> Option<ChildExit> {
+        let mut code: u32 = 0;
+        // SAFETY: `handle` is a process handle the child keeps open for
+        // as long as it lives, and `code` outlives the call.
+        let ok = unsafe { GetExitCodeProcess(handle, &mut code) } != 0;
+        ok.then_some(ChildExit { code, signal: None })
+    };
+    let poll_ms = WAIT_POLL.as_millis() as u32;
+    loop {
+        // SAFETY: as above; a bounded wait on a valid process handle.
+        match unsafe { WaitForSingleObject(handle, poll_ms) } {
+            WAIT_OBJECT_0 => return exit_code(handle),
+            WAIT_TIMEOUT => {}
+            other => {
+                tracing::warn!("waiting on the PTY child failed ({other:#x})");
+                return None;
+            }
+        }
+        match kill_rx.try_recv() {
+            Ok(()) | Err(TryRecvError::Disconnected) => {
+                // SAFETY: as above. The process is asked to end and the
+                // wait is unbounded, which `TerminateProcess` makes
+                // finite: a process it accepted is gone before it returns
+                // from the kernel's side, and a refusal (a process already
+                // ending) still ends.
+                unsafe {
+                    TerminateProcess(handle, 1);
+                    WaitForSingleObject(handle, INFINITE);
+                }
+                return exit_code(handle);
+            }
+            Err(TryRecvError::Empty) => {}
+        }
     }
 }

@@ -31,19 +31,35 @@ impl Oryxis {
                 // itself, the order just keeps intent obvious).
                 let spec = self.tabs[tidx].pin_spec();
                 let tab = &mut self.tabs[tidx];
-                let reconnectable =
-                    tab.relaunch.is_some() && spec.is_some();
+                let reconnectable = spec.is_some()
+                    && tab
+                        .pane_grid
+                        .panes
+                        .values()
+                        .any(|p| p.id == pane_id && p.relaunch.is_some());
                 let hint = if reconnectable {
                     crate::i18n::t("cloud_session_ended_hint")
                 } else {
                     crate::i18n::t("cloud_session_ended")
                 };
+                let split = tab.pane_grid.panes.len() > 1;
                 if let Some(pane) =
-                    tab.pane_grid.panes.values().find(|p| p.id == pane_id)
+                    tab.pane_grid.panes.values_mut().find(|p| p.id == pane_id)
                     && let Ok(mut term) = pane.terminal.lock()
                 {
                     let notice = format!("\r\n\x1b[2m  {}\x1b[0m\r\n", hint);
                     term.process(notice.as_bytes());
+                }
+                // In a split the verdict is the PANE's (issue #208): the
+                // tab's label suffix belongs to a lone pane, and its
+                // siblings are still connected. Through the one owner of
+                // a pane's end, so `pane_end_action` applies here too; the
+                // hint above is the line in the grid.
+                if split {
+                    return Ok(self.end_pane_quietly(
+                        pane_id,
+                        crate::state::PaneEndVerdict::Disconnected,
+                    ));
                 }
                 if !tab.label.ends_with(" (disconnected)") {
                     tab.label.push_str(" (disconnected)");

@@ -93,8 +93,11 @@ impl Oryxis {
                 self.mcp.server_token = token;
                 // Reveal once after regenerating so the user can copy
                 // it without an extra click; flip it back to masked
-                // explicitly via `ToggleMcpTokenVisibility`.
-                self.mcp.token_visible = true;
+                // explicitly via `ToggleMcpTokenVisibility`. Not when
+                // the snippet embeds the master password: the one Show
+                // governs both, and the user asked for a token, not to
+                // see that.
+                self.mcp.token_visible = !self.mcp.include_vault_password;
                 // The Claude config on disk still carries the old
                 // token, prompt the user to re-install.
                 self.mcp.install_status = None;
@@ -133,6 +136,10 @@ impl Oryxis {
                     // time. Refresh that copy from the verified input so
                     // the embed can't go stale.
                     self.mcp.include_vault_password = true;
+                    // The one Show governs the token AND the password it
+                    // now embeds, and the user asked to embed it, not to
+                    // see it: same rule as the regenerate arm.
+                    self.mcp.token_visible = false;
                     self.persist_setting("mcp_config_vault_pw", "true");
                     self.master_password = Some(typed);
                     self.mcp.vault_pw_prompt = None;

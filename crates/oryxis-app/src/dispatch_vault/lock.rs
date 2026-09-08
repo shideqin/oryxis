@@ -79,13 +79,21 @@ impl Oryxis {
                 // connect time). The manual LockVault stays a full
                 // teardown. While locked, the session-log flush and
                 // auto-reconnect tickers unmount (subscription.rs), so
-                // nothing hits the sealed vault; pane buffers accumulate
-                // and drain after unlock.
+                // nothing hits the sealed vault; what the recordings
+                // produce meanwhile is spooled to disk under a key of
+                // this process (`session_spool`) and drained after
+                // unlock.
                 // A debouncing host-editor auto-save needs the key;
                 // persist it before the vault seals. Interrupted: an
                 // idle lock concluded nothing, so a half-typed Parent
                 // Group name must not become a vault group.
                 self.editor_flush_interrupted();
+                // What the recordings hold now reaches the vault while
+                // the key is still there; only what arrives after the
+                // lock goes to the spool.
+                if self.vault.is_some() && self.vault_ui.has_user_password {
+                    self.flush_session_logs();
+                }
                 if let Some(vault) = &mut self.vault
                     && self.vault_ui.has_user_password
                 {
@@ -102,6 +110,13 @@ impl Oryxis {
                     // Sweep UI that may hold typed or revealed secrets;
                     // everything else (tabs, terminals) stays.
                     self.revealed_secrets.clear();
+                    // A confirm dialog from the unlocked app must not
+                    // outlive the lock: the lock screen now renders a
+                    // dialog that exists (so the close-window guard can
+                    // ask there), and a "Delete?" from before the lock
+                    // would be one click from acting on a vault whose
+                    // owner walked away.
+                    self.error_dialog = None;
                     self.panels.host_panel = false;
                     self.host_panel_error = None;
                     self.editor_form = crate::state::ConnectionForm::default();
@@ -190,6 +205,10 @@ impl Oryxis {
                     // Same for the MCP panel's master-password confirm.
                     self.mcp.vault_pw_prompt = None;
                     self.mcp.vault_pw_error = false;
+                    // The one Show on the MCP panel governs the master
+                    // password too (when the snippet embeds it); a reveal
+                    // left on would spell it out the moment the vault opens.
+                    self.mcp.token_visible = false;
                     // SFTP modals carry remote paths and live action buttons;
                     // root_view already stops rendering them while locked, but
                     // sweep the state so none reappears after unlock. A watch
@@ -297,6 +316,10 @@ impl Oryxis {
                         // And the MCP panel's typed confirm buffer.
                         self.mcp.vault_pw_prompt = None;
                         self.mcp.vault_pw_error = false;
+                        // The one Show on the MCP panel governs the master
+                        // password too (when the snippet embeds it); a reveal
+                        // left on would spell it out the moment the vault opens.
+                        self.mcp.token_visible = false;
                         // Same reset as the soft lock: lead with biometrics.
                         self.vault_ui.password_fallback = false;
                         self.connections.clear();

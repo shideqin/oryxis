@@ -304,7 +304,7 @@ impl Oryxis {
                     // Relaunch message so Duplicate Tab can recreate this
                     // ad-hoc session. "Duplicate in New Window" auto-hides
                     // on it (a child process cannot resolve an unsaved id).
-                    new_tab.relaunch =
+                    new_tab.active_mut().relaunch =
                         Some(Box::new(Message::Ssh(SshMessage::QuickConnect(Box::new(entry.clone())))));
                 }
                 // Stable id of this tab's pane: PTY output and
@@ -989,6 +989,12 @@ impl Oryxis {
         let mut pane = crate::state::Pane::new(label, terminal);
         pane.origin = origin;
         let pane_id = pane.id;
+        // A split is a request to SEE two panes: a zoom left on the
+        // target would keep drawing it alone while the new pane took the
+        // focus out of sight.
+        if tab.pane_grid.maximized().is_some() {
+            tab.pane_grid.restore();
+        }
         let (handle, _split) = tab.pane_grid.split(axis, target, pane)?;
         tab.focused = handle;
         Some(pane_id)

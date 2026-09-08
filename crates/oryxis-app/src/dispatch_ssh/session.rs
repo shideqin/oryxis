@@ -405,10 +405,14 @@ impl Oryxis {
                     // Same for a confirmation still on screen: it asks
                     // about a session that no longer exists.
                     self.reset_triggers_for_pane(pane_id);
-                    if let Some(log_id) = log_id
-                        && let Some(vault) = &self.vault
-                    {
-                        let _ = vault.end_session_log(&log_id);
+                    // The tab's Files browsing rides this session. The
+                    // mount is kept for the remount to land on at the
+                    // same directory (`hybrid_sftp_remount_dead`); until
+                    // then the surface says the link is down rather than
+                    // failing one operation at a time.
+                    self.hybrid_sftp_mark_dead(tab_idx, pane_id);
+                    if let Some(log_id) = log_id {
+                        self.end_session_log_now(log_id);
                     }
                     if self.should_record_history()
                         && let Some(vault) = &self.vault {
@@ -433,7 +437,7 @@ impl Oryxis {
                     // verdict goes on the PANE instead, which is what gives it
                     // a restart and a close of its own (issue #208).
                     if self.tabs[tab_idx].pane_grid.panes.len() > 1 {
-                        return self.note_pane_ended(pane_id);
+                        return self.note_pane_ended(pane_id, crate::state::PaneEndVerdict::Disconnected);
                     }
                     self.tabs[tab_idx].label = format!("{} (disconnected)", label);
                     // Surface the disconnect to the user. Without this the
@@ -487,6 +491,7 @@ impl Oryxis {
                     // it here whichever path dialled the replacement,
                     // not just the restart button's (issue #208).
                     pane.ended = false;
+                    pane.end_verdict = None;
                     if let Ok(mut state) = pane.terminal.lock() {
                         // Whatever armed the emulator's modes died with
                         // the previous session, and the fresh shell never

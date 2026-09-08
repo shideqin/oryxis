@@ -906,7 +906,7 @@ impl Oryxis {
     ) -> iced::widget::pane_grid::TitleBar<'a, Message> {
         let colors = OryxisColors::t();
         let pane_id = pane.id;
-        let state = crate::tab_conn_state::derive_pane_conn_state(tab, pane);
+        let state = crate::tab_conn_state::derive_pane_conn_state(pane);
 
         // Privacy Mode redacts the pane name the way the chip and the
         // link chip already do. The LOOKUP is `pane.label`, never the
@@ -922,7 +922,14 @@ impl Oryxis {
         // and it is the wording the tab already uses when it is the one
         // that died.
         if state == crate::tab_conn_state::TabConnState::Lost {
-            label = format!("{label} ({})", t("status_bar_disconnected"));
+            // The pane's own verdict when it recorded one (a local shell
+            // says how it exited); the tab's word otherwise.
+            let words = pane
+                .end_verdict
+                .as_ref()
+                .map(crate::state::PaneEndVerdict::text)
+                .unwrap_or_else(|| t("status_bar_disconnected").to_string());
+            label = format!("{label} ({words})");
         }
         let label = truncate_middle(&label, 42);
 
@@ -946,6 +953,11 @@ impl Oryxis {
                 .into(),
         );
 
+        // Not recorded on a keynav ring, on purpose: the grid is the
+        // terminal's own surface, where the keyboard belongs to the PTY
+        // and no ring is engaged, and every control here already has a
+        // chord (Reconnect, the pane break-out, Close pane), which is how
+        // the keyboard reaches these three without leaving the shell.
         let mut controls: Vec<Element<'a, Message>> = Vec::with_capacity(3);
         if self.pane_restartable(pane) {
             controls.push(pane_header_button(
@@ -1031,6 +1043,8 @@ impl Oryxis {
         let colors = OryxisColors::t();
         let pane_id = pane.id;
         let restartable = self.pane_restartable(pane);
+        // Same keyboard story as the header's controls: the chords cover
+        // both actions, so the card's buttons are not on a ring.
         // Collected first and handed to `dir_row` in one call: it
         // reverses its children AT CONSTRUCTION, so a row built empty
         // and pushed into afterwards keeps physical order and never
@@ -1642,11 +1656,6 @@ fn sidebar_tab_icon<'a>(tab: crate::state::TerminalSidebarTab) -> iced::widget::
     }
 }
 
-/// Wrap an icon control in a small bottom-anchored tooltip, the shared
-/// affordance for the sidebar tab strip and close affordances.
-/// `icon_tooltip` for a tip built at render time (a formatted figure, a
-/// path) rather than a borrowed `t(...)` literal. Same look; the owned
-/// String is what lets the element outlive the caller's frame-local.
 /// Height of the optional per-pane title bar (issue #208). Fixed rather
 /// than derived so the hit-test that has to add it back can:
 /// `bounds_reporter` measures a pane's BODY, and with a header the body
@@ -1678,6 +1687,9 @@ fn pane_header_button<'a>(
     icon_tooltip(btn.into(), tip)
 }
 
+/// `icon_tooltip` for a tip built at render time (a formatted figure, a
+/// path) rather than a borrowed `t(...)` literal. Same look; the owned
+/// String is what lets the element outlive the caller's frame-local.
 pub(crate) fn icon_tooltip_owned<'a>(
     inner: Element<'a, Message>,
     tip: String,
@@ -1700,6 +1712,8 @@ pub(crate) fn icon_tooltip_owned<'a>(
     .into()
 }
 
+/// Wrap an icon control in a small bottom-anchored tooltip, the shared
+/// affordance for the sidebar tab strip and close affordances.
 pub(crate) fn icon_tooltip<'a>(inner: Element<'a, Message>, tip: &'a str) -> Element<'a, Message> {
     iced::widget::tooltip(
         inner,
