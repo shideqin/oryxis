@@ -278,9 +278,6 @@ tracks it interactively.
 - **Native FIDO2:** talk to security keys directly (USB / NFC) for
   `sk-ssh-ed25519` / `sk-ecdsa-sk`, without delegating the touch to an
   external agent.
-- **Vault & sync:** one-click relay deploy (the app installs
-  `oryxis-relay` on a host from your vault over SSH, with the script
-  shown before it runs).
 - **China & CJK:** Alibaba Cloud (ECS) and Tencent Cloud (CVM)
   providers.
 - **AI ops toolkit:** the assistant graduates from generating shell

@@ -48,6 +48,20 @@ fn catalog_url(provider_id: &str) -> String {
     format!("https://raw.githubusercontent.com/{RELEASE_REPO}/main/plugins/{provider_id}.json")
 }
 
+/// Prefix of the error the release-API fallback answers when no release
+/// of a provider carries its manifest asset at all. Kept as a constant
+/// so [`is_no_manifest_release`] and the message cannot drift apart: a
+/// caller that wants to say "nothing is published yet" instead of
+/// echoing an API error asks the predicate, never the text.
+const NO_MANIFEST_RELEASE: &str = "no manifest release";
+
+/// Whether `e` says the provider has no published manifest anywhere (the
+/// catalog file is missing AND no release carries the asset), as opposed
+/// to a network or parse failure on the way to one.
+pub(crate) fn is_no_manifest_release(e: &PluginError) -> bool {
+    matches!(e, PluginError::Manifest(m) if m.starts_with(NO_MANIFEST_RELEASE))
+}
+
 /// The manifest for a provider: the catalog file first, the release
 /// API only if that fails.
 ///
@@ -172,7 +186,7 @@ async fn fetch_manifest_via_releases(
     candidates.sort_by_key(|(_, key)| std::cmp::Reverse(*key));
     let (release, _) = candidates.first().ok_or_else(|| {
         PluginError::Manifest(format!(
-            "no `{tag_prefix}*` release with a `{manifest_asset}` asset found in {RELEASE_REPO}"
+            "{NO_MANIFEST_RELEASE}: no `{tag_prefix}*` release with a `{manifest_asset}` asset in {RELEASE_REPO}"
         ))
     })?;
 
@@ -320,9 +334,18 @@ pub(crate) fn install_verified(
     binary: &PlatformBinary,
     bytes: Vec<u8>,
 ) -> Result<PathBuf, PluginError> {
+    check_gates(binary, &bytes)?;
+    write_verified(provider_id, version, binary, &bytes)
+}
+
+/// The two gates every plugin byte passes before it is trusted, with
+/// no install attached: the relay deploy runs them on a binary bound
+/// for ANOTHER machine, so the cache write above would be a copy
+/// nobody launches here.
+pub(crate) fn check_gates(binary: &PlatformBinary, bytes: &[u8]) -> Result<(), PluginError> {
     // Gate 1: SHA-256. Cheap, catches a corrupted / truncated
     // transfer before the more expensive signature check.
-    let digest = to_hex(&Sha256::digest(&bytes));
+    let digest = to_hex(&Sha256::digest(bytes));
     if !digest.eq_ignore_ascii_case(&binary.sha256) {
         return Err(PluginError::Integrity(format!(
             "sha256 mismatch: manifest says {}, downloaded bytes hash to {digest}",
@@ -331,9 +354,53 @@ pub(crate) fn install_verified(
     }
 
     // Gate 2: Ed25519 signature against a baked-in trust anchor.
-    verify::verify(&bytes, &binary.signature)?;
+    verify::verify(bytes, &binary.signature)
+}
 
-    write_verified(provider_id, version, binary, &bytes)
+/// A binary fetched for a TARGET platform and gated, but not installed:
+/// what the relay deploy uploads over SSH.
+pub(crate) struct VerifiedBytes {
+    /// The manifest version the bytes belong to.
+    pub version: String,
+    /// The manifest row the bytes were checked against.
+    pub binary: PlatformBinary,
+    pub bytes: Vec<u8>,
+}
+
+/// Fetch a provider's manifest, pick the highest version this app may
+/// use that ships a binary for `(os, arch)`, download it and run both
+/// gates. Nothing is written to the plugin cache; the caller owns the
+/// bytes.
+///
+/// `Ok(None)` means the manifest carries no such version, which is a
+/// different answer from a network failure: the deploy tells the user
+/// no signed release exists for that platform yet instead of blaming
+/// their connection.
+pub(crate) async fn fetch_verified_for(
+    provider_id: &str,
+    os: &str,
+    arch: &str,
+    mut progress: impl FnMut(u64, u64),
+) -> Result<Option<VerifiedBytes>, PluginError> {
+    let manifest = fetch_manifest(provider_id).await?;
+    let Some(entry) = manifest.best_for(
+        env!("CARGO_PKG_VERSION"),
+        oryxis_plugin_protocol::SUPPORTED_PROTOCOL_VERSIONS,
+        os,
+        arch,
+    ) else {
+        return Ok(None);
+    };
+    let binary = entry
+        .binary_for(os, arch)
+        .expect("best_for only returns entries carrying the platform");
+    let bytes = download_bytes(binary, &mut progress).await?;
+    check_gates(binary, &bytes)?;
+    Ok(Some(VerifiedBytes {
+        version: entry.version.clone(),
+        binary: binary.clone(),
+        bytes,
+    }))
 }
 
 /// The write half of an install, after both gates passed: atomic write

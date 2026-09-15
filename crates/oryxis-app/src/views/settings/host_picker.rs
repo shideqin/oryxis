@@ -26,12 +26,56 @@ pub(crate) fn host_badge<'a>(
     crate::widgets::host_icon(badge_style, badge_color, &conn.label, Some(glyph_el), size)
 }
 
-/// The "Select a host" modal for the SFTP-sync backup host. Mirrors the
-/// SFTP file-browser picker: a searchable list of saved hosts, each row an
-/// OS badge + label + address. Rendered as a dimming scrim plus a centered
-/// dialog; the caller stacks it over the settings page.
-pub(super) fn sync_host_picker_modal(app: &Oryxis) -> Element<'_, Message> {
-    let q = app.sync.sftp.picker_search.to_lowercase();
+/// Which Sync form the host picker is choosing for. The two never
+/// coexist (`Modal::SyncHostPicker` covers both), and everything that
+/// differs between them is a message or a search buffer, so the dialog
+/// is built once and parametrized here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum HostPickerTarget {
+    /// The SFTP snapshot transport's backup host.
+    SftpSync,
+    /// The relay deploy's target host (E3).
+    RelayDeploy,
+}
+
+impl HostPickerTarget {
+    fn search(self, app: &Oryxis) -> &str {
+        match self {
+            Self::SftpSync => &app.sync.sftp.picker_search,
+            Self::RelayDeploy => &app.sync.relay_deploy.picker_search,
+        }
+    }
+    fn pick(self, id: uuid::Uuid) -> Message {
+        match self {
+            Self::SftpSync => Message::Sync(SyncMessage::SftpHostChanged(id)),
+            Self::RelayDeploy => Message::Sync(SyncMessage::DeployHostChanged(id)),
+        }
+    }
+    fn close(self) -> Message {
+        match self {
+            Self::SftpSync => Message::Sync(SyncMessage::SftpHostPickerClose),
+            Self::RelayDeploy => Message::Sync(SyncMessage::DeployHostPickerClose),
+        }
+    }
+    fn search_changed(self, v: String) -> Message {
+        match self {
+            Self::SftpSync => Message::Sync(SyncMessage::SftpHostPickerSearch(v)),
+            Self::RelayDeploy => Message::Sync(SyncMessage::DeployHostPickerSearch(v)),
+        }
+    }
+}
+
+/// The "Select a host" modal the Sync settings open. Mirrors the SFTP
+/// file-browser picker: a searchable list of saved hosts, each row an
+/// OS badge + label + address. Rendered as a dimming scrim plus a
+/// centered dialog; the caller stacks it over the settings page.
+///
+/// Keyboard: it is `Modal::SyncHostPicker`, so Esc closes it and the
+/// rows record on the modal ring (Up/Down, Enter picks); the search
+/// field keeps the caret (`modal_surface_has_input`).
+pub(super) fn sync_host_picker_modal(app: &Oryxis, target: HostPickerTarget) -> Element<'_, Message> {
+    app.modal_nav_reset();
+    let q = target.search(app).to_lowercase();
     let mut list = column![].spacing(2);
     for conn in app.connections.iter().filter(|c| {
         q.is_empty()
@@ -57,12 +101,12 @@ pub(super) fn sync_host_picker_modal(app: &Oryxis) -> Element<'_, Message> {
             ])
             .align_y(iced::Alignment::Center),
         )
-        .on_press(Message::Sync(SyncMessage::SftpHostChanged(conn.id)))
+        .on_press(target.pick(conn.id))
         .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
         .width(Length::Fill)
         .style(|_, status| {
             let bg = match status {
-                BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                BtnStatus::Hovered | BtnStatus::Pressed => OryxisColors::t().bg_hover,
                 _ => Color::TRANSPARENT,
             };
             button::Style {
@@ -74,7 +118,12 @@ pub(super) fn sync_host_picker_modal(app: &Oryxis) -> Element<'_, Message> {
                 ..Default::default()
             }
         });
-        list = list.push(row_btn);
+        list = list.push(app.modal_nav_slot(
+            crate::keynav::RowAction::activate(target.pick(conn.id)),
+            6.0,
+            false,
+            row_btn.into(),
+        ));
     }
 
     let dialog = container(
@@ -86,11 +135,11 @@ pub(super) fn sync_host_picker_modal(app: &Oryxis) -> Element<'_, Message> {
                     .into(),
                 Space::new().width(Length::Fill).into(),
                 button(text("\u{2715}").size(13).color(OryxisColors::t().text_muted))
-                    .on_press(Message::Sync(SyncMessage::SftpHostPickerClose))
+                    .on_press(target.close())
                     .padding(Padding { top: 4.0, right: 8.0, bottom: 4.0, left: 8.0 })
                     .style(|_, status| {
                         let bg = match status {
-                            BtnStatus::Hovered => OryxisColors::t().bg_hover,
+                            BtnStatus::Hovered | BtnStatus::Pressed => OryxisColors::t().bg_hover,
                             _ => Color::TRANSPARENT,
                         };
                         button::Style {
@@ -107,8 +156,8 @@ pub(super) fn sync_host_picker_modal(app: &Oryxis) -> Element<'_, Message> {
             .align_y(iced::Alignment::Center)
             .width(Length::Fill),
             Space::new().height(8),
-            text_input(t("search_hosts"), &app.sync.sftp.picker_search)
-                .on_input(|v| Message::Sync(SyncMessage::SftpHostPickerSearch(v)))
+            text_input(t("search_hosts"), target.search(app))
+                .on_input(move |v| target.search_changed(v))
                 .padding(10)
                 .style(crate::widgets::rounded_input_style)
                 .align_x(dir_align_x()),
@@ -139,7 +188,7 @@ pub(super) fn sync_host_picker_modal(app: &Oryxis) -> Element<'_, Message> {
                     ..Default::default()
                 }),
         )
-        .on_press(Message::Sync(SyncMessage::SftpHostPickerClose)),
+        .on_press(target.close()),
     );
 
     let centered = container(iced::widget::MouseArea::new(dialog).on_press(Message::NoOp))

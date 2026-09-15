@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 
 use iced::Task;
 
-use oryxis_ssh::SshEngine;
 use oryxis_vault::VaultStore;
 
 use crate::app::{SyncMessage, Message, Oryxis};
@@ -118,25 +117,10 @@ impl Oryxis {
             }
         };
 
-        // Credentials + connect parameters, resolved while we hold `&self`.
-        let (password, private_key, certificate) = self.resolve_credentials(&conn);
-        // Agent-auth pin (B3), same rule as the tab connect.
-        let pinned_agent = self.pinned_agent_public(&conn);
-        let totp_secret = self
-            .vault
-            .as_ref()
-            .and_then(|v| v.get_connection_totp_secret(&conn.id).ok().flatten());
-        let resolver = self.make_jump_resolver(&mut conn);
-        let host_key_check = self.make_host_key_check();
-        // Approvals snapshot for the same reason the host-key check is
-        // strict here: a sync round dials on a timer, with nobody
-        // watching, so an unapproved command proxy is refused rather
-        // than prompted for.
-        let trusted_proxy_commands = self.trusted_proxy_commands();
-        let keepalive = self.effective_keepalive(&conn);
-        let connect_to = self.sftp_connect_timeout();
-        let auth_to = self.sftp_auth_timeout();
-        let session_to = self.sftp_session_timeout();
+        // Connect parameters, resolved while we hold `&self`: strict
+        // host key + approvals snapshot, because a sync round dials on
+        // a timer with nobody watching to answer a prompt.
+        let dial = self.prepare_unattended_dial(conn.clone());
         let op_to = self.sftp_op_timeout();
 
         // Reuse a live session if a terminal tab already points at this
@@ -175,43 +159,7 @@ impl Oryxis {
                 let client = if let Some(session) = existing {
                     session.open_sftp().await.map_err(|e| e.to_string())?
                 } else {
-                    let engine = SshEngine::new()
-                        .with_host_key_check(host_key_check)
-                        .with_strict_host_key(true)
-                        .with_proxy_command_ask(oryxis_ssh::trusted_only_proxy_command_ask(
-                            trusted_proxy_commands,
-                        ))
-                        .with_totp_secret(totp_secret.as_deref())
-                        .with_keepalive(keepalive)
-                        .with_address_family(conn.address_family)
-                        .with_rekey_limit_mb(conn.rekey_limit_mb)
-                        .with_pinned_agent_key(pinned_agent.as_deref())
-                        .with_algorithm_overrides(
-                            conn.ciphers.clone(),
-                            conn.kex.clone(),
-                            conn.macs.clone(),
-                            conn.host_key_algorithms.clone(),
-                        )
-                        .with_connect_timeout(connect_to)
-                        .with_auth_timeout(auth_to)
-                        .with_session_timeout(session_to);
-                    let (session, _rx) = engine
-                        .connect_with_resolver(
-                            &conn,
-                            password.as_deref(),
-                            private_key
-                                .as_deref()
-                                .map(|pem| oryxis_ssh::KeyMaterial::new(pem, certificate.as_deref())),
-                            80,
-                            24,
-                            resolver.as_ref(),
-                        )
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Arc::new(session)
-                        .open_sftp()
-                        .await
-                        .map_err(|e| e.to_string())?
+                    dial.open_sftp().await?
                 };
                 // Apply the user's configured per-op timeout so a slow
                 // listing/transfer follows the same budget as the SFTP

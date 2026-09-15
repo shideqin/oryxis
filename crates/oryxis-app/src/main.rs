@@ -52,6 +52,7 @@ mod dispatch_tmux;
 mod dispatch_mcp;
 mod dispatch_sync;
 mod dispatch_proxy_identity;
+mod dispatch_relay_deploy;
 mod dispatch_cloud;
 mod dispatch_plugins;
 mod dispatch_port_forwards;
@@ -105,6 +106,7 @@ mod pane_drop;
 // Answering the engine's command-proxy approval question on dials with
 // no user behind them.
 mod proxy_consent;
+mod relay_deploy;
 // Cloud-provider plugin subsystem. Inert until the cloud dispatch
 // path is rewired onto it in a later PR, the `allow` keeps the
 // clippy `-D warnings` gate green while the infra (and its public

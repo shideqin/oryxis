@@ -137,10 +137,46 @@ impl ManifestEntry {
     /// The binary entry matching the running platform, if the
     /// release ships one.
     pub fn binary_for_current_platform(&self) -> Option<&PlatformBinary> {
-        let (os, arch) = (current_os(), current_arch());
+        self.binary_for(current_os(), current_arch())
+    }
+
+    /// The binary entry for an arbitrary `(os, arch)` pair, in the
+    /// manifest's own vocabulary (`"linux"` / `"x86_64"`, see
+    /// [`current_os`] / [`current_arch`]).
+    ///
+    /// The relay deploy is the caller that is NOT this machine: it
+    /// installs onto a Linux host reached over SSH from whatever the
+    /// app runs on, so the host's `uname -sm` picks the asset, never
+    /// `cfg!`. Every other consumer keeps the current-platform helper.
+    pub fn binary_for(&self, os: &str, arch: &str) -> Option<&PlatformBinary> {
         self.binaries
             .iter()
             .find(|b| b.os == os && b.arch == arch)
+    }
+}
+
+impl PluginManifest {
+    /// Highest version this app build may use whose release ships a
+    /// binary for `(os, arch)`: the [`Self::best`] rule with the
+    /// platform filter pointed at a target that is not this machine.
+    pub fn best_for(
+        &self,
+        app_version: &str,
+        supported_protocols: &[u32],
+        os: &str,
+        arch: &str,
+    ) -> Option<&ManifestEntry> {
+        let app_key = version_key(app_version);
+        self.versions
+            .iter()
+            .filter(|e| version_key(&e.min_app) <= app_key)
+            .filter(|e| {
+                e.protocol_versions
+                    .iter()
+                    .any(|p| supported_protocols.contains(p))
+            })
+            .filter(|e| e.binary_for(os, arch).is_some())
+            .max_by_key(|e| version_key(&e.version))
     }
 }
 
@@ -253,6 +289,25 @@ mod tests {
         assert_eq!(best.version, "0.4.2");
         // No common protocol at all.
         assert!(m.best("0.9.0", &[99]).is_none());
+    }
+
+    #[test]
+    fn best_for_answers_for_a_platform_that_is_not_this_one() {
+        // A manifest whose only binaries are for a platform this test
+        // is not running on: the current-platform helpers see nothing,
+        // the target lookup picks the highest compatible version.
+        let json = sample_json()
+            .replace(&format!("\"os\":\"{}\"", current_os()), "\"os\":\"plan9\"")
+            .replace(&format!("\"arch\":\"{}\"", current_arch()), "\"arch\":\"mips\"");
+        let m = PluginManifest::parse(&json).unwrap();
+        assert!(m.best("0.9.0", &[1]).is_none());
+        let best = m.best_for("0.9.0", &[1], "plan9", "mips").unwrap();
+        assert_eq!(best.version, "0.4.2");
+        assert_eq!(best.binary_for("plan9", "mips").unwrap().url, "https://x/0.4.2");
+        assert!(best.binary_for("plan9", "arm").is_none());
+        // min_app and protocol still gate the target lookup.
+        assert_eq!(m.best_for("0.8.5", &[1], "plan9", "mips").unwrap().version, "0.3.1");
+        assert!(m.best_for("0.9.0", &[9], "plan9", "mips").is_none());
     }
 
     #[test]

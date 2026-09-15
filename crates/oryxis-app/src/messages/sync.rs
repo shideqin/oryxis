@@ -61,6 +61,35 @@ pub enum SyncMessage {
     WizardRegenToken,
     WizardTest,
     WizardTestResult(Result<(), String>),
+    // "Install on one of your hosts", the wizard's second level (E3):
+    // the app SSHes into a vault host, installs the verified relay as a
+    // systemd service and adopts the endpoint, after showing every
+    // command. Handled in `dispatch_relay_deploy`.
+    DeployToggle,
+    DeployHostPickerOpen,
+    DeployHostPickerClose,
+    DeployHostPickerSearch(String),
+    DeployHostChanged(uuid::Uuid),
+    DeployPortChanged(String),
+    DeployCaddyToggled,
+    /// Connect, probe the host, fetch + verify the relay binary for its
+    /// arch, and render the plan the consent modal shows.
+    DeployProbe,
+    /// The probe's outcome. Carries the probe's sequence number so an
+    /// answer for a flow the user has since abandoned (host changed,
+    /// section closed) is dropped instead of reviving it.
+    DeployProbed(u64, Result<Box<crate::dispatch_relay_deploy::ProbeOutcome>, crate::dispatch_relay_deploy::ProbeFailure>),
+    /// Open the consent modal over the rendered plan.
+    DeployReview,
+    /// Close the consent modal without running anything.
+    DeployConfirmCancel,
+    /// The consent was given: upload and run the plan on the host.
+    DeployRun,
+    /// One log line from the run, token already masked at the source.
+    /// `Err` is a step that failed (the run stops after it).
+    DeployProgress(u64, crate::relay_deploy::RelayDeployStep, Result<String, String>),
+    /// The run ended: `Ok(adopted URL)` or the failure line.
+    DeployFinished(u64, Result<String, String>),
     StartPairing,
     UnpairDevice(uuid::Uuid),
     Now,

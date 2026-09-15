@@ -72,6 +72,11 @@ impl Oryxis {
             // The render site's own predicate, so the keyboard layer
             // and the overlay can never disagree about whether it is up.
             Modal::UpdateOffer => self.update_modal_shown(),
+            Modal::RelayDeployConfirm => self.sync.relay_deploy.confirm_open,
+            // Either picker: the same dialog, two owners, never both.
+            Modal::SyncHostPicker => {
+                self.sync.sftp.picker_open || self.sync.relay_deploy.picker_open
+            }
         }
     }
 
@@ -230,6 +235,16 @@ impl Oryxis {
                 if !self.update_downloading {
                     self.pending_update = None;
                 }
+            }
+            // Esc mirrors DeployConfirmCancel: the plan and the parked
+            // session stay, so Review can reopen it; nothing has run.
+            Modal::RelayDeployConfirm => self.sync.relay_deploy.confirm_open = false,
+            // Mirrors SftpHostPickerClose / DeployHostPickerClose.
+            Modal::SyncHostPicker => {
+                self.sync.sftp.picker_open = false;
+                self.sync.sftp.picker_search.clear();
+                self.sync.relay_deploy.picker_open = false;
+                self.sync.relay_deploy.picker_search.clear();
             }
         }
     }

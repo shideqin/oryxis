@@ -104,7 +104,18 @@ Then point the app at `https://relay.example.com`.
 
 ## Option 3: Bare binary + systemd
 
-Download the binary for your platform from the latest
+**The app can do this one for you.** Settings > Sync > "Set up your own
+relay" > "Install on one of your hosts": pick a host from your vault,
+Oryxis connects over SSH, downloads the signed `relay-v*` binary for
+the host's architecture, checks its SHA-256 and Ed25519 signature,
+uploads it, writes the unit below (token in a root-only
+`/etc/oryxis-relay/env`), starts the service, optionally adds a Caddy
+site block for TLS, health-checks the endpoint and adopts it. Every
+command is shown before anything runs; the host needs Linux, systemd
+and either root or passwordless sudo (otherwise copy the script and run
+it yourself).
+
+By hand: download the binary for your platform from the latest
 [`relay-v*`](https://github.com/wilsonglasser/oryxis/releases) release,
 or build from source:
 
@@ -126,18 +137,26 @@ After=network.target
 [Service]
 Type=simple
 User=oryxis
-ExecStart=/usr/local/bin/oryxis-relay --port 8080
+ExecStart=/usr/local/bin/oryxis-relay --port 8080 --bind 127.0.0.1
 Environment=ORYXIS_RELAY_TOKEN=<long-random-string>
 Restart=always
 RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```bash
+sudo useradd --system --no-create-home --shell /bin/false oryxis
 sudo systemctl enable --now oryxis-relay
 ```
+
+`--bind 127.0.0.1` assumes a reverse proxy on the same host (Option 2's
+nginx block, or Caddy); drop it to expose the relay directly.
 
 Front it with nginx / Caddy as in Option 2.
 

@@ -232,6 +232,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Sync, "sync_relay_url", "relay url server sync nat traversal"),
     e(S::Sync, "sync_listen_port", "listen port sync p2p network bind"),
     e(S::Sync, "sync_wizard_button", "set up relay self host server wizard compose"),
+    e(S::Sync, "relay_deploy_button", "install relay host ssh deploy systemd one click caddy"),
     // ── AI ─────────────────────────────────────────────────────────
     e(S::AI, "provider", "ai provider openai anthropic ollama llm"),
     e(S::AI, "model", "ai model name gpt claude llama"),

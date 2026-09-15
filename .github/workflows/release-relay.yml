@@ -2,13 +2,26 @@ name: Release relay
 
 # Triggered by tags of the form `relay-v0.1.0`. Builds the
 # `oryxis-relay` Docker image for amd64 + arm64 and publishes to
-# `ghcr.io/wilsonglasser/oryxis-relay:<version>` plus `:latest`.
+# `ghcr.io/wilsonglasser/oryxis-relay:<version>` plus `:latest`, then
+# the standalone binaries.
 #
 # Users self-host with:
 #   docker run -d \
 #     -p 8080:8080 \
 #     -e ORYXIS_RELAY_TOKEN=<long-random-string> \
 #     ghcr.io/wilsonglasser/oryxis-relay:latest
+#
+# The two linux-musl binaries are additionally Ed25519-signed with the
+# production plugin key and described by a `relay.json` manifest, the
+# same shape as `mcp.json`. That manifest is what the app's "Install on
+# one of your hosts" deploy (Settings > Sync) reads: it downloads the
+# binary for the TARGET host's arch, checks the SHA-256 and the
+# signature before a byte reaches the wire, and only then uploads it
+# over SSH. The relay is never spawned locally, so like MCP only the
+# distribution half of the plugin machinery applies, and the
+# `protocol_versions: [1]` field is the same placeholder MCP declares
+# to satisfy the manifest filter. macOS and Windows binaries stay
+# plain release assets: the deploy's v1 scope is Linux + systemd.
 
 on:
   push:
@@ -133,15 +146,19 @@ jobs:
           - label: linux-x86_64
             runner: ubuntu-latest
             target: x86_64-unknown-linux-musl
+            ext: ''
           - label: linux-aarch64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
+            ext: ''
           - label: macos-aarch64
             runner: macos-latest
             target: aarch64-apple-darwin
+            ext: ''
           - label: windows-x86_64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
+            ext: '.exe'
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -154,16 +171,36 @@ jobs:
           sudo apt-get install -y musl-tools
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} -p oryxis-relay
+      # Asset names follow the plugin shape (`<prefix>-<os>-<arch>`),
+      # without the tag: the manifest job below parses os + arch out of
+      # the file name exactly the way `release-mcp.yml` does, and the
+      # release URL already carries the tag.
       - name: Package
         shell: bash
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
+          set -euo pipefail
           mkdir -p dist
-          ext=""
-          if [[ "${{ matrix.target }}" == *windows* ]]; then ext=".exe"; fi
-          bin="target/${{ matrix.target }}/release/oryxis-relay${ext}"
-          name="oryxis-relay-${tag}-${{ matrix.label }}${ext}"
-          cp "${bin}" "dist/${name}"
+          bin="target/${{ matrix.target }}/release/oryxis-relay${{ matrix.ext }}"
+          cp "${bin}" "dist/oryxis-relay-${{ matrix.label }}${{ matrix.ext }}"
+      - name: Build signer (Linux)
+        if: contains(matrix.target, 'musl')
+        run: cargo build --release -p oryxis-plugin-signer
+      # Only the musl binaries are signed: they are the ones the in-app
+      # deploy installs on a Linux host. The signer prints `sha256 = …`,
+      # `signature_b64 = …` and `size = …` on three separate lines.
+      - name: Sign + hash (Linux)
+        if: contains(matrix.target, 'musl')
+        shell: bash
+        env:
+          ORYXIS_SIGNING_KEY: ${{ secrets.ORYXIS_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          OUT="dist/oryxis-relay-${{ matrix.label }}"
+          ./target/release/oryxis-plugin-signer sign "$OUT" > "$OUT.signinfo"
+          grep '^sha256'        "$OUT.signinfo" | awk '{print $3}' > "$OUT.sha256"
+          grep '^signature_b64' "$OUT.signinfo" | awk '{print $3}' > "$OUT.sig"
+          grep '^size'          "$OUT.signinfo" | awk '{print $3}' > "$OUT.size"
+          rm "$OUT.signinfo"
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
@@ -172,13 +209,139 @@ jobs:
           make_latest: false
           files: dist/*
 
+  manifest:
+    name: Publish manifest
+    runs-on: ubuntu-latest
+    needs: binary
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='${{ github.ref_name }}'
+          echo "tag=$TAG"        >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#relay-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download sidecars from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          gh release download "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern 'oryxis-relay-*.sha256' \
+            --pattern 'oryxis-relay-*.sig' \
+            --pattern 'oryxis-relay-*.size' \
+            --dir assets
+
+      - name: Build relay.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.tag.outputs.version }}'
+          TAG='${{ steps.tag.outputs.tag }}'
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG}"
+
+          # jq keeps the JSON escaping right and avoids heredocs, which
+          # collide with the YAML block scalar's indent rules.
+          binaries='[]'
+          for sha_file in assets/oryxis-relay-*.sha256; do
+            [ -f "$sha_file" ] || continue
+            base="${sha_file%.sha256}"
+            name=$(basename "$base")
+            # `oryxis-relay-linux-x86_64` -> os=linux arch=x86_64
+            stripped="${name#oryxis-relay-}"
+            os="${stripped%-*}"
+            arch="${stripped##*-}"
+            sha=$(cat "$base.sha256")
+            sig=$(cat "$base.sig")
+            size=$(cat "$base.size")
+            binaries=$(echo "$binaries" | jq \
+              --arg os "$os" \
+              --arg arch "$arch" \
+              --arg url "$BASE/$name" \
+              --arg sha "$sha" \
+              --arg sig "$sig" \
+              --argjson size "$size" \
+              '. + [{os: $os, arch: $arch, url: $url, sha256: $sha, signature: $sig, size: $size}]')
+          done
+          if [ "$(echo "$binaries" | jq length)" -eq 0 ]; then
+            echo "no signed binaries found on the release" >&2
+            exit 1
+          fi
+
+          # `min_app`: no app older than the deploy feature ever fetches
+          # this file, so the floor only has to admit the builds that do,
+          # the 0.18.x line the feature was developed on included.
+          jq -n \
+            --arg version "$VERSION" \
+            --argjson binaries "$binaries" \
+            '{
+              provider_id: "relay",
+              versions: [
+                {
+                  version: $version,
+                  protocol_versions: [1],
+                  min_app: "0.18.0",
+                  binaries: $binaries
+                }
+              ]
+            }' > relay.json
+
+          echo '--- relay.json ---'
+          cat relay.json
+
+      - name: Upload relay.json to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          make_latest: false
+          files: relay.json
+
+      # The catalog file the app actually reads (`plugins/relay.json`
+      # from a fixed raw URL, the asset host as the second leg). Pushed
+      # over the deploy key for the same reason `release-mcp.yml` does:
+      # the main ruleset rejects a push from the Actions bot.
+      - name: Commit relay.json into the plugin catalog
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$(mktemp)"
+          hosts="$(mktemp)"
+          printf '%s\n' "${{ secrets.THEMES_DEPLOY_KEY }}" > "$key"
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$hosts"
+          git clone --depth 1 --branch main \
+            git@github.com:${{ github.repository }}.git "$RUNNER_TEMP/catalog"
+          mkdir -p "$RUNNER_TEMP/catalog/plugins"
+          cp relay.json "$RUNNER_TEMP/catalog/plugins/relay.json"
+          cd "$RUNNER_TEMP/catalog"
+          # `git status`, not `git diff`: on the FIRST release the file
+          # is untracked in main and `git diff` reports nothing for it.
+          if [ -z "$(git status --porcelain -- "plugins/relay.json")" ]; then
+            echo "catalog already current"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "plugins/relay.json"
+          git commit -m "chore(plugins): publish relay ${{ steps.tag.outputs.version }} to the catalog"
+          git push
+
   # Sync the published assets + API snapshots to the download mirror
   # (dl.oryxis.app / dl-cn.oryxis.app), the Auto fallback for networks
   # where GitHub is blocked (mainland China). Layout contract lives in
-  # publish-mirror.yml and net_mirror.rs.
+  # publish-mirror.yml and net_mirror.rs. After the manifest job, so the
+  # mirror's catalog copy finds `relay.json` among the assets.
   mirror:
     name: Publish to download mirror
-    needs: [binary]
+    needs: [manifest]
     uses: ./.github/workflows/publish-mirror.yml
     with:
       tag: ${{ github.ref_name }}

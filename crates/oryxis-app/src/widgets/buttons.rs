@@ -54,6 +54,18 @@ pub(crate) fn styled_button_opt(
     msg: Option<Message>,
     color: Color,
 ) -> Element<'_, Message> {
+    styled_button_owned(label.to_owned(), msg, color)
+}
+
+/// [`styled_button_opt`] for a label built at render time (a `format!`
+/// with a host name in it). The borrowed variants above tie the
+/// element's lifetime to the label they were given even though the
+/// text is copied; this one owns it, so a dialog can return it.
+pub(crate) fn styled_button_owned<'a>(
+    label: String,
+    msg: Option<Message>,
+    color: Color,
+) -> Element<'a, Message> {
     let enabled = msg.is_some();
     // Accent-colored CTAs share the per-theme `button_text` pairing so
     // every primary button (here, `+ HOST`, `+ ADD`, `New Snippet`,
@@ -70,7 +82,7 @@ pub(crate) fn styled_button_opt(
     let disabled_bg = OryxisColors::t().bg_selected;
     let mut b = button(
         container(
-            text(label.to_owned()).size(12).font(iced::Font {
+            text(label).size(12).font(iced::Font {
                 weight: iced::font::Weight::Bold,
                 ..iced::Font::new(crate::theme::SYSTEM_UI_FAMILY)
             }).color(fg),

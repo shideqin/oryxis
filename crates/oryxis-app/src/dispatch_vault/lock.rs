@@ -327,6 +327,13 @@ impl Oryxis {
                         self.keys.clear();
                         self.snippets.clear();
                         self.groups.clear();
+                        // The relay deploy's parked SSH session and its
+                        // rendered plan (the plan carries the token):
+                        // the lock severs every live connection, this
+                        // one included, and a plan for a host that is
+                        // no longer loaded has nothing to run against.
+                        self.sync.relay_deploy.reset_probe();
+                        self.sync.relay_deploy.busy = false;
                         // Close live remote sessions, not just the panes
                         // referencing them, so locking the vault really
                         // severs the remote connections.

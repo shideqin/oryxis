@@ -139,6 +139,14 @@ impl Oryxis {
                     // in every state, so a stray Enter on a dialog that
                     // opened itself neither downloads nor restarts.
                     | Modal::UpdateOffer
+                    // "Run on <host>?": Cancel is the default-ringed
+                    // row, so a stray Enter never runs a script as root
+                    // on a remote machine. Same class as ProxyCommand.
+                    | Modal::RelayDeployConfirm
+                    // The Sync host picker: its rows are recorded by the
+                    // shared builder, Enter picks the ringed host, and
+                    // the search field keeps the caret (`has_input`).
+                    | Modal::SyncHostPicker
                     // The highlight-rule editor is a form, but it walks
                     // like a confirm: Tab / arrows step its rows, Enter
                     // fires the default (Save). Its text fields keep the
@@ -186,6 +194,8 @@ impl Oryxis {
                     // (a rule named "Disk full" needs one) and Left /
                     // Right, except on a picker row the user stepped onto.
                     | Modal::HighlightRuleEditor
+                    // The host picker's search field.
+                    | Modal::SyncHostPicker
             )
         )
     }

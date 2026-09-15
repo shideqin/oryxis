@@ -602,6 +602,22 @@ impl Oryxis {
             );
         }
 
+        // "Run these commands on <host>?" (relay deploy, E3): approves a
+        // script that runs as root on a remote machine, so it blocks
+        // input and nothing runs until the Run button. Backdrop / Esc /
+        // Cancel all decline.
+        if self.sync.relay_deploy.confirm_open {
+            return wrap_with_resize(
+                crate::widgets::modal_overlay(
+                    base,
+                    self.build_relay_deploy_confirm_dialog(),
+                    Some(Message::Sync(crate::app::SyncMessage::DeployConfirmCancel)),
+                    0.0,
+                ),
+                resize_overlay,
+            );
+        }
+
         // New-tab picker (opens via the "+" button in the tab bar).
         if self.panels.new_tab_picker {
             return wrap_with_resize(

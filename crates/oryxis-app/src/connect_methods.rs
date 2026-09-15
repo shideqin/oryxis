@@ -214,6 +214,61 @@ impl Oryxis {
         })
     }
 
+    /// Everything a dial with NOBODY WATCHING needs, resolved while
+    /// `&self` is in hand, so the connect can run inside a task.
+    ///
+    /// Unattended means the two prompts an interactive dial may raise
+    /// are answered in advance: the host key is checked STRICTLY (an
+    /// unknown or changed key is a refusal, never a question), and a
+    /// command proxy is answered from the approvals snapshot
+    /// (`TrustedOnly`). Both are the rule every background flow already
+    /// follows (the SFTP sync round, boot forwards, the monitor); the
+    /// user clears either by connecting to the host once from a tab.
+    ///
+    /// `conn` is the WORKING COPY, with group inheritance already
+    /// applied by the caller (`apply_group_inheritance`), because the
+    /// callers also read the resolved row for their own purposes (a
+    /// label match, the hostname of the endpoint being adopted).
+    pub(crate) fn prepare_unattended_dial(&self, mut conn: Connection) -> UnattendedDial {
+        let (password, private_key, certificate) = self.resolve_credentials(&conn);
+        // Agent-auth pin (B3), same rule as the tab connect.
+        let pinned_agent = self.pinned_agent_public(&conn);
+        let totp_secret = self
+            .vault
+            .as_ref()
+            .and_then(|v| v.get_connection_totp_secret(&conn.id).ok().flatten());
+        let resolver = self.make_jump_resolver(&mut conn);
+        let engine = oryxis_ssh::SshEngine::new()
+            .with_host_key_check(self.make_host_key_check())
+            .with_strict_host_key(true)
+            .with_proxy_command_ask(oryxis_ssh::trusted_only_proxy_command_ask(
+                self.trusted_proxy_commands(),
+            ))
+            .with_totp_secret(totp_secret.as_deref())
+            .with_keepalive(self.effective_keepalive(&conn))
+            .with_address_family(conn.address_family)
+            .with_rekey_limit_mb(conn.rekey_limit_mb)
+            .with_pinned_agent_key(pinned_agent.as_deref())
+            .with_algorithm_overrides(
+                conn.ciphers.clone(),
+                conn.kex.clone(),
+                conn.macs.clone(),
+                conn.host_key_algorithms.clone(),
+            )
+            .with_connect_timeout(self.sftp_connect_timeout())
+            .with_auth_timeout(self.sftp_auth_timeout())
+            .with_session_timeout(self.sftp_session_timeout());
+        UnattendedDial {
+            conn,
+            password,
+            private_key,
+            certificate,
+            engine,
+            resolver,
+            op_timeout: self.sftp_op_timeout(),
+        }
+    }
+
     /// Build the host-key verification callback against the in-memory
     /// `known_hosts` snapshot. Read-only, known-host writes still happen
     /// in the connect handler itself.
@@ -554,6 +609,50 @@ pub(crate) fn quick_connect_offerable(
     matches_saved_host: bool,
 ) -> bool {
     target.is_explicit() || !matches_saved_host
+}
+
+/// A dial prepared by [`Oryxis::prepare_unattended_dial`]: the engine
+/// with every unattended answer baked in, the credentials, and the
+/// jump-chain resolver. Consumed by one connect inside a task.
+pub(crate) struct UnattendedDial {
+    conn: Connection,
+    password: Option<String>,
+    private_key: Option<String>,
+    certificate: Option<String>,
+    engine: oryxis_ssh::SshEngine,
+    resolver: Option<oryxis_ssh::ConnectionResolver>,
+    /// The per-operation budget the SFTP browser follows, applied to
+    /// the client the dial opens.
+    op_timeout: std::time::Duration,
+}
+
+impl UnattendedDial {
+    /// Connect and open an SFTP client on the new session. The client
+    /// carries the session (exec channels included), so it is the one
+    /// handle a background flow needs. Errors are the engine's own
+    /// messages, stringified for the status line they end up in.
+    pub(crate) async fn open_sftp(self) -> Result<oryxis_ssh::SftpClient, String> {
+        let (session, _rx) = self
+            .engine
+            .connect_with_resolver(
+                &self.conn,
+                self.password.as_deref(),
+                self.private_key
+                    .as_deref()
+                    .map(|pem| oryxis_ssh::KeyMaterial::new(pem, self.certificate.as_deref())),
+                80,
+                24,
+                self.resolver.as_ref(),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        let client = Arc::new(session)
+            .open_sftp()
+            .await
+            .map_err(|e| e.to_string())?;
+        client.set_op_timeout(self.op_timeout);
+        Ok(client)
+    }
 }
 
 #[cfg(test)]

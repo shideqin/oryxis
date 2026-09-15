@@ -33,6 +33,7 @@ pub(crate) mod login_scripts;
 mod mcp;
 mod previews;
 mod proxies;
+mod relay_deploy;
 mod security;
 mod monitoring;
 mod sftp;
@@ -287,13 +288,20 @@ impl Oryxis {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        // Overlay the SFTP-sync host picker modal across the whole page
-        // when open (same scrim + centered dialog pattern as the SFTP
-        // file browser's picker).
-        if self.sync.sftp.picker_open {
+        // Overlay the Sync host picker modal across the whole page when
+        // one of its two owners has it open (same scrim + centered
+        // dialog pattern as the SFTP file browser's picker).
+        let picker = if self.sync.sftp.picker_open {
+            Some(host_picker::HostPickerTarget::SftpSync)
+        } else if self.sync.relay_deploy.picker_open {
+            Some(host_picker::HostPickerTarget::RelayDeploy)
+        } else {
+            None
+        };
+        if let Some(target) = picker {
             iced::widget::Stack::new()
                 .push(layout)
-                .push(sync_host_picker_modal(self))
+                .push(sync_host_picker_modal(self, target))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()

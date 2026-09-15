@@ -273,11 +273,17 @@ impl Oryxis {
                 // with the snapshot gone, its result is discarded on
                 // arrival instead of persisting a never-tested value.
                 self.sync.relay_wizard.testing_snapshot = None;
+                // The deploy plan bakes the domain into the Caddy site
+                // and the adopted URL, so it goes the same way.
+                self.sync.relay_deploy.reset_probe();
+                self.sync.relay_deploy.busy = false;
             }
             SyncMessage::WizardPortChanged(v) => {
                 self.sync.relay_wizard.port = v;
                 self.sync.relay_wizard.result = None;
                 self.sync.relay_wizard.testing_snapshot = None;
+                self.sync.relay_deploy.reset_probe();
+                self.sync.relay_deploy.busy = false;
             }
             SyncMessage::WizardFormatChanged(f) => {
                 self.sync.relay_wizard.format = f;
@@ -286,6 +292,10 @@ impl Oryxis {
                 self.sync.relay_wizard.token = fresh_relay_token();
                 self.sync.relay_wizard.result = None;
                 self.sync.relay_wizard.testing_snapshot = None;
+                // The plan carries the token it would write into the
+                // service; a fresh one needs a fresh plan.
+                self.sync.relay_deploy.reset_probe();
+                self.sync.relay_deploy.busy = false;
             }
             SyncMessage::WizardTest => {
                 let Some(base) = self.sync.relay_wizard.base_url() else {
@@ -303,55 +313,7 @@ impl Oryxis {
                 self.sync.relay_wizard.testing_snapshot =
                     Some((base.clone(), self.sync.relay_wizard.token.clone()));
                 return Task::perform(
-                    async move {
-                        // The wizard sets up a self-hosted `oryxis-relay`
-                        // binary, whose `/healthz` is unauthenticated
-                        // (the Worker backend authenticates every route,
-                        // so it is not a wizard target). Probe reachability
-                        // + TLS without leaking the token, but require the
-                        // relay to identify itself: a parked domain or CDN
-                        // will answer 2xx on any path, and adopting it
-                        // would silently overwrite a working endpoint. The
-                        // `x-oryxis-relay` header is the positive signal;
-                        // an exact `ok` body is the fallback for relays
-                        // that predate the header.
-                        let client = reqwest::Client::builder()
-                            .timeout(std::time::Duration::from_secs(8))
-                            .build()
-                            .map_err(|e| e.to_string())?;
-                        let mut resp = client
-                            .get(format!("{base}/healthz"))
-                            .send()
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        if !resp.status().is_success() {
-                            return Err(format!("HTTP {}", resp.status()));
-                        }
-                        // The header alone confirms an Oryxis relay; short
-                        // circuit so a confirmed relay's body is never read.
-                        if resp.headers().contains_key("x-oryxis-relay") {
-                            return Ok(());
-                        }
-                        // Fallback for relays predating the header: the body
-                        // must be exactly "ok". Cap the read at 4 KiB so a
-                        // mistyped or hostile URL streaming a huge body can't
-                        // OOM the app (the 8s timeout bounds time, not bytes).
-                        let mut body = Vec::new();
-                        while let Some(chunk) =
-                            resp.chunk().await.map_err(|e| e.to_string())?
-                        {
-                            if body.len() + chunk.len() > 4096 {
-                                return Err(crate::i18n::t("sync_relay_not_recognized")
-                                    .to_string());
-                            }
-                            body.extend_from_slice(&chunk);
-                        }
-                        if String::from_utf8_lossy(&body).trim() == "ok" {
-                            Ok(())
-                        } else {
-                            Err(crate::i18n::t("sync_relay_not_recognized").to_string())
-                        }
-                    },
+                    probe_relay_health(base),
                     |v| Message::Sync(SyncMessage::WizardTestResult(v)),
                 );
             }
@@ -390,6 +352,25 @@ impl Oryxis {
                         return self.start_sync_engine();
                     }
                 }
+            }
+            // "Install on one of your hosts" (E3): its own file.
+            m @ (SyncMessage::DeployToggle
+            | SyncMessage::DeployHostPickerOpen
+            | SyncMessage::DeployHostPickerClose
+            | SyncMessage::DeployHostPickerSearch(..)
+            | SyncMessage::DeployHostChanged(..)
+            | SyncMessage::DeployPortChanged(..)
+            | SyncMessage::DeployCaddyToggled
+            | SyncMessage::DeployProbe
+            | SyncMessage::DeployProbed(..)
+            | SyncMessage::DeployReview
+            | SyncMessage::DeployConfirmCancel
+            | SyncMessage::DeployRun
+            | SyncMessage::DeployProgress(..)
+            | SyncMessage::DeployFinished(..)) => {
+                return self
+                    .handle_relay_deploy(m)
+                    .unwrap_or_else(crate::dispatch::unrouted);
             }
             SyncMessage::StartPairing => {
                 // Host a real pairing code on the engine. The engine
@@ -1049,11 +1030,59 @@ impl Oryxis {
     }
 }
 
+/// GET `<base>/healthz` and require the answer to come from an Oryxis
+/// relay. Shared by the level-1 Test button and the level-2 deploy's
+/// out-of-band check, so both adopt on the same evidence.
+///
+/// The wizard sets up a self-hosted `oryxis-relay` binary, whose
+/// `/healthz` is unauthenticated (the Worker backend authenticates
+/// every route, so it is not a wizard target). Probe reachability + TLS
+/// without leaking the token, but require the relay to identify itself:
+/// a parked domain or CDN will answer 2xx on any path, and adopting it
+/// would silently overwrite a working endpoint. The `x-oryxis-relay`
+/// header is the positive signal; an exact `ok` body is the fallback
+/// for relays that predate the header.
+pub(crate) async fn probe_relay_health(base: String) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut resp = client
+        .get(format!("{base}/healthz"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    // The header alone confirms an Oryxis relay; short circuit so a
+    // confirmed relay's body is never read.
+    if resp.headers().contains_key("x-oryxis-relay") {
+        return Ok(());
+    }
+    // Fallback for relays predating the header: the body must be
+    // exactly "ok". Cap the read at 4 KiB so a mistyped or hostile URL
+    // streaming a huge body can't OOM the app (the 8s timeout bounds
+    // time, not bytes).
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        if body.len() + chunk.len() > 4096 {
+            return Err(crate::i18n::t("sync_relay_not_recognized").to_string());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    if String::from_utf8_lossy(&body).trim() == "ok" {
+        Ok(())
+    } else {
+        Err(crate::i18n::t("sync_relay_not_recognized").to_string())
+    }
+}
+
 /// Random bearer token for a wizard-generated relay: two UUIDs' worth
 /// of hex (256 bits), long enough that the token is never the weak
 /// link (the relay token only gates "can talk to the relay"; payloads
 /// stay end-to-end encrypted above it).
-fn fresh_relay_token() -> String {
+pub(crate) fn fresh_relay_token() -> String {
     format!(
         "{}{}",
         uuid::Uuid::new_v4().simple(),

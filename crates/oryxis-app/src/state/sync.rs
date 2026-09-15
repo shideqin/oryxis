@@ -139,6 +139,8 @@ pub(crate) struct SyncState {
     /// "Set up your own relay" wizard (Settings > Sync > P2P): inputs,
     /// generated-artifact format, and the reachability test state.
     pub(crate) relay_wizard: RelayWizardForm,
+    /// "Install on one of your hosts", the wizard's second level (E3).
+    pub(crate) relay_deploy: RelayDeployForm,
     /// Last signaling outcome, kept separately from `status` (which any
     /// later event overwrites) so the panel can show a persistent
     /// signaling health line: `Ok(addr)` / `Err(reason)`.
@@ -215,14 +217,109 @@ impl RelayWizardForm {
                 "# docker-compose.yml\nservices:\n  oryxis-relay:\n    image: ghcr.io/wilsonglasser/oryxis-relay:latest\n    restart: unless-stopped\n    ports:\n      - \"127.0.0.1:8080:8080\"\n    environment:\n      ORYXIS_RELAY_TOKEN: \"{token}\"\n",
                 token = self.token
             ),
+            // The unit body is the deploy's renderer with the token
+            // INLINE: a person pasting one file wants one file, and
+            // the deploy path writes the same unit with an
+            // `EnvironmentFile` instead (see `relay_deploy`).
             RelayWizardFormat::Systemd => format!(
-                "# /etc/systemd/system/oryxis-relay.service\n# Binary: grab the relay-v* asset from the GitHub releases page\n# (or `cargo build --release -p oryxis-relay`).\n[Unit]\nDescription=Oryxis sync relay\nAfter=network.target\n\n[Service]\nType=simple\nUser=oryxis\nExecStart=/usr/local/bin/oryxis-relay --port 8080\nEnvironment=ORYXIS_RELAY_TOKEN={token}\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n",
-                token = self.token
+                "# {unit_path}\n# Binary: grab the relay-v* asset from the GitHub releases page\n# (or `cargo build --release -p oryxis-relay`).\n# Then: useradd --system --no-create-home --shell /bin/false oryxis\n# Listens on localhost for a reverse proxy on the same host (Caddy /\n# nginx); change --bind to 0.0.0.0 to expose the relay directly.\n{unit}",
+                unit_path = crate::relay_deploy::UNIT_PATH,
+                unit = crate::relay_deploy::systemd_unit(
+                    crate::relay_deploy::DEFAULT_PORT,
+                    "127.0.0.1",
+                    crate::relay_deploy::UnitToken::Inline(&self.token),
+                ),
             ),
             RelayWizardFormat::Caddy => format!(
-                "# Caddyfile (TLS via Let's Encrypt is automatic)\n# Long-poll: keep proxy read timeouts above 150s if you front\n# this with nginx instead (proxy_read_timeout 180s).\n{domain} {{\n    reverse_proxy 127.0.0.1:8080\n}}\n"
+                "# Caddyfile (TLS via Let's Encrypt is automatic)\n# Long-poll: keep proxy read timeouts above 150s if you front\n# this with nginx instead (proxy_read_timeout 180s).\n{site}",
+                site = crate::relay_deploy::caddy_site(
+                    &crate::relay_deploy::caddy_site_address(domain, &self.port),
+                    crate::relay_deploy::DEFAULT_PORT,
+                ),
             ),
         }
+    }
+}
+
+/// State for the relay wizard's second level, "Install on one of your
+/// hosts" (E3): the form, the probe's answer, the parked SSH session
+/// between probe and run, the rendered plan the consent modal shows,
+/// and the streamed log. Everything transient; what persists is the
+/// signaling URL + token adopted when both health checks pass, the
+/// same two settings the level-1 test writes.
+#[derive(Default)]
+pub(crate) struct RelayDeployForm {
+    pub open: bool,
+    /// The vault host the relay is installed on, `None` until picked.
+    pub host_id: Option<uuid::Uuid>,
+    pub picker_open: bool,
+    pub picker_search: String,
+    /// The port the relay binds on the host, as typed. Empty reads as
+    /// the default (8080).
+    pub port: String,
+    /// TLS via Caddy on the host: the wizard's domain gets a site block
+    /// and the relay binds loopback. Off is plain HTTP to the relay
+    /// port, adopted as `http://<host>:<port>` with a warning.
+    pub use_caddy: bool,
+    /// A probe or a run is in flight (disables every button).
+    pub busy: bool,
+    /// What the probe learned, kept until the host changes or a new
+    /// probe runs.
+    pub probe: Option<crate::relay_deploy::HostProbe>,
+    /// The SFTP client of the probe's session, parked so the run reuses
+    /// the connection the user already authenticated instead of paying
+    /// a second host-key + auth round. Dropped when the section closes,
+    /// the host changes, a probe restarts, or a run ends.
+    pub session: Option<oryxis_ssh::SftpClient>,
+    /// The relay binary, downloaded and gated (SHA-256 + Ed25519) at
+    /// probe time so the consent names bytes that were already
+    /// verified. Shared with the run task; dropped with the session.
+    pub verified: Option<std::sync::Arc<crate::plugins::download::VerifiedBytes>>,
+    /// The plan the consent modal shows and the run executes. Built
+    /// from the probe and the form at probe time, so what was reviewed
+    /// is what runs: edits after the probe are ignored until the next
+    /// one (the level-1 `testing_snapshot` rule, applied to a script).
+    pub plan: Option<crate::relay_deploy::DeployPlan>,
+    /// The consent modal is up (`Modal::RelayDeployConfirm`).
+    pub confirm_open: bool,
+    /// The step in flight, for the progress line.
+    pub step: Option<crate::relay_deploy::RelayDeployStep>,
+    /// Streamed log lines, token already masked.
+    pub log: Vec<String>,
+    /// Outcome of the last probe or run: `Ok(adopted URL)` or the
+    /// failure line.
+    pub result: Option<Result<String, String>>,
+    /// The way out of a failed probe, shown under the failure on a line
+    /// of its own (the host-key rule for a refused dial). `None` when
+    /// the failure line says everything.
+    pub result_hint: Option<String>,
+    /// Bumped on every probe start and every cancel; a probe result or a
+    /// run event carrying an older value belongs to a flow the user has
+    /// since abandoned and is dropped.
+    pub seq: u64,
+}
+
+impl RelayDeployForm {
+    /// The relay port the form asks for, `None` when the text is not a
+    /// port. Empty is the default.
+    pub fn port(&self) -> Option<u16> {
+        let p = self.port.trim();
+        if p.is_empty() {
+            return Some(crate::relay_deploy::DEFAULT_PORT);
+        }
+        p.parse::<u16>().ok().filter(|p| *p != 0)
+    }
+
+    /// Forget the probe, the parked session and the plan: the answer no
+    /// longer describes the host (or the form) it was taken for.
+    pub fn reset_probe(&mut self) {
+        self.probe = None;
+        self.session = None;
+        self.verified = None;
+        self.plan = None;
+        self.confirm_open = false;
+        self.step = None;
+        self.seq = self.seq.wrapping_add(1);
     }
 }
 
@@ -267,6 +364,7 @@ impl Default for SyncState {
             passphrase_matches: None,
             passphrase_sealed: None,
             relay_wizard: RelayWizardForm::default(),
+            relay_deploy: RelayDeployForm::default(),
             signaling_last: None,
         }
     }

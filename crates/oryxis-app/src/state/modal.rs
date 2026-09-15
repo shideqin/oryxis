@@ -141,6 +141,18 @@ pub(crate) enum Modal {
     /// Later too, except while the download runs, when the progress
     /// surface is the only sign of a download that ends by asking.
     UpdateOffer,
+    /// "Run these commands on <host>?" for the relay deploy
+    /// (`sync.relay_deploy.confirm_open`, E3). A consent in the
+    /// `HostKey` / `ProxyCommand` class: what it approves runs as root
+    /// on a remote machine, so it blocks input, Cancel is the default
+    /// row and Esc cancels. Nothing has run when it is up.
+    RelayDeployConfirm,
+    /// The "Select a host" picker the Sync settings open for the SFTP
+    /// snapshot host and for the relay deploy target
+    /// (`sync.sftp.picker_open` / `sync.relay_deploy.picker_open`; the
+    /// two never coexist). A search field plus rows, so it blocks
+    /// input; Esc closes whichever is up.
+    SyncHostPicker,
 }
 
 impl Modal {
@@ -188,6 +200,8 @@ impl Modal {
         Modal::TerminalLinkConfirm,
         Modal::LockVaultConfirm,
         Modal::UpdateOffer,
+        Modal::RelayDeployConfirm,
+        Modal::SyncHostPicker,
     ];
 
     /// Modals Esc dismisses, in topmost-first priority order (the order
@@ -236,6 +250,13 @@ impl Modal {
         // `main_layout` chain, where every dialog above renders on top
         // of this one: Esc must answer the dialog the user can see.
         Modal::LockVaultConfirm,
+        // Esc = don't run anything on the host (the safe default for a
+        // script that runs as root elsewhere). Rendered in the same
+        // `main_layout` chain right after LockVaultConfirm.
+        Modal::RelayDeployConfirm,
+        // Esc = keep the current selection. Drawn inside the Settings
+        // page, under every root-level dialog above.
+        Modal::SyncHostPicker,
         // Esc = neither reopen nor discard the local copy. Ahead of the
         // save prompt because `layer_sftp_modals` renders it on top: Esc
         // must always answer the dialog the user can actually see.
@@ -311,7 +332,9 @@ impl Modal {
             | Modal::TriggerConfirm
             | Modal::TerminalLinkConfirm
             | Modal::LockVaultConfirm
-            | Modal::UpdateOffer => true,
+            | Modal::UpdateOffer
+            | Modal::RelayDeployConfirm
+            | Modal::SyncHostPicker => true,
         }
     }
 }
@@ -366,10 +389,12 @@ mod tests {
                 | Modal::TriggerConfirm
                 | Modal::TerminalLinkConfirm
                 | Modal::LockVaultConfirm
-                | Modal::UpdateOffer => {}
+                | Modal::UpdateOffer
+                | Modal::RelayDeployConfirm
+                | Modal::SyncHostPicker => {}
             }
         }
-        assert_eq!(Modal::ALL.len(), 41, "add the new variant to Modal::ALL");
+        assert_eq!(Modal::ALL.len(), 43, "add the new variant to Modal::ALL");
         // Every Esc-closeable modal must also be a known modal.
         for m in Modal::ESC_ORDER {
             assert!(Modal::ALL.contains(m));

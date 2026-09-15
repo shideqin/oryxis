@@ -1520,6 +1520,12 @@ impl Oryxis {
                     .push(Space::new().height(8))
                     .push(text(txt).size(11).color(color));
             }
+            // Level 2: the app installs the relay itself, on a vault
+            // host, over SSH (E3). Below the manual path so the domain
+            // and token typed above are what it deploys.
+            wizard_col = wizard_col
+                .push(Space::new().height(16))
+                .push(self.sync_relay_deploy_block());
         }
         wizard_col
     }
