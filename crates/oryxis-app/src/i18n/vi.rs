@@ -249,7 +249,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "Nhấn F11 để thoát toàn màn hình",
         "hotkey_edit_hint" => "Nhấp vào một phím tắt để thay đổi. Nhấn Esc để hủy.",
         "hotkey_reset_all" => "Khôi phục tất cả về mặc định",
-        "hotkey_terminal_handled" => "Được xử lý bởi widget terminal (không sửa được)",
         "hotkey_press_a_key" => "Nhấn một phím…",
         "hotkey_unbound" => "(chưa gán)",
         "hotkey_reset" => "Khôi phục",
@@ -258,8 +257,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "Nút lùi",
         "mouse_btn_forward" => "Nút tiến",
         "mouse_btn_other" => "Chuột {n}",
+        "mouse_wheel_up" => "Con lăn lên",
+        "mouse_wheel_down" => "Con lăn xuống",
         "hotkey_press_a_key_or_mouse" => "Nhấn một phím hoặc nút chuột…",
         "hotkey_mouse_terminal_only" => "Nút chuột giữa chỉ có thể gán cho các thao tác của terminal",
+        "hotkey_wheel_terminal_only" => "Con lăn chỉ có thể gán cho các thao tác của terminal",
         "hotkey_conflict_unbound" => "{action} hiện chưa được gán",
         "hotkey_conflict_chord_removed" => "{action} đã mất phím tắt đó",
         "hotkey_scrollback_page_up" => "Cuộn lùi một trang",
@@ -523,6 +525,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "Chọn văn bản để chép và nhấp chuột phải để dán",
         "middle_click_paste" => "Dán bằng nút chuột giữa",
+        "wheel_zoom" => "Thu phóng bằng Ctrl + con lăn",
+        "wheel_zoom_desc" => "Kể cả thao tác chụm ngón trên touchpad ở Windows. Thu phóng chỉ áp dụng cho phiên này và không bao giờ thay đổi cỡ chữ ở trên; bản thân phím tắt có thể sửa trong Phím tắt.",
+        "terminal_font_zoomed" => "Đã thu phóng đến {n} trong phiên này",
         "terminal_right_click" => "Chuột phải",
         "right_click_menu" => "Menu ngữ cảnh",
         "right_click_paste" => "Dán",
@@ -793,7 +798,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "Tăng cỡ phông",
         "font_zoom_out" => "Giảm cỡ phông",
         "font_zoom_reset" => "Khôi phục cỡ phông",
-        "font_zoom_wheel" => "Điều chỉnh cỡ phông",
         "keyboard_shortcuts" => "Phím tắt bàn phím",
 
         // Session logs

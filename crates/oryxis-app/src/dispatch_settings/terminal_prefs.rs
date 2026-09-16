@@ -181,6 +181,13 @@ impl Oryxis {
                 let on = !self.middle_click_pastes();
                 return Ok(self.set_middle_click_paste(on));
             }
+            SettingsMessage::ToggleWheelZoom => {
+                // Same shape: the wheel zoom IS the Ctrl+wheel chords on
+                // the font zoom actions, and this toggle adds / removes
+                // them (see `set_wheel_zoom`).
+                let on = !self.wheel_zoom_bound();
+                return Ok(self.set_wheel_zoom(on));
+            }
             SettingsMessage::SettingSftpDefaultEditorChanged(v) => {
                 self.prefs.sftp_default_editor = v;
                 self.persist_setting(
@@ -562,5 +569,43 @@ impl Oryxis {
             self.set_toast(crate::i18n::t("font_pack_downloading").to_string());
         }
         Some(crate::fonts::ensure_pack_task(face))
+    }
+}
+
+/// The session zoom over the font-size preference.
+///
+/// Two numbers, two owners: `terminal_font_size` is the preference the
+/// Settings stepper edits and persists, `terminal_font_zoom` is what the
+/// zoom chords add on top for this session and is never written down.
+/// Every terminal canvas draws at the SUM (`terminal_font_px`), and the
+/// clamp lives on the sum, so a zoom can neither push the text past the
+/// range the stepper allows nor be pushed past it by a later stepper
+/// edit.
+impl Oryxis {
+    /// Smallest and largest size a terminal cell is ever drawn at, the
+    /// range the stepper and the zoom both stay inside.
+    pub(crate) const TERMINAL_FONT_MIN: f32 = 10.0;
+    pub(crate) const TERMINAL_FONT_MAX: f32 = 24.0;
+
+    /// The size every terminal canvas draws at: the preference plus the
+    /// session zoom, clamped to the stepper's range.
+    pub(crate) fn terminal_font_px(&self) -> f32 {
+        (self.terminal_font_size + self.terminal_font_zoom)
+            .clamp(Self::TERMINAL_FONT_MIN, Self::TERMINAL_FONT_MAX)
+    }
+
+    /// Zoom by whole points, session only. Computed from the EFFECTIVE
+    /// size so a step at the edge of the range is a no-op rather than a
+    /// hidden overshoot the next opposite step would silently absorb.
+    pub(crate) fn zoom_terminal_font(&mut self, steps: f32) {
+        let target = (self.terminal_font_px() + steps)
+            .clamp(Self::TERMINAL_FONT_MIN, Self::TERMINAL_FONT_MAX);
+        self.terminal_font_zoom = target - self.terminal_font_size;
+    }
+
+    /// Back to the preference: what "reset zoom" means once the zoom is
+    /// a delta over it rather than a rewrite of it.
+    pub(crate) fn reset_terminal_font_zoom(&mut self) {
+        self.terminal_font_zoom = 0.0;
     }
 }

@@ -56,6 +56,95 @@ impl Oryxis {
         Task::none()
     }
 
+    /// Whether Ctrl+wheel zooms the font.
+    ///
+    /// DERIVED from the binding table the way `middle_click_pastes` is:
+    /// the gesture is the pair of Ctrl+wheel chords on `FontZoomIn` /
+    /// `FontZoomOut`, so Settings > Terminal's toggle and the Shortcuts
+    /// editor read one state. On means BOTH halves are there; a pair
+    /// the user edited down to one direction reads as off, and turning
+    /// the toggle on puts the missing half back.
+    pub(crate) fn wheel_zoom_bound(&self) -> bool {
+        Self::WHEEL_ZOOM_PAIR.iter().all(|(action, direction)| {
+            self.hotkey_bindings
+                .get(action)
+                .is_some_and(|b| b.contains(&crate::hotkeys::wheel_zoom_chord(*direction)))
+        })
+    }
+
+    /// The two chords the wheel-zoom toggle owns.
+    const WHEEL_ZOOM_PAIR: [(HotkeyAction, crate::hotkeys::WheelDirection); 2] = [
+        (HotkeyAction::FontZoomIn, crate::hotkeys::WheelDirection::Up),
+        (HotkeyAction::FontZoomOut, crate::hotkeys::WheelDirection::Down),
+    ];
+
+    /// Add / remove the Ctrl+wheel chords on the font zoom actions.
+    /// Adding goes through the same conflict resolution as a recorded
+    /// binding, so turning the toggle on while another action holds one
+    /// of the chords takes it from that action and says so.
+    pub(crate) fn set_wheel_zoom(&mut self, on: bool) -> Task<Message> {
+        let mut tasks = Vec::new();
+        for (action, direction) in Self::WHEEL_ZOOM_PAIR {
+            let chord = crate::hotkeys::wheel_zoom_chord(direction);
+            if on {
+                if self.hotkey_bindings.get(&action).is_some_and(|b| b.contains(&chord)) {
+                    continue;
+                }
+                tasks.push(self.commit_captured_binding(
+                    action,
+                    crate::hotkeys::HotkeySlot::Add,
+                    chord,
+                ));
+                continue;
+            }
+            let mut binds = self.hotkey_bindings.get(&action).cloned().unwrap_or_default();
+            if !binds.remove(&chord) {
+                continue;
+            }
+            self.persist_setting(&format!("hotkey_{}", action.id()), &binds.serialize());
+            // Same invariant as `set_middle_click_paste`: an emptied
+            // list drops out of the map rather than sitting there empty.
+            if binds.is_empty() {
+                self.hotkey_bindings.remove(&action);
+            } else {
+                self.hotkey_bindings.insert(action, binds);
+            }
+        }
+        Task::batch(tasks)
+    }
+
+    /// Wheel branch of the Shortcuts capture, reached only while one is
+    /// armed (the subscription forwards the wheel then and only then).
+    ///
+    /// A notch with no chord-making modifier is left alone WITHOUT a
+    /// toast: the capture sits on a scrollable page, and a bare wheel
+    /// is the user scrolling it, not a rejected binding. Only a notch
+    /// that could be a chord is judged.
+    pub(crate) fn handle_hotkey_wheel_capture(
+        &mut self,
+        direction: crate::hotkeys::WheelDirection,
+    ) -> Task<Message> {
+        let Some((action, slot)) = self.editing_hotkey else {
+            return Task::none();
+        };
+        // Same belt-and-suspenders gate as the button path: a capture
+        // left armed on another screen must not silently rebind.
+        if self.active_view != View::Settings
+            || self.settings_section != crate::state::SettingsSection::Shortcuts
+        {
+            self.editing_hotkey = None;
+            return Task::none();
+        }
+        let Some(binding) = crate::hotkeys::binding_from_wheel(direction, &self.modifiers) else {
+            return Task::none();
+        };
+        if !action.accepts_wheel() {
+            self.set_toast(crate::i18n::t("hotkey_wheel_terminal_only").to_string());
+            return super::toast_clear_after_secs(3);
+        }
+        self.commit_captured_binding(action, slot, binding)
+    }
+
     /// A bindable mouse button was pressed anywhere in the window.
     /// Either records it (a Shortcuts capture is armed) or fires
     /// whatever it is bound to.

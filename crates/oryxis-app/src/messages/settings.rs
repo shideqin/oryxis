@@ -15,6 +15,11 @@ pub enum SettingsMessage {
     /// event subscription; `shortcuts::handle_mouse_button_press`
     /// decides whether it records a binding or fires one.
     MouseButtonPressed(iced::mouse::Button),
+    /// A wheel notch scrolled while a Shortcuts capture is armed (the
+    /// subscription only forwards the wheel then). Records the chord
+    /// when a modifier makes it one; a bare notch is left alone so the
+    /// page under the capture keeps scrolling.
+    WheelCaptured(crate::hotkeys::WheelDirection),
     /// Settings → Shortcuts: drop a single action's user override and
     /// fall back to the factory default.
     ResetHotkey(crate::hotkeys::HotkeyAction),
@@ -212,6 +217,10 @@ pub enum SettingsMessage {
     ToggleCopyOnSelect,
     ToggleRightClickCopy,
     ToggleMiddleClickPaste,
+    /// Settings > Terminal: add / remove the Ctrl+wheel chords on the
+    /// font zoom actions. Like `ToggleMiddleClickPaste`, a view over the
+    /// binding table rather than a setting of its own.
+    ToggleWheelZoom,
     /// Settings > Interface: show the monitored host's vitals in the
     /// status bar (issue #83).
     SettingToggleMonitorStatusBar,

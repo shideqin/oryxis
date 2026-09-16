@@ -18,6 +18,9 @@ impl Oryxis {
             SettingsMessage::MouseButtonPressed(button) => {
                 return Ok(self.handle_mouse_button_press(button));
             }
+            SettingsMessage::WheelCaptured(direction) => {
+                return Ok(self.handle_hotkey_wheel_capture(direction));
+            }
             SettingsMessage::ResetHotkey(action) => {
                 let mut defaults = crate::hotkeys::default_bindings();
                 match defaults.remove(&action) {

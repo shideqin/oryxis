@@ -464,16 +464,52 @@ pub enum MouseGesture<Message> {
     Publish(Message),
 }
 
-/// Resolves a mouse press to a [`MouseGesture`], or `None` when no
-/// binding claims that button with those modifiers.
+/// A wheel notch's vertical direction, the primary of a wheel binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WheelDirection {
+    Up,
+    Down,
+}
+
+impl WheelDirection {
+    /// The direction of a scroll delta's vertical component, `None`
+    /// for a horizontal-only event (a tilt names no vertical direction).
+    pub fn from_delta_y(y: f32) -> Option<Self> {
+        if y > 0.0 {
+            Some(Self::Up)
+        } else if y < 0.0 {
+            Some(Self::Down)
+        } else {
+            None
+        }
+    }
+}
+
+/// What a mouse binding is matched against: a button press, or one
+/// wheel notch in a direction.
+///
+/// The two are one resolver rather than two because they are one
+/// model on the app side (a wheel chord is a `PrimaryKey` like a
+/// button), and a second resolver type would be a second contract to
+/// keep in step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseInput {
+    Button(mouse::Button),
+    Wheel(WheelDirection),
+}
+
+/// Resolves a mouse press or wheel notch to a [`MouseGesture`], or
+/// `None` when no binding claims that input with those modifiers.
 ///
 /// Same contract as [`ChordResolver`]: the app owns the (user-editable)
 /// binding model and hands a matcher down, so there is exactly ONE
 /// implementation of binding matching. Left and Right are never
 /// resolved: they are the canvas's own select / right-click-scheme
-/// gestures, so the binding editor refuses them.
+/// gestures, so the binding editor refuses them. A wheel input only
+/// resolves under a modifier, for the same reason: the bare wheel is
+/// the canvas's own scroll.
 pub type MouseResolver<Message> =
-    Box<dyn Fn(mouse::Button, &keyboard::Modifiers) -> Option<MouseGesture<Message>>>;
+    Box<dyn Fn(MouseInput, &keyboard::Modifiers) -> Option<MouseGesture<Message>>>;
 
 pub struct TerminalView<Message = ()> {
     state: Arc<Mutex<TerminalState>>,
@@ -505,9 +541,10 @@ pub struct TerminalView<Message = ()> {
     /// selection copies it (the Windows console "QuickEdit" model), and a
     /// right-click with no selection still pastes.
     right_click_copy: bool,
-    /// User-bound mouse buttons (middle-click paste out of the box).
-    /// `None` = no mouse gestures at all, same fallback as `chords` for
-    /// callers that don't wire the binding table.
+    /// User-bound mouse buttons and wheel chords (middle-click paste and
+    /// Ctrl+wheel zoom out of the box). `None` = no mouse gestures at
+    /// all, same fallback as `chords` for callers that don't wire the
+    /// binding table.
     mouse_bindings: Option<MouseResolver<Message>>,
     /// What a right-click does (PuTTY's three schemes). The single
     /// authority for the gesture; see [`RightClickAction`].
@@ -589,10 +626,6 @@ pub struct TerminalView<Message = ()> {
     /// user's Terminal setting each frame and synced into the backend on
     /// the next word-select. Defaults to [`crate::backend::DEFAULT_WORD_DELIMITERS`].
     word_delimiters: String,
-    /// Optional callback messages for Ctrl+Wheel font zoom. When unset,
-    /// Ctrl+Wheel still gets captured but produces no state change.
-    on_font_size_increase: Option<Message>,
-    on_font_size_decrease: Option<Message>,
     /// Optional callback for right-click paste. When set, the widget
     /// emits this message instead of writing the clipboard text directly
     /// to the local PTY, so the app dispatcher can route to the SSH

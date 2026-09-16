@@ -252,7 +252,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "הקישו F11 ליציאה ממסך מלא",
         "hotkey_edit_hint" => "לחצו על קיצור כדי לשנות אותו. הקישו Esc לביטול.",
         "hotkey_reset_all" => "איפוס הכול לברירות המחדל",
-        "hotkey_terminal_handled" => "מטופל על ידי רכיב הטרמינל (לא ניתן לעריכה)",
         "hotkey_press_a_key" => "הקישו על מקש…",
         "hotkey_unbound" => "(לא מוקצה)",
         "hotkey_reset" => "איפוס",
@@ -261,8 +260,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "לחצן אחורה",
         "mouse_btn_forward" => "לחצן קדימה",
         "mouse_btn_other" => "עכבר {n}",
+        "mouse_wheel_up" => "גלגלת למעלה",
+        "mouse_wheel_down" => "גלגלת למטה",
         "hotkey_press_a_key_or_mouse" => "הקישו על מקש או על לחצן עכבר…",
         "hotkey_mouse_terminal_only" => "אפשר לשייך את הלחצן האמצעי רק לפעולות של הטרמינל",
+        "hotkey_wheel_terminal_only" => "אפשר לשייך את הגלגלת רק לפעולות של הטרמינל",
         "hotkey_conflict_unbound" => "{action} כבר לא מוקצה",
         "hotkey_conflict_chord_removed" => "{action} איבד את קיצור הדרך הזה",
         "hotkey_scrollback_page_up" => "גלול עמוד אחד אחורה",
@@ -542,6 +544,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "בחירת טקסט מעתיקה ולחיצה ימנית מדביקה",
         "middle_click_paste" => "לחיצה אמצעית מדביקה",
+        "wheel_zoom" => "זום עם Ctrl + גלגלת",
+        "wheel_zoom_desc" => "גם מחוות הצביטה במשטח המגע ב‑Windows. הזום תקף לסשן הזה בלבד ולעולם לא משנה את הגודל שלמעלה; את הצירוף עצמו אפשר לערוך בקיצורי הדרך.",
+        "terminal_font_zoomed" => "זום ל‑{n} בסשן הזה",
         "terminal_right_click" => "לחיצה ימנית",
         "right_click_menu" => "תפריט הקשר",
         "right_click_paste" => "הדבקה",
@@ -796,7 +801,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "הגדלת גודל הגופן",
         "font_zoom_out" => "הקטנת גודל הגופן",
         "font_zoom_reset" => "איפוס גודל הגופן",
-        "font_zoom_wheel" => "כוונון גודל הגופן",
         "keyboard_shortcuts" => "קיצורי מקלדת",
 
         // Session logs

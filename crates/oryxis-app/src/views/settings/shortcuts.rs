@@ -57,34 +57,16 @@ impl Oryxis {
             .width(Length::Fill)
             .align_x(dir_align_x());
 
+        // Every gesture is an editable row here, the wheel included:
+        // Ctrl+wheel zoom is a chord on the font zoom actions (#225),
+        // the way terminal copy / paste / select-all became ordinary
+        // actions in #75. There is no read-only footer left.
         for action in HotkeyAction::all() {
             // The row is not one nav slot: it records a slot per chord
             // chip, plus the add chip and the reset button. Enter on a
             // chip starts a capture for THAT chord.
             rows_col = rows_col.push(self.hotkey_editor_row(*action, defaults.get(action)));
         }
-
-        // Read-only footer for the one terminal gesture that isn't a
-        // chord and so can't live in the table above: Ctrl+Wheel zoom
-        // is handled in the scroll event. Terminal copy / paste /
-        // select-all used to sit here too, as read-only rows, back when
-        // they were hard-coded in the widget and the dispatcher; they
-        // are ordinary editable actions now (#75).
-        let static_rows = column![
-            Space::new().height(20),
-            text(crate::i18n::t("hotkey_terminal_handled"))
-                .size(11)
-                .color(OryxisColors::t().text_muted),
-            Space::new().height(8),
-            shortcut_row(
-                vec![key_badge("Ctrl"), key_badge("Wheel")],
-                crate::i18n::t("font_zoom_wheel"),
-            ),
-        ]
-        .spacing(8)
-        .width(Length::Fill)
-        .align_x(dir_align_x());
-        rows_col = rows_col.push(static_rows);
 
         scrollable(
             container(rows_col)
@@ -332,9 +314,8 @@ impl Oryxis {
     }
 }
 
-/// Owned-label variant of `widgets::key_badge`. The editor builds
-/// labels at runtime from `HotkeyBinding::badges()` so we can't reuse
-/// the `&'a str` shape directly without leaking.
+/// One key badge of a chord chip. The editor builds labels at runtime
+/// from `HotkeyBinding::badges()`, hence the owned `String`.
 fn key_badge_owned(label: String) -> Element<'static, Message> {
     container(text(label).size(11).color(OryxisColors::t().text_primary))
         .padding(Padding {

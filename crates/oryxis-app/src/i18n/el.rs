@@ -252,7 +252,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "Πατήστε F11 για έξοδο από την πλήρη οθόνη",
         "hotkey_edit_hint" => "Κάντε κλικ σε μια συντόμευση για να την αλλάξετε. Πατήστε Esc για ακύρωση.",
         "hotkey_reset_all" => "Επαναφορά όλων στις προεπιλογές",
-        "hotkey_terminal_handled" => "Το χειρίζεται το widget του τερματικού (μη επεξεργάσιμο)",
         "hotkey_press_a_key" => "Πατήστε ένα πλήκτρο…",
         "hotkey_unbound" => "(χωρίς αντιστοίχιση)",
         "hotkey_reset" => "Επαναφορά",
@@ -261,8 +260,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "Κουμπί πίσω",
         "mouse_btn_forward" => "Κουμπί μπροστά",
         "mouse_btn_other" => "Ποντίκι {n}",
+        "mouse_wheel_up" => "Ροδέλα πάνω",
+        "mouse_wheel_down" => "Ροδέλα κάτω",
         "hotkey_press_a_key_or_mouse" => "Πατήστε ένα πλήκτρο ή κουμπί ποντικιού…",
         "hotkey_mouse_terminal_only" => "Το μεσαίο κουμπί μπορεί να αντιστοιχιστεί μόνο σε ενέργειες τερματικού",
+        "hotkey_wheel_terminal_only" => "Η ροδέλα μπορεί να αντιστοιχιστεί μόνο σε ενέργειες τερματικού",
         "hotkey_conflict_unbound" => "Η ενέργεια {action} έμεινε χωρίς συντόμευση",
         "hotkey_conflict_chord_removed" => "Το {action} έχασε αυτή τη συντόμευση",
         "hotkey_scrollback_page_up" => "Κύλιση μία σελίδα πίσω",
@@ -542,6 +544,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "Επιλογή κειμένου για αντιγραφή & δεξί κλικ για επικόλληση",
         "middle_click_paste" => "Επικόλληση με μεσαίο κλικ",
+        "wheel_zoom" => "Ζουμ με Ctrl + ροδέλα",
+        "wheel_zoom_desc" => "Επίσης η χειρονομία τσιμπήματος στο touchpad στα Windows. Το ζουμ ισχύει μόνο για αυτή τη συνεδρία και δεν αλλάζει ποτέ το παραπάνω μέγεθος· ο ίδιος ο συνδυασμός επεξεργάζεται στις Συντομεύσεις.",
+        "terminal_font_zoomed" => "Ζουμ στο {n} για αυτή τη συνεδρία",
         "terminal_right_click" => "Δεξί κλικ",
         "right_click_menu" => "Μενού περιβάλλοντος",
         "right_click_paste" => "Επικόλληση",
@@ -796,7 +801,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "Αύξηση μεγέθους γραμματοσειράς",
         "font_zoom_out" => "Μείωση μεγέθους γραμματοσειράς",
         "font_zoom_reset" => "Επαναφορά μεγέθους γραμματοσειράς",
-        "font_zoom_wheel" => "Ρύθμιση μεγέθους γραμματοσειράς",
         "keyboard_shortcuts" => "Συντομεύσεις πληκτρολογίου",
 
         // Session logs

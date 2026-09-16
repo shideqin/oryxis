@@ -24,7 +24,7 @@ mod defaults;
 
 pub use action::{HotkeyAction, MouseBindingOwner};
 pub use binding::{
-    binding_from_event, binding_from_mouse, middle_click_chord, FamilyMatch, HotkeyBinding,
-    MouseButton, PrimaryKey,
+    binding_from_event, binding_from_mouse, binding_from_wheel, middle_click_chord,
+    wheel_zoom_chord, FamilyMatch, HotkeyBinding, MouseButton, PrimaryKey, WheelDirection,
 };
 pub use defaults::{default_bindings, HotkeyBindings, HotkeyMap, HotkeySlot};

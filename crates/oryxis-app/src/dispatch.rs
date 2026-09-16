@@ -185,6 +185,10 @@ impl Oryxis {
         // itself a message, so the gate is already open by the time the
         // first CursorMoved of that drag arrives.
         crate::subscription::set_mouse_interest(self.mouse_interest());
+        // Same republish for the Shortcuts capture: the subscription
+        // forwards wheel notches only while one is armed, and every
+        // path that arms or cancels one is a message.
+        crate::subscription::set_hotkey_capture(self.editing_hotkey.is_some());
         // Clipboard work the terminal crate queued for us this cycle
         // (copy-on-select, the copy chord, right-click copy, OSC 52). The
         // widget layer has no clipboard of its own on purpose: every access

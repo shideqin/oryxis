@@ -233,7 +233,7 @@ impl Oryxis {
         let cell = pane.terminal.lock().ok()?.cursor_cell();
         let caret = oryxis_terminal::ime_caret_rect(
             bounds,
-            self.terminal_font_size,
+            self.terminal_font_px(),
             Some(self.terminal_font_name.as_str()),
             self.terminal_font_weight.font_weight(),
             cell,

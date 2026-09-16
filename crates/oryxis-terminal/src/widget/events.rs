@@ -239,11 +239,11 @@ impl<Message> TerminalView<Message> {
                 Some(self.emit_input(bytes))
             }
             iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                // Ctrl+wheel stays a local font-zoom affordance; let it
-                // reach the dedicated handler instead of reporting it.
-                if ctrl {
-                    return None;
-                }
+                // A wheel CHORD (Ctrl+wheel zoom out of the box) was
+                // already answered by the binding arm ahead of this
+                // path, so a notch reaching here is the app's, whatever
+                // modifier rides it: xterm reports Ctrl+wheel with the
+                // control bit set, and so does this (`mods.ctrl`).
                 let pos = cursor.position_in(bounds)?;
                 let (col, row) = cell(pos);
                 // A fractional `Lines` delta is a high-resolution wheel
@@ -524,6 +524,26 @@ where
             return Some(CanvasAction::request_redraw().and_capture());
         }
 
+        // A wheel notch the user bound to something (Ctrl+wheel zoom
+        // out of the box) is answered BEFORE the mouse-report path,
+        // and that is the opposite of the button-binding arm below,
+        // on purpose. A button binding sits after the report so a TUI
+        // holding mouse tracking keeps its buttons; a wheel binding
+        // always carries a modifier (`is_safe` refuses a bare or
+        // Shift-only wheel), so it can never take the plain wheel from
+        // a TUI, and putting it first is what keeps zoom working
+        // inside htop / vim / tmux, which is what every terminal with
+        // Ctrl+wheel zoom does. An unbound modified notch falls
+        // through to the report (with its modifier bits) or the local
+        // scrollback, so turning the zoom chord off makes Ctrl+wheel
+        // an ordinary wheel rather than a swallowed one.
+        if let iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) = event
+            && cursor.position_in(bounds).is_some()
+            && let Some(action) = self.on_wheel_binding(widget_state, delta)
+        {
+            return Some(action);
+        }
+
         // When the remote app has mouse tracking on (tmux `mouse on`,
         // vim `mouse=a`, htop, ...) pointer events are reported to it
         // instead of driving local selection / scrollback. We snapshot
@@ -589,7 +609,7 @@ where
                     && self
                         .mouse_bindings
                         .as_ref()
-                        .and_then(|f| f(*button, &widget_state.modifiers))
+                        .and_then(|f| f(MouseInput::Button(*button), &widget_state.modifiers))
                         .is_some() =>
             {
                 // Re-resolve without unwrapping, same shape as the chord
@@ -597,18 +617,8 @@ where
                 let gesture = self
                     .mouse_bindings
                     .as_ref()
-                    .and_then(|f| f(*button, &widget_state.modifiers))?;
-                return match gesture {
-                    MouseGesture::Widget(action) => {
-                        self.perform_chord_action(action, widget_state)
-                    }
-                    // Everything the app owns (paste into an SSH session,
-                    // split a pane, ...). Captured either way: the button
-                    // was spoken for.
-                    MouseGesture::Publish(msg) => {
-                        Some(CanvasAction::publish(msg).and_capture())
-                    }
-                };
+                    .and_then(|f| f(MouseInput::Button(*button), &widget_state.modifiers))?;
+                return self.perform_mouse_gesture(gesture, widget_state);
             }
             // `on_paste_request` callback we delegate the actual paste to
             // the app dispatcher so it can target the SSH session (the
@@ -620,32 +630,6 @@ where
                 if cursor.position_in(bounds).is_some() =>
             {
                 return self.on_right_press(widget_state, bounds, cursor);
-            }
-            // Ctrl + wheel, adjust terminal font size in the standard
-            // alacritty / kitty / gnome-terminal way. Captured before the
-            // scrollback handler so it doesn't double-up with paging.
-            // The TUI inside the session never sees the wheel event in
-            // this branch, so htop / less / vim mouse modes aren't
-            // disturbed.
-            iced::Event::Mouse(mouse::Event::WheelScrolled { delta })
-                if cursor.position_in(bounds).is_some()
-                    && widget_state.modifiers.control() =>
-            {
-                let dy = match delta {
-                    mouse::ScrollDelta::Lines { y, .. } => *y,
-                    mouse::ScrollDelta::Pixels { y, .. } => *y,
-                };
-                if dy > 0.0
-                    && let Some(msg) = self.on_font_size_increase.clone()
-                {
-                    return Some(CanvasAction::publish(msg).and_capture());
-                }
-                if dy < 0.0
-                    && let Some(msg) = self.on_font_size_decrease.clone()
-                {
-                    return Some(CanvasAction::publish(msg).and_capture());
-                }
-                return Some(CanvasAction::capture());
             }
             // Mouse wheel, scrollback in the OS-natural direction:
             // wheel up shows older content (scroll_offset increases),
@@ -1545,6 +1529,67 @@ where
                 return Some(CanvasAction::request_redraw().and_capture());
             }
         None
+    }
+
+    /// A wheel notch over the canvas, against the user's wheel chords.
+    /// `None` when no binding claims this direction with the modifiers
+    /// held, which leaves the event untouched for the report and
+    /// scrollback arms (the residuals included: an unbound notch is
+    /// theirs to accumulate).
+    ///
+    /// A bound notch accumulates the same way those arms do, and for
+    /// the same reason (#150): a high-resolution wheel reports fractions
+    /// of a detent and a precision touchpad a few pixels per event, so
+    /// firing per event would zoom several steps per notch. A pixel
+    /// notch is the travel the scrollback arm scrolls per detent (three
+    /// cells), so a two-finger Ctrl+scroll steps as often as a wheel
+    /// does. A fragment that only grew the residual is still consumed:
+    /// the input was spoken for. One fire per event that completes a
+    /// notch; the canvas publishes one message per event, and a flick
+    /// that lands several notches in one event is a wheel that does not
+    /// exist.
+    fn on_wheel_binding(
+        &self,
+        widget_state: &mut TerminalWidgetState,
+        delta: &mouse::ScrollDelta,
+    ) -> Option<CanvasAction<Message>> {
+        let resolver = self.mouse_bindings.as_ref()?;
+        let raw_y = match delta {
+            mouse::ScrollDelta::Lines { y, .. } | mouse::ScrollDelta::Pixels { y, .. } => *y,
+        };
+        let direction = WheelDirection::from_delta_y(raw_y)?;
+        let gesture = resolver(MouseInput::Wheel(direction), &widget_state.modifiers)?;
+        let notches = match delta {
+            mouse::ScrollDelta::Lines { y, .. } => {
+                widget_state.scroll_px_residual.set(0.0);
+                Self::whole_notches(widget_state, *y)
+            }
+            mouse::ScrollDelta::Pixels { y, .. } => {
+                widget_state.scroll_line_residual.set(0.0);
+                Self::whole_cells_px(widget_state, *y, 3.0 * self.cell_height)
+            }
+        };
+        if notches == 0 {
+            return Some(CanvasAction::capture());
+        }
+        self.perform_mouse_gesture(gesture, widget_state)
+    }
+
+    /// Run what a mouse binding resolved to: a widget gesture in place,
+    /// or the app's message. Captured either way: the input was spoken
+    /// for. Shared by the button arm and the wheel arm so the two can't
+    /// answer the same gesture differently.
+    fn perform_mouse_gesture(
+        &self,
+        gesture: MouseGesture<Message>,
+        widget_state: &mut TerminalWidgetState,
+    ) -> Option<CanvasAction<Message>> {
+        match gesture {
+            MouseGesture::Widget(action) => self.perform_chord_action(action, widget_state),
+            // Everything the app owns (paste into an SSH session, zoom
+            // the font, split a pane, ...).
+            MouseGesture::Publish(msg) => Some(CanvasAction::publish(msg).and_capture()),
+        }
     }
 
     /// Run one of the widget-side gestures. Shared by the keyboard

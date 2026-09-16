@@ -530,7 +530,7 @@ impl Oryxis {
                 // search still receives its input.
                 .focused(true)
                 .with_mouse_reporting(false)
-                .with_font_size(self.terminal_font_size)
+                .with_font_size(self.terminal_font_px())
                 .with_font_name(&self.terminal_font_name)
                 .with_font_weight(self.terminal_font_weight.font_weight())
                 .with_text_dilation(self.terminal_text_thickness.px())

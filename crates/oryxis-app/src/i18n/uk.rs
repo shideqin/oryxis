@@ -249,7 +249,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "Натисніть F11, щоб вийти з повноекранного режиму",
         "hotkey_edit_hint" => "Клацніть на скороченні, щоб змінити його. Натисніть Esc для скасування.",
         "hotkey_reset_all" => "Скинути все до типових значень",
-        "hotkey_terminal_handled" => "Обробляється віджетом термінала (не редагується)",
         "hotkey_press_a_key" => "Натисніть клавішу…",
         "hotkey_unbound" => "(не призначено)",
         "hotkey_reset" => "Скинути",
@@ -258,8 +257,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "Кнопка «Назад»",
         "mouse_btn_forward" => "Кнопка «Вперед»",
         "mouse_btn_other" => "Миша {n}",
+        "mouse_wheel_up" => "Коліщатко вгору",
+        "mouse_wheel_down" => "Коліщатко вниз",
         "hotkey_press_a_key_or_mouse" => "Натисніть клавішу або кнопку миші…",
         "hotkey_mouse_terminal_only" => "Середню кнопку можна призначити лише діям термінала",
+        "hotkey_wheel_terminal_only" => "Коліщатко можна призначити лише діям термінала",
         "hotkey_conflict_unbound" => "{action} тепер не призначено",
         "hotkey_conflict_chord_removed" => "{action} втратив це сполучення клавіш",
         "hotkey_scrollback_page_up" => "Прокрутити на сторінку назад",
@@ -523,6 +525,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "Виділення тексту для копіювання та права кнопка для вставлення",
         "middle_click_paste" => "Вставлення середньою кнопкою",
+        "wheel_zoom" => "Масштаб за Ctrl + коліщатко",
+        "wheel_zoom_desc" => "Також жест щипка на тачпаді у Windows. Масштаб діє лише в цьому сеансі й ніколи не змінює розмір вище; саме сполучення можна змінити в розділі «Скорочення».",
+        "terminal_font_zoomed" => "Масштаб {n} у цьому сеансі",
         "terminal_right_click" => "Правий клік",
         "right_click_menu" => "Контекстне меню",
         "right_click_paste" => "Вставити",
@@ -793,7 +798,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "Збільшити розмір шрифту",
         "font_zoom_out" => "Зменшити розмір шрифту",
         "font_zoom_reset" => "Скинути розмір шрифту",
-        "font_zoom_wheel" => "Налаштувати розмір шрифту",
         "keyboard_shortcuts" => "Клавіатурні скорочення",
 
         // Session logs

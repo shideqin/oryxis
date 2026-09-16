@@ -596,6 +596,7 @@ impl Oryxis {
                 terminal_theme_override: None,
                 local_terminal_theme: None,
                 terminal_font_size: 14.0,
+                terminal_font_zoom: 0.0,
                 terminal_font_name: "SauceCodePro Nerd Font".to_string(),
                 terminal_font_weight: crate::fonts::TerminalFontWeight::default(),
                 terminal_text_thickness: crate::fonts::TextThickness::default(),

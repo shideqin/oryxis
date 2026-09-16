@@ -1111,6 +1111,38 @@ impl Oryxis {
                 }
                 let _ = vault.set_setting("middle_click_paste_migrated", "true");
             }
+            // One-shot migration, same shape and same reason: Ctrl+wheel
+            // zoom used to be hard-wired in the widget and is now the
+            // pair of Ctrl+wheel chords on `FontZoomIn` / `FontZoomOut`
+            // (#225). Applied to whatever list resolved above, an
+            // override or an absent / unbound row included: a user who
+            // had rebound or unbound Ctrl+= never meant "and drop the
+            // wheel", because the wheel was not a chord they could see.
+            if vault
+                .get_setting("wheel_zoom_migrated")
+                .ok()
+                .flatten()
+                .is_none()
+            {
+                for (action, direction) in [
+                    (crate::hotkeys::HotkeyAction::FontZoomIn, crate::hotkeys::WheelDirection::Up),
+                    (crate::hotkeys::HotkeyAction::FontZoomOut, crate::hotkeys::WheelDirection::Down),
+                ] {
+                    let chord = crate::hotkeys::wheel_zoom_chord(direction);
+                    let mut binds =
+                        self.hotkey_bindings.get(&action).cloned().unwrap_or_default();
+                    let before = binds.len();
+                    binds.push(chord);
+                    if binds.len() != before {
+                        let _ = vault.set_setting(
+                            &format!("hotkey_{}", action.id()),
+                            &binds.serialize(),
+                        );
+                        self.hotkey_bindings.insert(action, binds);
+                    }
+                }
+                let _ = vault.set_setting("wheel_zoom_migrated", "true");
+            }
             if let Ok(Some(v)) = vault.get_setting("default_host_icon")
                 && matches!(v.as_str(), "circular" | "square" | "rounded" | "outline" | "initials")
             {

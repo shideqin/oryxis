@@ -249,7 +249,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "Tam ekrandan çıkmak için F11'e basın",
         "hotkey_edit_hint" => "Değiştirmek için bir kısayola tıklayın. İptal için Esc'e basın.",
         "hotkey_reset_all" => "Tümünü varsayılana sıfırla",
-        "hotkey_terminal_handled" => "Terminal widget'ı tarafından işlenir (düzenlenemez)",
         "hotkey_press_a_key" => "Bir tuşa basın…",
         "hotkey_unbound" => "(atanmamış)",
         "hotkey_reset" => "Sıfırla",
@@ -258,8 +257,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "Geri düğmesi",
         "mouse_btn_forward" => "İleri düğmesi",
         "mouse_btn_other" => "Fare {n}",
+        "mouse_wheel_up" => "Tekerlek yukarı",
+        "mouse_wheel_down" => "Tekerlek aşağı",
         "hotkey_press_a_key_or_mouse" => "Bir tuşa veya fare düğmesine basın…",
         "hotkey_mouse_terminal_only" => "Orta düğme yalnızca terminal eylemlerine atanabilir",
+        "hotkey_wheel_terminal_only" => "Tekerlek yalnızca terminal eylemlerine atanabilir",
         "hotkey_conflict_unbound" => "{action} artık atanmamış",
         "hotkey_conflict_chord_removed" => "{action} bu kısayolu kaybetti",
         "hotkey_scrollback_page_up" => "Bir sayfa yukarı kaydır",
@@ -523,6 +525,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "Kopyalamak için metin seçin ve yapıştırmak için sağ tıklayın",
         "middle_click_paste" => "Orta tıklama ile yapıştır",
+        "wheel_zoom" => "Ctrl + tekerlek ile yakınlaştır",
+        "wheel_zoom_desc" => "Windows'ta dokunmatik yüzey sıkıştırma hareketi de dahil. Yakınlaştırma yalnızca bu oturum için geçerlidir ve yukarıdaki boyutu asla değiştirmez; kısayolun kendisi Kısayollar'da düzenlenebilir.",
+        "terminal_font_zoomed" => "Bu oturumda {n} olarak yakınlaştırıldı",
         "terminal_right_click" => "Sağ tıklama",
         "right_click_menu" => "Bağlam menüsü",
         "right_click_paste" => "Yapıştır",
@@ -793,7 +798,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "Yazı Tipini Büyüt",
         "font_zoom_out" => "Yazı Tipini Küçült",
         "font_zoom_reset" => "Yazı Tipini Sıfırla",
-        "font_zoom_wheel" => "Yazı Tipini Ayarla",
         "keyboard_shortcuts" => "Klavye Kısayolları",
 
         // Session logs

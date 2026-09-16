@@ -1204,6 +1204,15 @@ pub struct Oryxis {
     /// it as the global default.
     pub(crate) local_terminal_theme: Option<String>,
     pub(crate) terminal_font_size: f32,
+    /// Whole points added to `terminal_font_size` by the zoom chords
+    /// (Ctrl+= / Ctrl+- and Ctrl+wheel) for THIS session. Never
+    /// persisted: a zoom is "the text is too small right now", the way
+    /// alacritty, kitty and Windows Terminal treat it, and writing it
+    /// into the preference turned an accidental touchpad pinch into a
+    /// permanent change (#225). `terminal_font_px` is the effective
+    /// size every terminal canvas draws at; the Settings stepper edits
+    /// and shows the preference alone.
+    pub(crate) terminal_font_zoom: f32,
     pub(crate) terminal_font_name: String,
     /// Weight every terminal cell is drawn at (issue #155). Global,
     /// like the family and the size next to it: a per-host weight

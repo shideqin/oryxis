@@ -96,6 +96,65 @@ impl MouseButton {
     }
 }
 
+/// A wheel direction that can stand in for the primary key of a
+/// binding.
+///
+/// The wheel is the one bindable input that ALSO has a meaning of its
+/// own: a bare wheel scrolls, and Shift+wheel is the mouse-report
+/// bypass and the horizontal-scroll idiom. So unlike a mouse button, a
+/// wheel chord is only safe under Ctrl / Alt / Logo (see
+/// [`HotkeyBinding::is_safe`]), and it only ever fires over the
+/// terminal canvas, which is the one surface that reads the wheel
+/// itself. Ctrl+wheel zoom is the factory case, and it is what Windows
+/// synthesizes from a precision-touchpad pinch, which is why the
+/// gesture that looked hard-wired is a chord like any other (#225).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WheelDirection {
+    Up,
+    Down,
+}
+
+impl WheelDirection {
+    /// Settings-table token. The `wheel_` prefix keeps it clear of
+    /// every other primary the way `mouse_` does for buttons.
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::Up => "wheel_up",
+            Self::Down => "wheel_down",
+        }
+    }
+
+    /// Reverse of [`WheelDirection::token`].
+    pub fn parse_token(s: &str) -> Option<Self> {
+        match s {
+            "wheel_up" => Some(Self::Up),
+            "wheel_down" => Some(Self::Down),
+            _ => None,
+        }
+    }
+
+    /// The direction of a scroll delta, `None` for a horizontal-only
+    /// event (a tilt names no vertical direction).
+    pub fn from_delta_y(y: f32) -> Option<Self> {
+        if y > 0.0 {
+            Some(Self::Up)
+        } else if y < 0.0 {
+            Some(Self::Down)
+        } else {
+            None
+        }
+    }
+
+    /// User-facing badge label, translated. Short, like the button
+    /// labels: it shares a chip with the modifier badges.
+    pub fn label(self) -> String {
+        match self {
+            Self::Up => crate::i18n::t("mouse_wheel_up").to_string(),
+            Self::Down => crate::i18n::t("mouse_wheel_down").to_string(),
+        }
+    }
+}
+
 /// The non-modifier half of a binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimaryKey {
@@ -120,6 +179,10 @@ pub enum PrimaryKey {
     /// belong to a widget), so only `HotkeyAction::accepts_mouse`
     /// actions may hold one.
     Mouse(MouseButton),
+    /// A wheel notch in one direction, always with a modifier. Only
+    /// fires over the terminal canvas, so only
+    /// `HotkeyAction::accepts_wheel` actions may hold one.
+    Wheel(WheelDirection),
 }
 
 /// What `HotkeyBinding::match_event` returns: `None` if the event
@@ -196,8 +259,8 @@ impl HotkeyBinding {
                 Key::Named(Named::ArrowRight) => Some(FamilyMatch::ArrowRight),
                 _ => None,
             },
-            // No keystroke can ever produce a mouse binding.
-            PrimaryKey::Mouse(_) => None,
+            // No keystroke can ever produce a mouse or wheel binding.
+            PrimaryKey::Mouse(_) | PrimaryKey::Wheel(_) => None,
         }
     }
 
@@ -212,9 +275,24 @@ impl HotkeyBinding {
             && modifiers.logo() == self.logo
     }
 
+    /// Wheel twin of [`HotkeyBinding::match_mouse`], modifier-exact for
+    /// the same reason.
+    pub fn match_wheel(&self, direction: WheelDirection, modifiers: &Modifiers) -> bool {
+        self.primary == PrimaryKey::Wheel(direction)
+            && modifiers.control() == self.ctrl
+            && modifiers.shift() == self.shift
+            && modifiers.alt() == self.alt
+            && modifiers.logo() == self.logo
+    }
+
     /// Whether the primary is a mouse button.
     pub fn is_mouse(&self) -> bool {
         matches!(self.primary, PrimaryKey::Mouse(_))
+    }
+
+    /// Whether the primary is a wheel direction.
+    pub fn is_wheel(&self) -> bool {
+        matches!(self.primary, PrimaryKey::Wheel(_))
     }
 
     /// Whether the binding is valid for the editor: it must carry at
@@ -233,6 +311,12 @@ impl HotkeyBinding {
         // mouse binding steals nothing.
         if self.is_mouse() {
             return true;
+        }
+        // The wheel is the opposite case: bare, it scrolls, and under
+        // Shift alone it is the mouse-report bypass. Only a modifier
+        // that means nothing to a scroll makes it a chord.
+        if self.is_wheel() {
+            return self.ctrl || self.alt || self.logo;
         }
         if self.ctrl || self.alt || self.logo {
             return true;
@@ -363,6 +447,7 @@ impl HotkeyBinding {
             PrimaryKey::Digit1to9 => out.push_str("digit"),
             PrimaryKey::ArrowLeftRight => out.push_str("arrows"),
             PrimaryKey::Mouse(b) => out.push_str(&b.token()),
+            PrimaryKey::Wheel(d) => out.push_str(d.token()),
         }
         out
     }
@@ -411,6 +496,8 @@ impl HotkeyBinding {
                 // checking them here keeps the fallback chain honest.
                 if let Some(button) = MouseButton::parse_token(other) {
                     PrimaryKey::Mouse(button)
+                } else if let Some(direction) = WheelDirection::parse_token(other) {
+                    PrimaryKey::Wheel(direction)
                 } else if let Some(named) = str_to_named(other) {
                     PrimaryKey::Named(named)
                 } else if other.len() == 1
@@ -464,6 +551,7 @@ impl HotkeyBinding {
             PrimaryKey::Digit1to9 => "1...9".into(),
             PrimaryKey::ArrowLeftRight => "←/→".into(),
             PrimaryKey::Mouse(b) => b.label(),
+            PrimaryKey::Wheel(d) => d.label(),
         };
         out.push(primary);
         out
@@ -650,6 +738,40 @@ pub fn middle_click_chord() -> HotkeyBinding {
         logo: false,
         primary: PrimaryKey::Mouse(MouseButton::Middle),
     }
+}
+
+/// The Ctrl+wheel chord in one direction: the second factory input of
+/// `FontZoomIn` (up) and `FontZoomOut` (down), and exactly what
+/// Settings > Terminal's "zoom with Ctrl + wheel" toggle adds to / removes
+/// from the binding table.
+///
+/// Ctrl on every platform, macOS included: the key chords swap Ctrl for
+/// Cmd there, but this one is what Windows synthesizes from a
+/// precision-touchpad pinch and what every Linux terminal binds, and
+/// the macOS pinch never reaches the app as a wheel at all.
+pub fn wheel_zoom_chord(direction: WheelDirection) -> HotkeyBinding {
+    HotkeyBinding {
+        ctrl: true,
+        shift: false,
+        alt: false,
+        logo: false,
+        primary: PrimaryKey::Wheel(direction),
+    }
+}
+
+/// Wheel twin of [`binding_from_mouse`]: turns a captured wheel notch
+/// into a binding, or `None` when the notch carries no modifier that
+/// makes it a chord (a bare wheel scrolls the page the capture sits on,
+/// and must go on doing so).
+pub fn binding_from_wheel(direction: WheelDirection, modifiers: &Modifiers) -> Option<HotkeyBinding> {
+    let binding = HotkeyBinding {
+        ctrl: modifiers.control(),
+        shift: modifiers.shift(),
+        alt: modifiers.alt(),
+        logo: modifiers.logo(),
+        primary: PrimaryKey::Wheel(direction),
+    };
+    binding.is_safe().then_some(binding)
 }
 
 /// Mouse twin of [`binding_from_event`]: turns a captured button press
@@ -988,5 +1110,75 @@ mod tests {
         let defaults = default_bindings();
         let copy = defaults.get(&HotkeyAction::TerminalCopy).expect("bound");
         assert!(!copy.match_mouse(MouseButton::Middle, &none));
+    }
+
+    /// A wheel chord round-trips through the settings table under its
+    /// own prefix, and is only a chord under a modifier a scroll does
+    /// not already mean something by: bare and Shift-only are refused,
+    /// because one scrolls and the other is the mouse-report bypass.
+    #[test]
+    fn wheel_chords_need_a_real_modifier_and_round_trip() {
+        let up = wheel_zoom_chord(WheelDirection::Up);
+        assert!(up.is_wheel());
+        assert!(!up.is_mouse());
+        assert!(up.is_safe());
+        assert!(!up.is_terminal_control_sequence());
+        assert_eq!(up.serialize(), "ctrl+wheel_up");
+        assert_eq!(HotkeyBinding::parse("ctrl+wheel_up"), Some(up));
+        let down = wheel_zoom_chord(WheelDirection::Down);
+        assert_eq!(down.serialize(), "ctrl+wheel_down");
+        assert_eq!(HotkeyBinding::parse("ctrl+wheel_down"), Some(down));
+        assert_eq!(HotkeyBinding::parse("alt+wheel_up").map(|b| b.alt), Some(true));
+
+        let bare = HotkeyBinding { ctrl: false, ..up };
+        assert!(!bare.is_safe(), "a bare wheel scrolls");
+        let shift = HotkeyBinding { ctrl: false, shift: true, ..up };
+        assert!(!shift.is_safe(), "Shift+wheel is the report bypass");
+        assert!(HotkeyBinding { alt: true, ctrl: false, ..up }.is_safe());
+        assert!(HotkeyBinding { logo: true, ctrl: false, ..up }.is_safe());
+
+        // The capture helper applies the same rule, and answers None
+        // rather than a toast-worthy error, so a bare wheel keeps
+        // scrolling the page the capture sits on.
+        let mut ctrl = Modifiers::default();
+        ctrl.set(Modifiers::CTRL, true);
+        assert_eq!(binding_from_wheel(WheelDirection::Up, &ctrl), Some(up));
+        assert_eq!(binding_from_wheel(WheelDirection::Up, &Modifiers::default()), None);
+        let mut shift_only = Modifiers::default();
+        shift_only.set(Modifiers::SHIFT, true);
+        assert_eq!(binding_from_wheel(WheelDirection::Down, &shift_only), None);
+    }
+
+    /// Wheel matching is modifier-exact and direction-exact, and never
+    /// crosses with keys or buttons.
+    #[test]
+    fn wheel_matching_is_exact_and_never_crosses() {
+        let up = wheel_zoom_chord(WheelDirection::Up);
+        let none = Modifiers::default();
+        let mut ctrl = Modifiers::default();
+        ctrl.set(Modifiers::CTRL, true);
+        let mut ctrl_shift = ctrl;
+        ctrl_shift.set(Modifiers::SHIFT, true);
+
+        assert!(up.match_wheel(WheelDirection::Up, &ctrl));
+        assert!(!up.match_wheel(WheelDirection::Down, &ctrl), "wrong direction");
+        assert!(!up.match_wheel(WheelDirection::Up, &none), "Ctrl is part of the chord");
+        assert!(
+            !up.match_wheel(WheelDirection::Up, &ctrl_shift),
+            "Ctrl+Shift+wheel is another binding"
+        );
+        assert!(!up.match_mouse(MouseButton::Middle, &ctrl));
+        assert_eq!(up.match_event(&Key::Character("=".into()), &ctrl), None);
+
+        assert_eq!(WheelDirection::from_delta_y(0.25), Some(WheelDirection::Up));
+        assert_eq!(WheelDirection::from_delta_y(-3.0), Some(WheelDirection::Down));
+        assert_eq!(WheelDirection::from_delta_y(0.0), None, "a tilt names no direction");
+
+        let defaults = default_bindings();
+        let zoom_in = defaults.get(&HotkeyAction::FontZoomIn).expect("bound");
+        assert!(zoom_in.match_wheel(WheelDirection::Up, &ctrl));
+        assert!(!zoom_in.match_wheel(WheelDirection::Down, &ctrl));
+        let zoom_out = defaults.get(&HotkeyAction::FontZoomOut).expect("bound");
+        assert!(zoom_out.match_wheel(WheelDirection::Down, &ctrl));
     }
 }

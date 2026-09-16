@@ -178,7 +178,7 @@ impl Oryxis {
             let font_size = fitted_font_size(
                 &self.terminal_font_name,
                 self.terminal_font_weight.font_weight(),
-                self.terminal_font_size,
+                self.terminal_font_px(),
                 p.fit_cols,
                 p.fit_rows,
                 iced::Size::new(

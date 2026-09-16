@@ -30,8 +30,6 @@ impl<Message> TerminalView<Message> {
             transparent_bg: false,
             mouse_reporting: true,
             word_delimiters: crate::backend::DEFAULT_WORD_DELIMITERS.to_string(),
-            on_font_size_increase: None,
-            on_font_size_decrease: None,
             on_paste_request: None,
             on_paste_selection: None,
             on_context_menu: None,
@@ -239,20 +237,6 @@ impl<Message> TerminalView<Message> {
     /// grabs the whole logical line, like triple-click).
     pub fn with_word_delimiters(mut self, delimiters: &str) -> Self {
         self.word_delimiters = delimiters.to_string();
-        self
-    }
-
-    /// Wire a message that fires when the user does Ctrl+Wheel-up over
-    /// the terminal canvas.
-    pub fn on_font_size_increase(mut self, msg: Message) -> Self {
-        self.on_font_size_increase = Some(msg);
-        self
-    }
-
-    /// Wire a message that fires when the user does Ctrl+Wheel-down over
-    /// the terminal canvas.
-    pub fn on_font_size_decrease(mut self, msg: Message) -> Self {
-        self.on_font_size_decrease = Some(msg);
         self
     }
 

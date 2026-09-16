@@ -573,25 +573,19 @@ impl Oryxis {
                 }
             }
             ToggleFullscreen => Task::done(Message::Tabs(TabsMessage::WindowFullscreenToggle)),
+            // The zoom trio moves the session zoom, never the
+            // preference: see `terminal_font_zoom`. The Settings stepper
+            // is the door to the preference.
             FontZoomIn => {
-                self.terminal_font_size = (self.terminal_font_size + 1.0).min(24.0);
-                self.persist_setting(
-                    "terminal_font_size",
-                    &format!("{}", self.terminal_font_size),
-                );
+                self.zoom_terminal_font(1.0);
                 Task::none()
             }
             FontZoomOut => {
-                self.terminal_font_size = (self.terminal_font_size - 1.0).max(10.0);
-                self.persist_setting(
-                    "terminal_font_size",
-                    &format!("{}", self.terminal_font_size),
-                );
+                self.zoom_terminal_font(-1.0);
                 Task::none()
             }
             FontZoomReset => {
-                self.terminal_font_size = 14.0;
-                self.persist_setting("terminal_font_size", "14");
+                self.reset_terminal_font_zoom();
                 Task::none()
             }
             // Terminal split panes. The loop only reaches these in the

@@ -252,7 +252,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "फ़ुल स्क्रीन से बाहर निकलने के लिए F11 दबाएं",
         "hotkey_edit_hint" => "बदलने के लिए किसी शॉर्टकट पर क्लिक करें। रद्द करने के लिए Esc दबाएं।",
         "hotkey_reset_all" => "सभी को डिफ़ॉल्ट पर रीसेट करें",
-        "hotkey_terminal_handled" => "टर्मिनल विजेट द्वारा संभाला जाता है (एडिट नहीं हो सकता)",
         "hotkey_press_a_key" => "कोई कुंजी दबाएं…",
         "hotkey_unbound" => "(असाइन नहीं)",
         "hotkey_reset" => "रीसेट करें",
@@ -261,8 +260,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "बैक बटन",
         "mouse_btn_forward" => "फ़ॉरवर्ड बटन",
         "mouse_btn_other" => "माउस {n}",
+        "mouse_wheel_up" => "व्हील ऊपर",
+        "mouse_wheel_down" => "व्हील नीचे",
         "hotkey_press_a_key_or_mouse" => "कोई कुंजी या माउस बटन दबाएं…",
         "hotkey_mouse_terminal_only" => "मध्य बटन केवल टर्मिनल क्रियाओं से बाँधा जा सकता है",
+        "hotkey_wheel_terminal_only" => "व्हील केवल टर्मिनल क्रियाओं से बाँधा जा सकता है",
         "hotkey_conflict_unbound" => "{action} अब असाइन नहीं है",
         "hotkey_conflict_chord_removed" => "{action} ने वह शॉर्टकट खो दिया",
         "hotkey_scrollback_page_up" => "एक पृष्ठ ऊपर स्क्रॉल करें",
@@ -542,6 +544,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "टेक्स्ट चुनते ही कॉपी और राइट क्लिक से पेस्ट",
         "middle_click_paste" => "मिडल-क्लिक से पेस्ट",
+        "wheel_zoom" => "Ctrl + व्हील से ज़ूम",
+        "wheel_zoom_desc" => "Windows पर टचपैड का पिंच जेस्चर भी। ज़ूम केवल इसी सत्र के लिए है और ऊपर का आकार कभी नहीं बदलता; शॉर्टकट स्वयं शॉर्टकट में संपादित किया जा सकता है।",
+        "terminal_font_zoomed" => "इस सत्र में {n} पर ज़ूम किया गया",
         "terminal_right_click" => "राइट-क्लिक",
         "right_click_menu" => "कॉन्टेक्स्ट मेन्यू",
         "right_click_paste" => "पेस्ट",
@@ -796,7 +801,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "फ़ॉन्ट आकार बढ़ाएं",
         "font_zoom_out" => "फ़ॉन्ट आकार घटाएं",
         "font_zoom_reset" => "फ़ॉन्ट आकार रीसेट करें",
-        "font_zoom_wheel" => "फ़ॉन्ट आकार समायोजित करें",
         "keyboard_shortcuts" => "कीबोर्ड शॉर्टकट",
 
         // Session logs

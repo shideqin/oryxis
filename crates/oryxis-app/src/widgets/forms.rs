@@ -332,31 +332,7 @@ pub(crate) fn settings_row_nav<'a>(
         .into()
 }
 
-pub(crate) fn key_badge<'a>(label: &'a str) -> Element<'a, Message> {
-    container(text(label).size(11).color(OryxisColors::t().text_primary))
-        .padding(Padding { top: 3.0, right: 6.0, bottom: 3.0, left: 6.0 })
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_selected)),
-            border: Border { radius: Radius::from(4.0), ..Default::default() },
-            ..Default::default()
-        })
-        .into()
-}
 
-pub(crate) fn shortcut_row<'a>(keys: Vec<Element<'a, Message>>, action: &'a str) -> Element<'a, Message> {
-    // Pin the chip cluster to the row's leading edge inside its 200 px slot:
-    // LTR aligns left (keys first, gap before the label), RTL aligns right
-    // (label first, gap, then keys). dir_row handles the outer reversal,
-    // align_x keeps the chips snug against the slot's trailing edge under
-    // RTL so the gap sits between keys and label instead of bunching them.
-    let keys_box = container(Row::with_children(keys).spacing(4))
-        .width(200)
-        .align_x(dir_align_x());
-    dir_row(vec![
-        keys_box.into(),
-        text(action).size(13).color(OryxisColors::t().text_secondary).into(),
-    ]).align_y(iced::Alignment::Center).into()
-}
 
 /// Chrome for the right-side editor panels (host editor, key import /
 /// generate, identity, snippet, port-forward, cloud forms, ...):

@@ -252,7 +252,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "Stisknutím F11 ukončíte celou obrazovku",
         "hotkey_edit_hint" => "Kliknutím na zkratku ji změníte. Esc zruší.",
         "hotkey_reset_all" => "Obnovit vše na výchozí",
-        "hotkey_terminal_handled" => "Zpracovává widget terminálu (nelze upravit)",
         "hotkey_press_a_key" => "Stiskněte klávesu…",
         "hotkey_unbound" => "(nepřiřazeno)",
         "hotkey_reset" => "Obnovit",
@@ -261,8 +260,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "Tlačítko zpět",
         "mouse_btn_forward" => "Tlačítko vpřed",
         "mouse_btn_other" => "Myš {n}",
+        "mouse_wheel_up" => "Kolečko nahoru",
+        "mouse_wheel_down" => "Kolečko dolů",
         "hotkey_press_a_key_or_mouse" => "Stiskněte klávesu nebo tlačítko myši…",
         "hotkey_mouse_terminal_only" => "Prostřední tlačítko lze přiřadit jen akcím terminálu",
+        "hotkey_wheel_terminal_only" => "Kolečko lze přiřadit jen akcím terminálu",
         "hotkey_conflict_unbound" => "{action} je nyní bez zkratky",
         "hotkey_conflict_chord_removed" => "{action} přišel o tuto zkratku",
         "hotkey_scrollback_page_up" => "Posunout o stránku zpět",
@@ -542,6 +544,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "Výběr textu kopíruje a pravé kliknutí vkládá",
         "middle_click_paste" => "Prostřední tlačítko vkládá",
+        "wheel_zoom" => "Zoom pomocí Ctrl + kolečko",
+        "wheel_zoom_desc" => "Také gesto stažení prstů na touchpadu ve Windows. Zoom platí jen pro tuto relaci a nikdy nemění velikost výše; samotnou zkratku lze upravit ve Zkratkách.",
+        "terminal_font_zoomed" => "Přiblíženo na {n} v této relaci",
         "terminal_right_click" => "Pravé kliknutí",
         "right_click_menu" => "Kontextová nabídka",
         "right_click_paste" => "Vložit",
@@ -796,7 +801,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "Zvětšit velikost písma",
         "font_zoom_out" => "Zmenšit velikost písma",
         "font_zoom_reset" => "Obnovit velikost písma",
-        "font_zoom_wheel" => "Upravit velikost písma",
         "keyboard_shortcuts" => "Klávesové zkratky",
 
         // Session logs

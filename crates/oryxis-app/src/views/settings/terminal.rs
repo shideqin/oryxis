@@ -928,6 +928,40 @@ impl Oryxis {
                 ]).align_y(iced::Alignment::Center).into(),
             ),
         ];
+        // The stepper edits the PREFERENCE; the zoom chords add a
+        // session-only delta on top (`terminal_font_zoom`). When one is
+        // in effect the terminal is not drawing the number above, so
+        // say so here rather than let the row look wrong.
+        let font_size_block = if self.terminal_font_zoom != 0.0 {
+            font_size_block.push(Space::new().height(4)).push(
+                text(
+                    crate::i18n::t("terminal_font_zoomed")
+                        .replace("{n}", &format!("{:.0}", self.terminal_font_px())),
+                )
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            )
+        } else {
+            font_size_block
+        };
+        // Ctrl+wheel zoom (and the touchpad pinch Windows turns into
+        // it, #225). State comes from the binding table: the gesture IS
+        // the pair of Ctrl+wheel chords on the font zoom actions,
+        // editable in Settings > Shortcuts, and this toggle adds /
+        // removes them, the same shape as the middle-click paste toggle.
+        let font_size_block = font_size_block
+            .push(Space::new().height(10))
+            .push(self.nav_toggle_row(
+                crate::i18n::t("wheel_zoom"),
+                self.wheel_zoom_bound(),
+                Message::Settings(SettingsMessage::ToggleWheelZoom),
+            ))
+            .push(Space::new().height(4))
+            .push(
+                text(crate::i18n::t("wheel_zoom_desc"))
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+            );
 
         // Font picker. The list comes from a fontdb scan of
         // monospace families installed on the system (cached

@@ -252,7 +252,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "กด F11 เพื่อออกจากโหมดเต็มจอ",
         "hotkey_edit_hint" => "คลิกที่ทางลัดเพื่อเปลี่ยน กด Esc เพื่อยกเลิก",
         "hotkey_reset_all" => "รีเซ็ตทั้งหมดเป็นค่าเริ่มต้น",
-        "hotkey_terminal_handled" => "จัดการโดยวิดเจ็ตเทอร์มินัล (แก้ไขไม่ได้)",
         "hotkey_press_a_key" => "กดปุ่ม…",
         "hotkey_unbound" => "(ไม่ได้กำหนด)",
         "hotkey_reset" => "รีเซ็ต",
@@ -261,8 +260,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "ปุ่มย้อนกลับ",
         "mouse_btn_forward" => "ปุ่มไปข้างหน้า",
         "mouse_btn_other" => "เมาส์ {n}",
+        "mouse_wheel_up" => "ล้อเลื่อนขึ้น",
+        "mouse_wheel_down" => "ล้อเลื่อนลง",
         "hotkey_press_a_key_or_mouse" => "กดปุ่มคีย์บอร์ดหรือปุ่มเมาส์…",
         "hotkey_mouse_terminal_only" => "ปุ่มกลางผูกได้เฉพาะกับการทำงานของเทอร์มินัลเท่านั้น",
+        "hotkey_wheel_terminal_only" => "ล้อเลื่อนผูกได้เฉพาะกับการทำงานของเทอร์มินัลเท่านั้น",
         "hotkey_conflict_unbound" => "{action} ถูกยกเลิกการกำหนดแล้ว",
         "hotkey_conflict_chord_removed" => "{action} สูญเสียทางลัดนั้น",
         "hotkey_scrollback_page_up" => "เลื่อนขึ้นหนึ่งหน้า",
@@ -542,6 +544,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "เลือกข้อความเพื่อคัดลอก และคลิกขวาเพื่อวาง",
         "middle_click_paste" => "คลิกกลางเพื่อวาง",
+        "wheel_zoom" => "ซูมด้วย Ctrl + ล้อเลื่อน",
+        "wheel_zoom_desc" => "รวมถึงท่าทางบีบนิ้วบนทัชแพดใน Windows ด้วย การซูมมีผลเฉพาะเซสชันนี้และไม่เปลี่ยนขนาดด้านบน ส่วนคีย์ลัดเองแก้ไขได้ในหน้าทางลัด",
+        "terminal_font_zoomed" => "ซูมเป็น {n} สำหรับเซสชันนี้",
         "terminal_right_click" => "คลิกขวา",
         "right_click_menu" => "เมนูบริบท",
         "right_click_paste" => "วาง",
@@ -796,7 +801,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "เพิ่มขนาดฟอนต์",
         "font_zoom_out" => "ลดขนาดฟอนต์",
         "font_zoom_reset" => "รีเซ็ตขนาดฟอนต์",
-        "font_zoom_wheel" => "ปรับขนาดฟอนต์",
         "keyboard_shortcuts" => "ทางลัดแป้นพิมพ์",
 
         // Session logs

@@ -11,7 +11,7 @@ use iced::{Background, Border, Color, Element, Length, Padding};
 
 use oryxis_terminal::widget::TerminalView;
 
-use crate::app::{SettingsMessage, TerminalMessage, ZmodemMessage, AiMessage, Message, Oryxis};
+use crate::app::{TerminalMessage, ZmodemMessage, AiMessage, Message, Oryxis};
 use crate::i18n::t;
 use crate::state::TerminalTab;
 use crate::theme::OryxisColors;
@@ -495,37 +495,58 @@ impl Oryxis {
     }
 
     /// The user's MOUSE bindings for the terminal canvas (middle-click
-    /// paste out of the box).
+    /// paste and Ctrl+wheel zoom out of the box).
     ///
     /// Same contract as `terminal_chord_resolver`: the widget gets a
-    /// matcher, not a table, so `HotkeyBinding::match_mouse` stays the
-    /// single implementation.
+    /// matcher, not a table, so `HotkeyBinding::match_mouse` /
+    /// `match_wheel` stay the single implementation.
     ///
-    /// Which pairs belong here is `HotkeyAction::mouse_binding_owner`,
+    /// Which button pairs belong here is `HotkeyAction::mouse_binding_owner`,
     /// shared with `shortcuts::dispatch_mouse_binding` so the two can't
     /// both claim a press (it would fire twice) or both decline it.
     /// Declining here leaves the press uncaptured, which is exactly
-    /// what lets the global handler pick it up.
+    /// what lets the global handler pick it up. A wheel chord has no
+    /// second owner to share with: the canvas is the only surface that
+    /// reads the wheel, so every wheel chord is the widget's.
     pub(crate) fn terminal_mouse_resolver(&self) -> oryxis_terminal::widget::MouseResolver<Message> {
-        use crate::hotkeys::{HotkeyAction, HotkeyBinding, MouseButton};
-        use oryxis_terminal::widget::{MouseGesture, TerminalChordAction};
+        use crate::hotkeys::{HotkeyAction, HotkeyBinding, MouseButton, WheelDirection};
+        use oryxis_terminal::widget::{MouseGesture, MouseInput, TerminalChordAction};
         // Flattened at build time so the closure does one linear scan of
         // (usually) a single entry per press instead of walking the whole
         // action table.
         let bound: Vec<(HotkeyBinding, HotkeyAction)> = HotkeyAction::all()
             .iter()
             .filter_map(|a| self.hotkey_bindings.get(a).map(|binds| (*a, binds)))
-            .flat_map(|(a, binds)| binds.mouse_chords().map(move |b| (*b, a)))
+            .flat_map(|(a, binds)| {
+                binds.mouse_chords().chain(binds.wheel_chords()).map(move |b| (*b, a))
+            })
             .collect();
-        Box::new(move |button, mods| {
-            let button = MouseButton::from_iced(button)?;
-            let action = bound
-                .iter()
-                .find(|(b, _)| b.match_mouse(button, mods))
-                .map(|(_, a)| *a)?;
-            if action.mouse_binding_owner(button) != crate::hotkeys::MouseBindingOwner::Widget {
-                return None;
-            }
+        Box::new(move |input, mods| {
+            let action = match input {
+                MouseInput::Button(button) => {
+                    let button = MouseButton::from_iced(button)?;
+                    let action = bound
+                        .iter()
+                        .find(|(b, _)| b.match_mouse(button, mods))
+                        .map(|(_, a)| *a)?;
+                    if action.mouse_binding_owner(button)
+                        != crate::hotkeys::MouseBindingOwner::Widget
+                    {
+                        return None;
+                    }
+                    action
+                }
+                MouseInput::Wheel(direction) => {
+                    let direction = match direction {
+                        oryxis_terminal::widget::WheelDirection::Up => WheelDirection::Up,
+                        oryxis_terminal::widget::WheelDirection::Down => WheelDirection::Down,
+                    };
+                    bound
+                        .iter()
+                        .find(|(b, _)| b.match_wheel(direction, mods))
+                        .map(|(_, a)| *a)?
+                }
+            };
             // The split is `HotkeyAction::widget_dispatched`: those five
             // need canvas state, everything else is the app's to run.
             Some(match action {
@@ -565,7 +586,7 @@ impl Oryxis {
         let mut term_view = TerminalView::new(Arc::clone(&pane.terminal))
             .focused(is_focused)
             .with_bell_flash(pane.bell_flash)
-            .with_font_size(self.terminal_font_size)
+            .with_font_size(self.terminal_font_px())
             .with_font_name(&self.terminal_font_name)
             .with_font_weight(self.terminal_font_weight.font_weight())
             .with_text_dilation(self.terminal_text_thickness.px())
@@ -602,8 +623,6 @@ impl Oryxis {
             .with_mouse_reporting(!pane.quirks.disable_mouse_reporting)
             .with_word_delimiters(&self.prefs.word_delimiters)
             .with_resize_margins(resize_margins)
-            .on_font_size_increase(Message::Settings(SettingsMessage::TerminalFontSizeIncrease))
-            .on_font_size_decrease(Message::Settings(SettingsMessage::TerminalFontSizeDecrease))
             .on_paste_request(Message::Terminal(TerminalMessage::TerminalPasteFromClipboard))
             // Captures THIS pane's id so the paste can't land in another
             // pane if focus moves between the keystroke and the update.
@@ -692,7 +711,7 @@ impl Oryxis {
             term_canvas,
             is_focused,
             Arc::clone(&pane.terminal),
-            self.terminal_font_size,
+            self.terminal_font_px(),
             self.terminal_font_name.clone(),
             self.terminal_font_weight.font_weight(),
         );

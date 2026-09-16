@@ -252,7 +252,6 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "fullscreen_exit_hint" => "Press F11 to exit fullscreen",
         "hotkey_edit_hint" => "Click a shortcut to change it. Press Esc to cancel.",
         "hotkey_reset_all" => "Reset all to defaults",
-        "hotkey_terminal_handled" => "Handled by the terminal widget (not editable)",
         "hotkey_press_a_key" => "Press a key…",
         "hotkey_unbound" => "(unbound)",
         "hotkey_reset" => "Reset",
@@ -261,8 +260,11 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "mouse_btn_back" => "Mouse back",
         "mouse_btn_forward" => "Mouse forward",
         "mouse_btn_other" => "Mouse {n}",
+        "mouse_wheel_up" => "Wheel up",
+        "mouse_wheel_down" => "Wheel down",
         "hotkey_press_a_key_or_mouse" => "Press a key or mouse button…",
         "hotkey_mouse_terminal_only" => "The middle button can only be bound to terminal actions",
+        "hotkey_wheel_terminal_only" => "The wheel can only be bound to terminal actions",
         "hotkey_conflict_unbound" => "{action} is now unbound",
         "hotkey_conflict_chord_removed" => "{action} lost that shortcut",
         "hotkey_scrollback_page_up" => "Scroll back one page",
@@ -542,6 +544,9 @@ pub(super) fn lookup(key: &str) -> &'static str {
         // Settings toggles
         "copy_on_select" => "Select text to copy & Right click to paste",
         "middle_click_paste" => "Middle-click pastes",
+        "wheel_zoom" => "Zoom with Ctrl + wheel",
+        "wheel_zoom_desc" => "Also the touchpad pinch on Windows. A zoom lasts for this session and never changes the size above; the chord itself is editable in Shortcuts.",
+        "terminal_font_zoomed" => "Zoomed to {n} for this session",
         "terminal_right_click" => "Right-click",
         "right_click_menu" => "Context menu",
         "right_click_paste" => "Paste",
@@ -796,7 +801,6 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "font_zoom_in" => "Increase Font Size",
         "font_zoom_out" => "Decrease Font Size",
         "font_zoom_reset" => "Reset Font Size",
-        "font_zoom_wheel" => "Adjust Font Size",
         "keyboard_shortcuts" => "Keyboard Shortcuts",
 
         // Session logs

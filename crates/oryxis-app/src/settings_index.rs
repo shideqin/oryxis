@@ -151,6 +151,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Terminal, "sidebar_auto_open", "sidebar auto open connect show"),
     e(S::Terminal, "sidebar_default_tab", "sidebar default tab chat snippets files monitor history last opened"),
     e(S::Terminal, "terminal_font_size", "font size zoom text scale points"),
+    e(S::Terminal, "wheel_zoom", "ctrl wheel scroll zoom pinch touchpad trackpad mouse text size disable accidental"),
     e(S::Terminal, "terminal_font", "font family typeface monospace nerd pack download jetbrains cascadia caskaydia"),
     e(S::Terminal, "terminal_font_weight", "font weight bold medium semibold regular thin thick heavier stroke"),
     e(S::Terminal, "terminal_text_thickness", "text thickness stroke smoothing thin faint antialiasing sharpness contrast"),

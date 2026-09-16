@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use iced::keyboard::{self, Key, Modifiers};
 
-use super::{FamilyMatch, HotkeyAction, HotkeyBinding, MouseButton, PrimaryKey};
+use super::{FamilyMatch, HotkeyAction, HotkeyBinding, MouseButton, PrimaryKey, WheelDirection};
 
 /// Settings-table token for "the user deliberately unbound this
 /// action", as opposed to `""`, which means "no override, use the
@@ -143,6 +143,17 @@ impl HotkeyBindings {
     /// The mouse chords in this list, in display order.
     pub fn mouse_chords(&self) -> impl Iterator<Item = &HotkeyBinding> {
         self.0.iter().filter(|b| b.is_mouse())
+    }
+
+    /// Whether any chord in this list is the given wheel direction with
+    /// exactly these modifiers.
+    pub fn match_wheel(&self, direction: WheelDirection, modifiers: &Modifiers) -> bool {
+        self.0.iter().any(|b| b.match_wheel(direction, modifiers))
+    }
+
+    /// The wheel chords in this list, in display order.
+    pub fn wheel_chords(&self) -> impl Iterator<Item = &HotkeyBinding> {
+        self.0.iter().filter(|b| b.is_wheel())
     }
 
     /// `match_event`, restricted to the chords `accept` keeps.
@@ -353,8 +364,30 @@ pub fn default_bindings() -> HotkeyMap {
     put(&mut m, SwitchToTabSlot, primary_ctrl, false, false, primary_logo, Digit1to9);
     put(&mut m, CycleTabs, false, false, true, false, ArrowLeftRight);
     put(&mut m, ToggleFullscreen, false, false, false, false, Named(keyboard::key::Named::F11));
-    put(&mut m, FontZoomIn, primary_ctrl, false, false, primary_logo, Punct("="));
-    put(&mut m, FontZoomOut, primary_ctrl, false, false, primary_logo, Punct("-"));
+    // Font zoom: the key chord plus Ctrl+wheel in the matching
+    // direction, the gnome-terminal / Konsole / Windows Terminal
+    // gesture, and the one a Windows precision touchpad turns a pinch
+    // into. The wheel half is an ordinary chord in this list, so
+    // Settings > Terminal's "zoom with Ctrl + wheel" toggle is a
+    // shortcut for adding / removing exactly these two, the way the
+    // middle-click toggle is for paste-selection. Ctrl on macOS too:
+    // see `wheel_zoom_chord`.
+    put_many(
+        &mut m,
+        FontZoomIn,
+        &[
+            (primary_ctrl, false, false, primary_logo, Punct("=")),
+            (true, false, false, false, Wheel(WheelDirection::Up)),
+        ],
+    );
+    put_many(
+        &mut m,
+        FontZoomOut,
+        &[
+            (primary_ctrl, false, false, primary_logo, Punct("-")),
+            (true, false, false, false, Wheel(WheelDirection::Down)),
+        ],
+    );
     put(&mut m, FontZoomReset, primary_ctrl, false, false, primary_logo, Char('0'));
     // Terminal split panes. Ctrl+Shift (Cmd+Shift on macOS): Shift lifts
     // these out of the terminal control-sequence gate and the directional
@@ -696,11 +729,25 @@ mod tests {
             }
             assert_eq!(
                 action.accepts_mouse_button(MouseButton::Middle),
-                action.primary_editable() && action.terminal_only(),
+                action.primary_editable() && action.canvas_scoped(),
+                "{}",
+                action.id()
+            );
+            // The wheel follows the wheel click: both are only ever read
+            // over the canvas.
+            assert_eq!(
+                action.accepts_wheel(),
+                action.accepts_mouse_button(MouseButton::Middle),
                 "{}",
                 action.id()
             );
         }
+        // Font zoom is the one non-terminal-only trio the canvas gestures
+        // may carry: Ctrl+wheel zoom is what they exist for.
+        assert!(HotkeyAction::FontZoomIn.accepts_wheel());
+        assert!(HotkeyAction::FontZoomOut.accepts_wheel());
+        assert!(HotkeyAction::FontZoomReset.accepts_wheel());
+        assert!(!HotkeyAction::FontZoomIn.terminal_only());
         // A family action has no primary slot for a button at all.
         assert!(!HotkeyAction::SwitchToTabSlot.accepts_mouse());
         assert!(!HotkeyAction::SwitchToTabSlot.accepts_mouse_button(MouseButton::Back));
@@ -730,5 +777,41 @@ mod tests {
             }
         }
         assert_eq!(found, 1, "middle-click paste is the only factory gesture");
+    }
+
+    /// Every factory wheel chord sits on an action that accepts one,
+    /// `wheel_chords` sees exactly those, and `mouse_chords` sees none
+    /// of them (a wheel primary is not a button, and the resolver scans
+    /// the two lists separately).
+    #[test]
+    fn factory_wheel_chords_are_ctrl_wheel_zoom() {
+        let defaults = default_bindings();
+        let mut found = Vec::new();
+        for (action, binds) in defaults.iter() {
+            for chord in binds.wheel_chords() {
+                assert!(!chord.is_mouse());
+                assert!(chord.is_safe(), "{} ships an unrecordable wheel chord", action.id());
+                assert!(
+                    action.accepts_wheel(),
+                    "{} ships a wheel chord it can never fire",
+                    action.id()
+                );
+                found.push((*action, *chord));
+            }
+            assert!(binds.mouse_chords().all(|b| !b.is_wheel()));
+        }
+        found.sort_by_key(|(a, _)| a.id());
+        assert_eq!(
+            found,
+            vec![
+                (HotkeyAction::FontZoomIn, super::super::wheel_zoom_chord(WheelDirection::Up)),
+                (HotkeyAction::FontZoomOut, super::super::wheel_zoom_chord(WheelDirection::Down)),
+            ]
+        );
+        // The key chords are still there beside the wheel: the toggle
+        // removes the wheel half only.
+        let zoom_in = defaults.get(&HotkeyAction::FontZoomIn).expect("bound");
+        assert_eq!(zoom_in.len(), 2);
+        assert!(zoom_in.iter().any(|b| b.primary == PrimaryKey::Punct("=")));
     }
 }

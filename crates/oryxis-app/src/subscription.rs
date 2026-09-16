@@ -43,6 +43,14 @@ static MOUSE_INTEREST: std::sync::atomic::AtomicBool =
 // re-render per mouse move. The same sync doubles as the activity
 // signal: a position change since the previous message counts as user
 // input for the vault auto-lock idle clock.
+// Whether a Shortcuts capture is armed, mirrored from `editing_hotkey`
+// at the end of every `update()` the way `MOUSE_INTEREST` is. The
+// listener forwards wheel notches only while it is set: the editor
+// needs them to record a wheel chord, and nothing else in the app does,
+// so forwarding them unconditionally would rebuild the view on every
+// scroll anywhere in the window.
+static HOTKEY_CAPTURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 static LIVE_MOUSE_X: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 static LIVE_MOUSE_Y: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -50,6 +58,12 @@ static LIVE_MOUSE_Y: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32
 /// Called at the end of every `update()` pass.
 pub(crate) fn set_mouse_interest(on: bool) {
     MOUSE_INTEREST.store(on, Ordering::Relaxed);
+}
+
+/// Publish whether a Shortcuts capture is armed (wheel notches are
+/// forwarded while it is). Called next to `set_mouse_interest`.
+pub(crate) fn set_hotkey_capture(on: bool) {
+    HOTKEY_CAPTURE.store(on, Ordering::Relaxed);
 }
 
 /// The most recent cursor position seen by the event listener, whether
@@ -180,6 +194,22 @@ impl Oryxis {
                     if crate::hotkeys::MouseButton::from_iced(button).is_some() =>
                 {
                     Some(Message::Settings(SettingsMessage::MouseButtonPressed(button)))
+                }
+                // A wheel notch, only while the Shortcuts editor is
+                // recording (see `HOTKEY_CAPTURE`): that is the one
+                // consumer, and the wheel is otherwise the widgets' own.
+                // A bound wheel chord FIRES from the terminal canvas,
+                // never from here; the app has no window-wide wheel
+                // path, and a Ctrl+wheel over a list is that list's.
+                iced::event::Event::Mouse(iced::mouse::Event::WheelScrolled { delta })
+                    if HOTKEY_CAPTURE.load(Ordering::Relaxed) =>
+                {
+                    let y = match delta {
+                        iced::mouse::ScrollDelta::Lines { y, .. }
+                        | iced::mouse::ScrollDelta::Pixels { y, .. } => y,
+                    };
+                    crate::hotkeys::WheelDirection::from_delta_y(y)
+                        .map(|d| Message::Settings(SettingsMessage::WheelCaptured(d)))
                 }
                 iced::event::Event::Window(iced::window::Event::Resized(size)) => {
                     Some(Message::Tabs(TabsMessage::WindowResized(size)))

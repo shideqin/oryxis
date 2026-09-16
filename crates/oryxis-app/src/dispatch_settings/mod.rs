@@ -271,6 +271,7 @@ impl Oryxis {
             | SettingsMessage::ToggleCopyOnSelect
             | SettingsMessage::ToggleRightClickCopy
             | SettingsMessage::ToggleMiddleClickPaste
+            | SettingsMessage::ToggleWheelZoom
             | SettingsMessage::ToggleSftpAskDownloadDir
             | SettingsMessage::ToggleSftpUploadTempName
             | SettingsMessage::SftpConsoleLayoutChanged(..)
@@ -373,6 +374,7 @@ impl Oryxis {
             m @ (
             SettingsMessage::StartEditingHotkey(..)
             | SettingsMessage::MouseButtonPressed(..)
+            | SettingsMessage::WheelCaptured(..)
             | SettingsMessage::ResetHotkey(..)
             | SettingsMessage::ResetAllHotkeys
             | SettingsMessage::ToggleSecretVisibility(..)

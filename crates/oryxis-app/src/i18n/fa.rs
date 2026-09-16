@@ -249,7 +249,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "برای خروج از تمام‌صفحه F11 را فشار دهید",
         "hotkey_edit_hint" => "روی میانبر کلیک کنید تا تغییر یابد. Esc لغو می‌کند.",
         "hotkey_reset_all" => "بازنشانی به پیش‌فرض‌ها",
-        "hotkey_terminal_handled" => "توسط ابزارک ترمینال مدیریت می‌شود (قابل ویرایش نیست)",
         "hotkey_press_a_key" => "یک کلید فشار دهید…",
         "hotkey_unbound" => "(تخصیص داده نشده)",
         "hotkey_reset" => "بازنشانی",
@@ -258,8 +257,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "دکمه بازگشت",
         "mouse_btn_forward" => "دکمه جلو",
         "mouse_btn_other" => "ماوس {n}",
+        "mouse_wheel_up" => "چرخ به بالا",
+        "mouse_wheel_down" => "چرخ به پایین",
         "hotkey_press_a_key_or_mouse" => "یک کلید یا دکمه ماوس فشار دهید…",
         "hotkey_mouse_terminal_only" => "دکمه میانی فقط به کنش‌های پایانه قابل تخصیص است",
+        "hotkey_wheel_terminal_only" => "چرخ ماوس فقط به کنش‌های پایانه قابل تخصیص است",
         "hotkey_conflict_unbound" => "{action} اکنون بدون میانبر است",
         "hotkey_conflict_chord_removed" => "{action} این میان‌بر را از دست داد",
         "hotkey_scrollback_page_up" => "یک صفحه به بالا",
@@ -523,6 +525,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "انتخاب متن برای کپی و کلیک راست برای جای‌گذاری",
         "middle_click_paste" => "چسباندن با کلیک وسط",
+        "wheel_zoom" => "بزرگ‌نمایی با Ctrl + چرخ ماوس",
+        "wheel_zoom_desc" => "همچنین حرکت نیشگون تاچ‌پد در ویندوز. بزرگ‌نمایی فقط برای این نشست است و اندازهٔ بالا را تغییر نمی‌دهد؛ خود میان‌بر در بخش میانبرها قابل ویرایش است.",
+        "terminal_font_zoomed" => "در این نشست به {n} بزرگ‌نمایی شده",
         "terminal_right_click" => "کلیک راست",
         "right_click_menu" => "منوی زمینه",
         "right_click_paste" => "چسباندن",
@@ -795,7 +800,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "بزرگ‌تر کردن فونت",
         "font_zoom_out" => "کوچک‌تر کردن فونت",
         "font_zoom_reset" => "بازنشانی فونت",
-        "font_zoom_wheel" => "تنظیم اندازه فونت",
         "keyboard_shortcuts" => "میانبرهای صفحه‌کلید",
 
         // Session logs

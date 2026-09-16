@@ -14,7 +14,7 @@ pub(crate) use crate::i18n::t;
 pub(crate) use crate::state::SettingsSection;
 pub(crate) use crate::theme::OryxisColors;
 pub(crate) use crate::widgets::{
-    dir_align_x, dir_row, key_badge, panel_field, panel_section, settings_row, shortcut_row,
+    dir_align_x, dir_row, panel_field, panel_section, settings_row,
     styled_button, styled_button_opt,
 };
 

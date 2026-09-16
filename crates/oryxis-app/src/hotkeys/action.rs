@@ -405,12 +405,31 @@ impl HotkeyAction {
     ///
     /// Side buttons are free window-wide (see
     /// [`MouseButton::is_side_button`]), so they carry any action. The
-    /// wheel click is only ever read inside the terminal canvas, so an
-    /// action that never fires there could not fire from one either:
-    /// `terminal_only` IS that set, which is why this derives from it
-    /// rather than listing actions twice.
+    /// wheel click is only ever read inside the terminal canvas, so it
+    /// stays on the actions that belong there (`canvas_scoped`).
     pub fn accepts_mouse_button(self, button: MouseButton) -> bool {
-        self.accepts_mouse() && (button.is_side_button() || self.terminal_only())
+        self.accepts_mouse() && (button.is_side_button() || self.canvas_scoped())
+    }
+
+    /// Whether a wheel direction may be bound to this action.
+    ///
+    /// The wheel is only ever read over the terminal canvas (the app has
+    /// no window-wide wheel path, and must not grow one: a Ctrl+wheel
+    /// over a list is that list's), so it takes the same set as the
+    /// wheel click.
+    pub fn accepts_wheel(self) -> bool {
+        self.accepts_mouse() && self.canvas_scoped()
+    }
+
+    /// The actions a gesture that exists ONLY over the terminal canvas
+    /// (the wheel click, the wheel) may carry: the terminal-only set,
+    /// plus the font zoom trio, which fires anywhere by key (the
+    /// Settings preview follows it) but is what the canvas's own
+    /// gestures are for. An action outside this set bound to such a
+    /// gesture would read as a dead binding on every other screen.
+    pub fn canvas_scoped(self) -> bool {
+        self.terminal_only()
+            || matches!(self, Self::FontZoomIn | Self::FontZoomOut | Self::FontZoomReset)
     }
 
     /// Which layer runs a mouse binding on this action.

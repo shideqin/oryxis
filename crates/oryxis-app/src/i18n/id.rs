@@ -249,7 +249,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "Tekan F11 untuk keluar dari layar penuh",
         "hotkey_edit_hint" => "Klik pintasan untuk mengubahnya. Tekan Esc untuk membatalkan.",
         "hotkey_reset_all" => "Atur ulang semua ke default",
-        "hotkey_terminal_handled" => "Ditangani oleh widget terminal (tidak bisa diedit)",
         "hotkey_press_a_key" => "Tekan sebuah tombol…",
         "hotkey_unbound" => "(tidak terikat)",
         "hotkey_reset" => "Atur ulang",
@@ -258,8 +257,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "Tombol mundur",
         "mouse_btn_forward" => "Tombol maju",
         "mouse_btn_other" => "Mouse {n}",
+        "mouse_wheel_up" => "Roda ke atas",
+        "mouse_wheel_down" => "Roda ke bawah",
         "hotkey_press_a_key_or_mouse" => "Tekan tombol keyboard atau mouse…",
         "hotkey_mouse_terminal_only" => "Tombol tengah hanya bisa ditetapkan ke aksi terminal",
+        "hotkey_wheel_terminal_only" => "Roda hanya bisa ditetapkan ke aksi terminal",
         "hotkey_conflict_unbound" => "{action} kini tidak terikat",
         "hotkey_conflict_chord_removed" => "{action} kehilangan pintasan itu",
         "hotkey_scrollback_page_up" => "Gulir mundur satu halaman",
@@ -523,6 +525,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "Pilih teks untuk menyalin & klik kanan untuk menempel",
         "middle_click_paste" => "Tempel dengan klik tengah",
+        "wheel_zoom" => "Zoom dengan Ctrl + roda",
+        "wheel_zoom_desc" => "Termasuk gerakan cubit touchpad di Windows. Zoom hanya berlaku untuk sesi ini dan tidak pernah mengubah ukuran di atas; pintasannya sendiri bisa diedit di Pintasan.",
+        "terminal_font_zoomed" => "Di-zoom ke {n} untuk sesi ini",
         "terminal_right_click" => "Klik kanan",
         "right_click_menu" => "Menu konteks",
         "right_click_paste" => "Tempel",
@@ -793,7 +798,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "Perbesar Ukuran Font",
         "font_zoom_out" => "Perkecil Ukuran Font",
         "font_zoom_reset" => "Atur Ulang Ukuran Font",
-        "font_zoom_wheel" => "Sesuaikan Ukuran Font",
         "keyboard_shortcuts" => "Pintasan Keyboard",
 
         // Session logs

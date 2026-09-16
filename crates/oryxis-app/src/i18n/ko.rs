@@ -249,7 +249,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "F11을 눌러 전체 화면을 종료하세요",
         "hotkey_edit_hint" => "단축키를 클릭하여 변경하세요. Esc를 눌러 취소합니다.",
         "hotkey_reset_all" => "모두 기본값으로 재설정",
-        "hotkey_terminal_handled" => "터미널 위젯이 처리함 (편집 불가)",
         "hotkey_press_a_key" => "키를 누르세요…",
         "hotkey_unbound" => "(미할당)",
         "hotkey_reset" => "재설정",
@@ -258,8 +257,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "뒤로 버튼",
         "mouse_btn_forward" => "앞으로 버튼",
         "mouse_btn_other" => "마우스 {n}",
+        "mouse_wheel_up" => "휠 위로",
+        "mouse_wheel_down" => "휠 아래로",
         "hotkey_press_a_key_or_mouse" => "키 또는 마우스 버튼을 누르세요…",
         "hotkey_mouse_terminal_only" => "가운데 버튼은 터미널 동작에만 지정할 수 있습니다",
+        "hotkey_wheel_terminal_only" => "휠은 터미널 동작에만 지정할 수 있습니다",
         "hotkey_conflict_unbound" => "{action}이(가) 이제 미할당 상태입니다",
         "hotkey_conflict_chord_removed" => "{action}이(가) 해당 단축키를 잃었습니다",
         "hotkey_scrollback_page_up" => "한 페이지 위로 스크롤",
@@ -523,6 +525,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "텍스트를 선택하여 복사하고 우클릭하여 붙여넣기",
         "middle_click_paste" => "가운데 클릭으로 붙여넣기",
+        "wheel_zoom" => "Ctrl + 휠로 확대/축소",
+        "wheel_zoom_desc" => "Windows 터치패드의 핀치 제스처도 포함됩니다. 확대/축소는 이 세션에만 적용되며 위의 크기는 바꾸지 않습니다. 단축키 자체는 단축키 설정에서 편집할 수 있습니다.",
+        "terminal_font_zoomed" => "이 세션에서 {n}(으)로 확대/축소됨",
         "terminal_right_click" => "오른쪽 클릭",
         "right_click_menu" => "컨텍스트 메뉴",
         "right_click_paste" => "붙여넣기",
@@ -793,7 +798,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "글꼴 크기 늘리기",
         "font_zoom_out" => "글꼴 크기 줄이기",
         "font_zoom_reset" => "글꼴 크기 재설정",
-        "font_zoom_wheel" => "글꼴 크기 조정",
         "keyboard_shortcuts" => "키보드 단축키",
 
         // Session logs

@@ -249,7 +249,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "fullscreen_exit_hint" => "Naciśnij F11, aby wyjść z trybu pełnoekranowego",
         "hotkey_edit_hint" => "Kliknij skrót, aby go zmienić. Naciśnij Esc, aby anulować.",
         "hotkey_reset_all" => "Przywróć wszystkie domyślne",
-        "hotkey_terminal_handled" => "Obsługiwane przez widżet terminala (nieedytowalne)",
         "hotkey_press_a_key" => "Naciśnij klawisz…",
         "hotkey_unbound" => "(nieprzypisane)",
         "hotkey_reset" => "Resetuj",
@@ -258,8 +257,11 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mouse_btn_back" => "Przycisk wstecz",
         "mouse_btn_forward" => "Przycisk dalej",
         "mouse_btn_other" => "Mysz {n}",
+        "mouse_wheel_up" => "Kółko w górę",
+        "mouse_wheel_down" => "Kółko w dół",
         "hotkey_press_a_key_or_mouse" => "Naciśnij klawisz lub przycisk myszy…",
         "hotkey_mouse_terminal_only" => "Środkowy przycisk można przypisać tylko do akcji terminala",
+        "hotkey_wheel_terminal_only" => "Kółko można przypisać tylko do akcji terminala",
         "hotkey_conflict_unbound" => "{action} jest teraz nieprzypisane",
         "hotkey_conflict_chord_removed" => "{action} utracił ten skrót",
         "hotkey_scrollback_page_up" => "Przewiń o stronę w górę",
@@ -523,6 +525,9 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Settings toggles
         "copy_on_select" => "Zaznacz tekst, aby skopiować, kliknij prawym, aby wkleić",
         "middle_click_paste" => "Wklejanie środkowym przyciskiem",
+        "wheel_zoom" => "Powiększanie Ctrl + kółko",
+        "wheel_zoom_desc" => "Także gest uszczypnięcia na touchpadzie w Windows. Powiększenie obowiązuje tylko w tej sesji i nigdy nie zmienia rozmiaru powyżej; sam skrót można edytować w Skrótach.",
+        "terminal_font_zoomed" => "Powiększono do {n} w tej sesji",
         "terminal_right_click" => "Prawy przycisk",
         "right_click_menu" => "Menu kontekstowe",
         "right_click_paste" => "Wklej",
@@ -798,7 +803,6 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "font_zoom_in" => "Zwiększ rozmiar czcionki",
         "font_zoom_out" => "Zmniejsz rozmiar czcionki",
         "font_zoom_reset" => "Resetuj rozmiar czcionki",
-        "font_zoom_wheel" => "Dostosuj rozmiar czcionki",
         "keyboard_shortcuts" => "Skróty klawiszowe",
 
         // Session logs
