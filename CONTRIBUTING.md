@@ -19,6 +19,8 @@ that ships small and often; the guidelines below keep reviews fast.
   and replies in English or Chinese as able. Code, commit messages and
   code comments remain English.
 - **Security issues:** never a public issue, see [SECURITY.md](SECURITY.md).
+- **Conduct:** issues, discussions and reviews follow the
+  [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development setup
 

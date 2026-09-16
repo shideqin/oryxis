@@ -29,6 +29,7 @@ site
 !/SELF_HOSTING.md
 !/SECURITY.md
 !/CONTRIBUTING.md
+!/CODE_OF_CONDUCT.md
 
 # Local app run logs (debug launches)
 nohup.out
