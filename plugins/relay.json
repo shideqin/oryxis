@@ -1,0 +1,30 @@
+{
+  "provider_id": "relay",
+  "versions": [
+    {
+      "version": "0.1.1",
+      "protocol_versions": [
+        1
+      ],
+      "min_app": "0.18.0",
+      "binaries": [
+        {
+          "os": "linux",
+          "arch": "aarch64",
+          "url": "https://github.com/wilsonglasser/oryxis/releases/download/relay-v0.1.1/oryxis-relay-linux-aarch64",
+          "sha256": "b36b1d1d3502534cbd48510df443e57e5b359fd45c31270ba1ec79c8abe0fb89",
+          "signature": "lFUAChIso+TLVHUBU+t9rBJcN9zl7sQdbqGkBmz+WUbx+ngkwrA+KTZUSbKpxk6nsLQh6Dkb3P0lJ7YUkaiwBg==",
+          "size": 2758632
+        },
+        {
+          "os": "linux",
+          "arch": "x86_64",
+          "url": "https://github.com/wilsonglasser/oryxis/releases/download/relay-v0.1.1/oryxis-relay-linux-x86_64",
+          "sha256": "df41296d9fc27c657fa948e74987f229b18bcdcdf39ff1d6695a94cf746375f0",
+          "signature": "G4abjx+Dthh3QGEuvsOqZ6MOVo56hp8843WNLm23WIHGLu9qIZP6SxK3qVTMuatYyYrnBX43cVNA6tBMEsW4CQ==",
+          "size": 3103232
+        }
+      ]
+    }
+  ]
+}
