@@ -209,8 +209,8 @@ jobs:
           make_latest: false
           files: dist/*
 
-  manifest:
-    name: Publish manifest
+  relay-manifest:
+    name: Publish relay.json
     runs-on: ubuntu-latest
     needs: binary
     permissions:
@@ -337,11 +337,11 @@ jobs:
   # Sync the published assets + API snapshots to the download mirror
   # (dl.oryxis.app / dl-cn.oryxis.app), the Auto fallback for networks
   # where GitHub is blocked (mainland China). Layout contract lives in
-  # publish-mirror.yml and net_mirror.rs. After the manifest job, so the
-  # mirror's catalog copy finds `relay.json` among the assets.
+  # publish-mirror.yml and net_mirror.rs. After the relay.json job, so
+  # the mirror's catalog copy finds the manifest among the assets.
   mirror:
     name: Publish to download mirror
-    needs: [manifest]
+    needs: [relay-manifest]
     uses: ./.github/workflows/publish-mirror.yml
     with:
       tag: ${{ github.ref_name }}
