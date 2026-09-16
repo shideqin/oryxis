@@ -882,4 +882,4 @@ the app's own actions sit on `Ctrl+Shift`.
 | `Ctrl+N` | New host |
 | `Ctrl+F` | Search the current view / terminal scrollback |
 | `Ctrl+,` | Settings |
-| `Ctrl+= / Ctrl+- / Ctrl+0` | Zoom the terminal font for the session (also `Ctrl+Wheel`, a chord of its own with a switch beside the font size) |
+| `Ctrl+= / Ctrl+- / Ctrl+0` | Zoom the terminal font for the session (also `Ctrl+Wheel` and the touchpad pinch, one chord of its own with a switch beside the font size) |

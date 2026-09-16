@@ -546,6 +546,27 @@ impl Oryxis {
                         .find(|(b, _)| b.match_wheel(direction, mods))
                         .map(|(_, a)| *a)?
                 }
+                // A pinch step IS a Ctrl+wheel notch: that is what
+                // Windows delivers for one before any window sees it,
+                // and answering the native gesture (macOS, Wayland) the
+                // same way is what lets one toggle, one Shortcuts row
+                // and one rebind cover it everywhere. Spreading the
+                // fingers is wheel up (zoom in). The modifiers are
+                // SYNTHESIZED, exactly Ctrl and nothing held: a hand
+                // resting on Shift or Cmd while pinching must still
+                // land on the chord, and matching is modifier-exact.
+                MouseInput::Pinch(direction) => {
+                    let direction = match direction {
+                        oryxis_terminal::widget::PinchDirection::Out => WheelDirection::Up,
+                        oryxis_terminal::widget::PinchDirection::In => WheelDirection::Down,
+                    };
+                    let mut ctrl = iced::keyboard::Modifiers::default();
+                    ctrl.set(iced::keyboard::Modifiers::CTRL, true);
+                    bound
+                        .iter()
+                        .find(|(b, _)| b.match_wheel(direction, &ctrl))
+                        .map(|(_, a)| *a)?
+                }
             };
             // The split is `HotkeyAction::widget_dispatched`: those five
             // need canvas state, everything else is the app's to run.

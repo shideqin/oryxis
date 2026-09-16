@@ -525,7 +525,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "Seleccionar texto para copiar y clic derecho para pegar",
         "middle_click_paste" => "Pegar con el botón central",
         "wheel_zoom" => "Zoom con Ctrl + rueda",
-        "wheel_zoom_desc" => "También el gesto de pellizco del touchpad en Windows. El zoom dura solo esta sesión y nunca cambia el tamaño de arriba; el atajo en sí se edita en Atajos.",
+        "wheel_zoom_desc" => "También el gesto de pellizco del touchpad. El zoom dura solo esta sesión y nunca cambia el tamaño de arriba; el atajo en sí se edita en Atajos.",
         "terminal_font_zoomed" => "Con zoom a {n} en esta sesión",
         "terminal_right_click" => "Clic derecho",
         "right_click_menu" => "Menú contextual",

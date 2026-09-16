@@ -545,7 +545,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "Výběr textu kopíruje a pravé kliknutí vkládá",
         "middle_click_paste" => "Prostřední tlačítko vkládá",
         "wheel_zoom" => "Zoom pomocí Ctrl + kolečko",
-        "wheel_zoom_desc" => "Také gesto stažení prstů na touchpadu ve Windows. Zoom platí jen pro tuto relaci a nikdy nemění velikost výše; samotnou zkratku lze upravit ve Zkratkách.",
+        "wheel_zoom_desc" => "Také gesto stažení prstů na touchpadu. Zoom platí jen pro tuto relaci a nikdy nemění velikost výše; samotnou zkratku lze upravit ve Zkratkách.",
         "terminal_font_zoomed" => "Přiblíženo na {n} v této relaci",
         "terminal_right_click" => "Pravé kliknutí",
         "right_click_menu" => "Kontextová nabídka",

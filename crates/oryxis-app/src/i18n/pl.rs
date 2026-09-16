@@ -526,7 +526,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "Zaznacz tekst, aby skopiować, kliknij prawym, aby wkleić",
         "middle_click_paste" => "Wklejanie środkowym przyciskiem",
         "wheel_zoom" => "Powiększanie Ctrl + kółko",
-        "wheel_zoom_desc" => "Także gest uszczypnięcia na touchpadzie w Windows. Powiększenie obowiązuje tylko w tej sesji i nigdy nie zmienia rozmiaru powyżej; sam skrót można edytować w Skrótach.",
+        "wheel_zoom_desc" => "Także gest uszczypnięcia na touchpadzie. Powiększenie obowiązuje tylko w tej sesji i nigdy nie zmienia rozmiaru powyżej; sam skrót można edytować w Skrótach.",
         "terminal_font_zoomed" => "Powiększono do {n} w tej sesji",
         "terminal_right_click" => "Prawy przycisk",
         "right_click_menu" => "Menu kontekstowe",

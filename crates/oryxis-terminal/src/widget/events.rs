@@ -544,6 +544,21 @@ where
             return Some(action);
         }
 
+        // A touchpad pinch, on the platforms that deliver one as a
+        // gesture (macOS, Wayland). Same place as the wheel chord, for
+        // the same reason, and with no yield question at all: no TUI
+        // ever receives a pinch. The cursor gate is what "over this
+        // pane" means for a gesture with no position of its own: AppKit
+        // refreshes the pointer before it queues a pinch, Wayland does
+        // not, so there the cursor is wherever the last pointer event
+        // left it.
+        if let iced::Event::Mouse(mouse::Event::Pinched { delta, phase }) = event
+            && cursor.position_in(bounds).is_some()
+            && let Some(action) = self.on_pinch(widget_state, *delta, *phase)
+        {
+            return Some(action);
+        }
+
         // When the remote app has mouse tracking on (tmux `mouse on`,
         // vim `mouse=a`, htop, ...) pointer events are reported to it
         // instead of driving local selection / scrollback. We snapshot
@@ -1572,6 +1587,61 @@ where
         if notches == 0 {
             return Some(CanvasAction::capture());
         }
+        self.perform_mouse_gesture(gesture, widget_state)
+    }
+
+    /// One step of magnification, as a fraction of "the picture doubled"
+    /// (what both AppKit's `magnification` and Wayland's pinch `scale`
+    /// report). At the default 14 px a step is one point, so a pinch
+    /// that reads as doubling walks the ten steps from 14 to the top of
+    /// the range. CHOSEN, not measured: no pinch has been run against
+    /// this constant on hardware yet, and how far a comfortable pinch
+    /// travels is exactly what a Mac in hand would settle. Re-measure
+    /// before trusting it.
+    pub const PINCH_STEP: f32 = 0.1;
+
+    /// A touchpad pinch over the canvas, against the user's wheel chords:
+    /// a whole step is answered as the Ctrl+wheel chord in that
+    /// direction, which is what Windows makes of a pinch before any
+    /// window sees it, so the toggle, the Shortcuts row and a rebind
+    /// cover the gesture on every platform with one rule.
+    ///
+    /// `None` when the chord is unbound: nothing else reads a pinch
+    /// today, and declining leaves the input for whatever might later.
+    /// The phase events are consumed and reset the residual, so no
+    /// fraction of one gesture leaks into the next; a move that only
+    /// grew the residual is consumed too, the input was spoken for.
+    fn on_pinch(
+        &self,
+        widget_state: &mut TerminalWidgetState,
+        delta: f32,
+        phase: mouse::GesturePhase,
+    ) -> Option<CanvasAction<Message>> {
+        let resolver = self.mouse_bindings.as_ref()?;
+        if phase != mouse::GesturePhase::Moved {
+            widget_state.pinch_residual.set(0.0);
+            return Some(CanvasAction::capture());
+        }
+        let prev = widget_state.pinch_residual.get();
+        // Same reversal rule as `whole_notches`: a pinch that changes
+        // direction responds at once instead of paying off the stale
+        // remainder first.
+        let acc = if prev != 0.0 && delta != 0.0 && prev.signum() != delta.signum() {
+            delta
+        } else {
+            prev + delta
+        };
+        let steps = (acc / Self::PINCH_STEP).trunc();
+        widget_state.pinch_residual.set(acc - steps * Self::PINCH_STEP);
+        if steps == 0.0 {
+            return Some(CanvasAction::capture());
+        }
+        let direction = if steps > 0.0 {
+            PinchDirection::Out
+        } else {
+            PinchDirection::In
+        };
+        let gesture = resolver(MouseInput::Pinch(direction), &widget_state.modifiers)?;
         self.perform_mouse_gesture(gesture, widget_state)
     }
 

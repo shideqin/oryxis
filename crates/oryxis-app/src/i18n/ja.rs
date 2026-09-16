@@ -525,7 +525,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "テキスト選択でコピー、右クリックでペースト",
         "middle_click_paste" => "中クリックで貼り付け",
         "wheel_zoom" => "Ctrl + ホイールでズーム",
-        "wheel_zoom_desc" => "Windows のタッチパッドのピンチ操作も含みます。ズームはこのセッション中だけ有効で、上のサイズは変更しません。組み合わせ自体はショートカットで編集できます。",
+        "wheel_zoom_desc" => "タッチパッドのピンチ操作も含みます。ズームはこのセッション中だけ有効で、上のサイズは変更しません。組み合わせ自体はショートカットで編集できます。",
         "terminal_font_zoomed" => "このセッションでは {n} にズーム中",
         "terminal_right_click" => "右クリック",
         "right_click_menu" => "コンテキストメニュー",

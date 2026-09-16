@@ -526,7 +526,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "Pilih teks untuk menyalin & klik kanan untuk menempel",
         "middle_click_paste" => "Tempel dengan klik tengah",
         "wheel_zoom" => "Zoom dengan Ctrl + roda",
-        "wheel_zoom_desc" => "Termasuk gerakan cubit touchpad di Windows. Zoom hanya berlaku untuk sesi ini dan tidak pernah mengubah ukuran di atas; pintasannya sendiri bisa diedit di Pintasan.",
+        "wheel_zoom_desc" => "Termasuk gerakan cubit touchpad. Zoom hanya berlaku untuk sesi ini dan tidak pernah mengubah ukuran di atas; pintasannya sendiri bisa diedit di Pintasan.",
         "terminal_font_zoomed" => "Di-zoom ke {n} untuk sesi ini",
         "terminal_right_click" => "Klik kanan",
         "right_click_menu" => "Menu konteks",

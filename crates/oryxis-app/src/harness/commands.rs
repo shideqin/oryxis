@@ -16,7 +16,7 @@ use super::{Pump, RunOutcome, Session, format_text_entry, parse_quoted};
 
 pub(super) const HELP: &str = "\
 instructions: click [right] \"Text\"|#id|(x, y) / press / release / move <target>
-              scroll [pixels] (dx, dy) [<target>] / type \"text\"
+              scroll [pixels] (dx, dy) [<target>] / pinch <delta> [<target>] / type \"text\"
               type enter|escape|tab|backspace / type ctrl+k / type ctrl+shift+f
               press enter / release tab / expect \"Text\"
 harness:      screenshot [name] / texts / find \"Text\" / absent \"Text\" (assert)

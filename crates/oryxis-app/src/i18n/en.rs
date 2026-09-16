@@ -545,7 +545,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "copy_on_select" => "Select text to copy & Right click to paste",
         "middle_click_paste" => "Middle-click pastes",
         "wheel_zoom" => "Zoom with Ctrl + wheel",
-        "wheel_zoom_desc" => "Also the touchpad pinch on Windows. A zoom lasts for this session and never changes the size above; the chord itself is editable in Shortcuts.",
+        "wheel_zoom_desc" => "Also the touchpad pinch. A zoom lasts for this session and never changes the size above; the chord itself is editable in Shortcuts.",
         "terminal_font_zoomed" => "Zoomed to {n} for this session",
         "terminal_right_click" => "Right-click",
         "right_click_menu" => "Context menu",

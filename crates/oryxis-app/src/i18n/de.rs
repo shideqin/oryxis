@@ -525,7 +525,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "Text auswählen zum Kopieren & Rechtsklick zum Einfügen",
         "middle_click_paste" => "Einfügen per Mittelklick",
         "wheel_zoom" => "Zoom mit Strg + Mausrad",
-        "wheel_zoom_desc" => "Auch die Zwei-Finger-Geste des Touchpads unter Windows. Der Zoom gilt nur für diese Sitzung und ändert nie die Größe oben; die Tastenkombination selbst ist unter Tastenkürzel änderbar.",
+        "wheel_zoom_desc" => "Auch die Zwei-Finger-Geste des Touchpads. Der Zoom gilt nur für diese Sitzung und ändert nie die Größe oben; die Tastenkombination selbst ist unter Tastenkürzel änderbar.",
         "terminal_font_zoomed" => "Für diese Sitzung auf {n} gezoomt",
         "terminal_right_click" => "Rechtsklick",
         "right_click_menu" => "Kontextmenü",

@@ -526,7 +526,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "Chọn văn bản để chép và nhấp chuột phải để dán",
         "middle_click_paste" => "Dán bằng nút chuột giữa",
         "wheel_zoom" => "Thu phóng bằng Ctrl + con lăn",
-        "wheel_zoom_desc" => "Kể cả thao tác chụm ngón trên touchpad ở Windows. Thu phóng chỉ áp dụng cho phiên này và không bao giờ thay đổi cỡ chữ ở trên; bản thân phím tắt có thể sửa trong Phím tắt.",
+        "wheel_zoom_desc" => "Kể cả thao tác chụm ngón trên touchpad. Thu phóng chỉ áp dụng cho phiên này và không bao giờ thay đổi cỡ chữ ở trên; bản thân phím tắt có thể sửa trong Phím tắt.",
         "terminal_font_zoomed" => "Đã thu phóng đến {n} trong phiên này",
         "terminal_right_click" => "Chuột phải",
         "right_click_menu" => "Menu ngữ cảnh",

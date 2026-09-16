@@ -295,9 +295,7 @@ tracks it interactively.
 - **Storage browser plugins:** S3-compatible, SMB, and Chinese-cloud
   object storage (Huawei OBS / Tencent COS / Alibaba OSS) browsing as
   optional plugins on the existing signed-plugin pipeline.
-- **Native touchpad gestures:** pinch to zoom the terminal font on
-  macOS and Wayland, where the gesture never reaches the app today, on
-  the same shortcut the Ctrl + wheel zoom already uses.
+
 
 ## Building from source
 

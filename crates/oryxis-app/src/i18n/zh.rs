@@ -525,7 +525,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "选中文本自动复制，右键粘贴",
         "middle_click_paste" => "中键粘贴",
         "wheel_zoom" => "Ctrl + 滚轮缩放",
-        "wheel_zoom_desc" => "也包括 Windows 触控板的捏合手势。缩放仅在本次会话内有效，不会更改上面的字号；快捷键本身可在“快捷键”中编辑。",
+        "wheel_zoom_desc" => "也包括触控板的捏合手势。缩放仅在本次会话内有效，不会更改上面的字号；快捷键本身可在“快捷键”中编辑。",
         "terminal_font_zoomed" => "本次会话已缩放至 {n}",
         "terminal_right_click" => "右键单击",
         "right_click_menu" => "上下文菜单",

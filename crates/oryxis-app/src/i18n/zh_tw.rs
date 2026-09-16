@@ -525,7 +525,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "選取文字自動複製，右鍵貼上",
         "middle_click_paste" => "中鍵貼上",
         "wheel_zoom" => "Ctrl + 滾輪縮放",
-        "wheel_zoom_desc" => "也包括 Windows 觸控板的捏合手勢。縮放僅在本次工作階段內有效，不會更改上方的字級；快速鍵本身可在「快速鍵」中編輯。",
+        "wheel_zoom_desc" => "也包括觸控板的捏合手勢。縮放僅在本次工作階段內有效，不會更改上方的字級；快速鍵本身可在「快速鍵」中編輯。",
         "terminal_font_zoomed" => "本次工作階段已縮放至 {n}",
         "terminal_right_click" => "按一下右鍵",
         "right_click_menu" => "右鍵選單",

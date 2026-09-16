@@ -526,7 +526,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "텍스트를 선택하여 복사하고 우클릭하여 붙여넣기",
         "middle_click_paste" => "가운데 클릭으로 붙여넣기",
         "wheel_zoom" => "Ctrl + 휠로 확대/축소",
-        "wheel_zoom_desc" => "Windows 터치패드의 핀치 제스처도 포함됩니다. 확대/축소는 이 세션에만 적용되며 위의 크기는 바꾸지 않습니다. 단축키 자체는 단축키 설정에서 편집할 수 있습니다.",
+        "wheel_zoom_desc" => "터치패드의 핀치 제스처도 포함됩니다. 확대/축소는 이 세션에만 적용되며 위의 크기는 바꾸지 않습니다. 단축키 자체는 단축키 설정에서 편집할 수 있습니다.",
         "terminal_font_zoomed" => "이 세션에서 {n}(으)로 확대/축소됨",
         "terminal_right_click" => "오른쪽 클릭",
         "right_click_menu" => "컨텍스트 메뉴",

@@ -11,7 +11,8 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - Settings > Sync installs the relay for you: pick a host from the vault, Oryxis connects over SSH, installs the signed `oryxis-relay` as a systemd service (TLS via Caddy optional) and adopts the endpoint, after showing every command it will run.
 
 ### Changed
-- Ctrl + wheel zoom is a shortcut like any other: editable or removable in Settings > Shortcuts, with a "Zoom with Ctrl + wheel" switch beside the terminal font size for the touchpad pinch Windows turns into it (#225, requested by @411A).
+- Ctrl + wheel zoom is a shortcut like any other: editable or removable in Settings > Shortcuts, with a "Zoom with Ctrl + wheel" switch beside the terminal font size (#225, requested by @411A).
+- A touchpad pinch zooms the terminal font on macOS and Wayland too, as the same shortcut, so the switch and a rebind cover it on every platform.
 - Zooming the terminal (Ctrl + wheel, Ctrl + = / -) lasts for the session: the Terminal Font Size stepper owns the preference, says when a zoom is in effect, and reset returns to it.
 - The relay wizard's systemd file now runs the service hardened (`ProtectSystem=strict`, `NoNewPrivileges`), and relay releases ship Ed25519-signed Linux binaries with a `relay.json` manifest.
 - The Sync host picker answers Esc and the keyboard like every other dialog.

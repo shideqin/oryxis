@@ -199,6 +199,13 @@ pub struct TerminalWidgetState {
     /// covers, keep the remainder, and drop a stale opposite-sign residual
     /// so a reversal responds at once.
     scroll_line_residual: std::cell::Cell<f32>,
+    /// Magnification carried across the moves of one touchpad pinch
+    /// below a whole [`TerminalView::PINCH_STEP`]. Same shape as the two
+    /// wheel residuals (accumulate, emit whole steps, keep the rest,
+    /// drop a stale opposite-sign remainder on reversal), and reset by
+    /// the phase events that open and close a gesture, so no fraction
+    /// of one pinch leaks into the next.
+    pinch_residual: std::cell::Cell<f32>,
     /// True while the cursor is somewhere over the terminal canvas. Drives
     /// the scrollbar's hover-to-reveal visibility.
     hover: bool,
@@ -485,17 +492,29 @@ impl WheelDirection {
     }
 }
 
-/// What a mouse binding is matched against: a button press, or one
-/// wheel notch in a direction.
+/// Which way a touchpad pinch went, in whole steps of
+/// [`TerminalView::PINCH_STEP`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinchDirection {
+    /// The fingers spread: magnify.
+    Out,
+    /// The fingers closed: shrink.
+    In,
+}
+
+/// What a mouse binding is matched against: a button press, one wheel
+/// notch in a direction, or one whole step of a touchpad pinch.
 ///
-/// The two are one resolver rather than two because they are one
+/// The three are one resolver rather than three because they are one
 /// model on the app side (a wheel chord is a `PrimaryKey` like a
-/// button), and a second resolver type would be a second contract to
-/// keep in step.
+/// button, and a pinch step is answered as the Ctrl+wheel chord it is
+/// on Windows), and a second resolver type would be a second contract
+/// to keep in step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseInput {
     Button(mouse::Button),
     Wheel(WheelDirection),
+    Pinch(PinchDirection),
 }
 
 /// Resolves a mouse press or wheel notch to a [`MouseGesture`], or

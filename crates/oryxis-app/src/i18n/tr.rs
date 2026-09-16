@@ -526,7 +526,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "Kopyalamak için metin seçin ve yapıştırmak için sağ tıklayın",
         "middle_click_paste" => "Orta tıklama ile yapıştır",
         "wheel_zoom" => "Ctrl + tekerlek ile yakınlaştır",
-        "wheel_zoom_desc" => "Windows'ta dokunmatik yüzey sıkıştırma hareketi de dahil. Yakınlaştırma yalnızca bu oturum için geçerlidir ve yukarıdaki boyutu asla değiştirmez; kısayolun kendisi Kısayollar'da düzenlenebilir.",
+        "wheel_zoom_desc" => "Dokunmatik yüzey sıkıştırma hareketi de dahil. Yakınlaştırma yalnızca bu oturum için geçerlidir ve yukarıdaki boyutu asla değiştirmez; kısayolun kendisi Kısayollar'da düzenlenebilir.",
         "terminal_font_zoomed" => "Bu oturumda {n} olarak yakınlaştırıldı",
         "terminal_right_click" => "Sağ tıklama",
         "right_click_menu" => "Bağlam menüsü",

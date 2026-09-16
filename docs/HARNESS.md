@@ -107,6 +107,7 @@ Any `.ice` instruction works as a command:
 | `click "Text"` / `click #id` / `click (x, y)` | click a target (`click right ...` for right-click) |
 | `press` / `release` / `move <target>` | lower-level mouse steps |
 | `scroll (dx, dy) [<target>]` | mouse wheel in lines (negative y = down); `scroll pixels (dx, dy)` for pixel deltas; the optional target moves the cursor first |
+| `pinch <delta> [<target>]` | one whole touchpad pinch magnifying by `delta` (positive spreads the fingers), replayed with its start and end phases; the optional target moves the cursor first |
 | `type "some text"` | typewrite into the focused widget |
 | `type enter` / `escape` / `tab` / `backspace` | named keys (`press enter` / `release tab` for the halves) |
 | `type ctrl+k` / `type ctrl+shift+f` / `type alt+enter` | modifier chords; reach the app's global hotkeys |

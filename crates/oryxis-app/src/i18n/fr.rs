@@ -525,7 +525,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "copy_on_select" => "Sélectionner pour copier et clic droit pour coller",
         "middle_click_paste" => "Coller avec le clic du milieu",
         "wheel_zoom" => "Zoom avec Ctrl + molette",
-        "wheel_zoom_desc" => "Aussi le pincement du pavé tactile sous Windows. Le zoom ne vaut que pour cette session et ne modifie jamais la taille ci-dessus ; le raccourci lui-même se modifie dans Raccourcis.",
+        "wheel_zoom_desc" => "Aussi le pincement du pavé tactile. Le zoom ne vaut que pour cette session et ne modifie jamais la taille ci-dessus ; le raccourci lui-même se modifie dans Raccourcis.",
         "terminal_font_zoomed" => "Zoom à {n} pour cette session",
         "terminal_right_click" => "Clic droit",
         "right_click_menu" => "Menu contextuel",
