@@ -89,6 +89,8 @@ impl Oryxis {
                 CloudProviderChoice::K8s => "Kubernetes",
                 CloudProviderChoice::Gcp => "GCP",
                 CloudProviderChoice::Azure => "Azure",
+                CloudProviderChoice::Aliyun => "Alibaba Cloud",
+                CloudProviderChoice::Tencent => "Tencent Cloud",
             };
             let banner_title = format!(
                 "{} {}",
@@ -183,7 +185,7 @@ impl Oryxis {
                 .into(),
         );
 
-        // ── Provider picker ── AWS + Kubernetes. Keyboard row:
+        // ── Provider picker ── every provider the app knows. Keyboard row:
         // Focusable select: Tab reaches it, Enter/Space open it, the
         // widget owns arrows/Esc while focused (fork support).
         let provider_options = vec![
@@ -191,6 +193,8 @@ impl Oryxis {
             CloudProviderChoice::K8s,
             CloudProviderChoice::Gcp,
             CloudProviderChoice::Azure,
+            CloudProviderChoice::Aliyun,
+            CloudProviderChoice::Tencent,
         ];
         let provider_pick: Element<'_, Message> = self.panel_nav_slot(
             crate::keynav::RowAction::input(iced::widget::Id::new("cloud-pick-provider")),
@@ -203,6 +207,8 @@ impl Oryxis {
                     CloudProviderChoice::K8s => "Kubernetes".to_string(),
                     CloudProviderChoice::Gcp => "GCP".to_string(),
                     CloudProviderChoice::Azure => "Azure".to_string(),
+                    CloudProviderChoice::Aliyun => "Alibaba Cloud".to_string(),
+                    CloudProviderChoice::Tencent => "Tencent Cloud".to_string(),
                 },
             )
             .on_select(|v| Message::Cloud(CloudMessage::CloudFormProviderChanged(v)))
@@ -224,6 +230,8 @@ impl Oryxis {
             CloudProviderChoice::K8s => vec![CloudAuthChoice::Kubeconfig],
             CloudProviderChoice::Gcp => vec![CloudAuthChoice::GcloudCli],
             CloudProviderChoice::Azure => vec![CloudAuthChoice::AzCli],
+            CloudProviderChoice::Aliyun => vec![CloudAuthChoice::AliyunCli],
+            CloudProviderChoice::Tencent => vec![CloudAuthChoice::TccliCli],
         };
         let auth_pick: Element<'_, Message> = self.panel_nav_slot(
             crate::keynav::RowAction::input(iced::widget::Id::new("cloud-pick-auth")),
@@ -238,6 +246,8 @@ impl Oryxis {
                     CloudAuthChoice::Kubeconfig => t("cloud_auth_kubeconfig").to_string(),
                     CloudAuthChoice::GcloudCli => t("cloud_auth_gcloud").to_string(),
                     CloudAuthChoice::AzCli => t("cloud_auth_az").to_string(),
+                    CloudAuthChoice::AliyunCli => t("cloud_auth_aliyun_cli").to_string(),
+                    CloudAuthChoice::TccliCli => t("cloud_auth_tccli").to_string(),
                 },
             )
             .on_select(|v| Message::Cloud(CloudMessage::CloudFormAuthKindChanged(v)))
@@ -594,6 +604,110 @@ impl Oryxis {
                 ),
                 Space::new().height(4),
                 text(t("cloud_azure_subscription_hint"))
+                    .size(10)
+                    .color(OryxisColors::t().text_muted),
+            ]
+            .into(),
+            CloudAuthChoice::AliyunCli => column![
+                // Alibaba Cloud uses the CLI's own configured profiles; no secret
+                // here, just an optional profile + region scope.
+                text(t("cloud_aliyun_login_hint"))
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+                Space::new().height(14),
+                text(t("cloud_cli_profile"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                self.panel_nav_slot(
+                    crate::keynav::RowAction::input(iced::widget::Id::new(
+                        "panel-cloud-cli-profile",
+                    )),
+                    10.0,
+                    text_input(t("cloud_cli_profile_ph"), &self.cloud_form.cli_profile)
+                        .id(iced::widget::Id::new("panel-cloud-cli-profile"))
+                        .on_input(|v| Message::Cloud(CloudMessage::CloudFormCliProfileChanged(v)))
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style)
+                        .align_x(dir_align_x())
+                        .into(),
+                ),
+                Space::new().height(4),
+                text(t("cloud_cli_profile_hint"))
+                    .size(10)
+                    .color(OryxisColors::t().text_muted),
+                Space::new().height(14),
+                text(t("cloud_cli_region"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                self.panel_nav_slot(
+                    crate::keynav::RowAction::input(iced::widget::Id::new(
+                        "panel-cloud-cli-region",
+                    )),
+                    10.0,
+                    text_input(t("cloud_aliyun_region_ph"), &self.cloud_form.cli_region)
+                        .id(iced::widget::Id::new("panel-cloud-cli-region"))
+                        .on_input(|v| Message::Cloud(CloudMessage::CloudFormCliRegionChanged(v)))
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style)
+                        .align_x(dir_align_x())
+                        .into(),
+                ),
+                Space::new().height(4),
+                text(t("cloud_cli_region_hint"))
+                    .size(10)
+                    .color(OryxisColors::t().text_muted),
+            ]
+            .into(),
+            CloudAuthChoice::TccliCli => column![
+                // Tencent Cloud uses the CLI's own configured profiles; no secret
+                // here, just an optional profile + region scope.
+                text(t("cloud_tencent_login_hint"))
+                    .size(11)
+                    .color(OryxisColors::t().text_muted),
+                Space::new().height(14),
+                text(t("cloud_cli_profile"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                self.panel_nav_slot(
+                    crate::keynav::RowAction::input(iced::widget::Id::new(
+                        "panel-cloud-cli-profile",
+                    )),
+                    10.0,
+                    text_input(t("cloud_cli_profile_ph"), &self.cloud_form.cli_profile)
+                        .id(iced::widget::Id::new("panel-cloud-cli-profile"))
+                        .on_input(|v| Message::Cloud(CloudMessage::CloudFormCliProfileChanged(v)))
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style)
+                        .align_x(dir_align_x())
+                        .into(),
+                ),
+                Space::new().height(4),
+                text(t("cloud_cli_profile_hint"))
+                    .size(10)
+                    .color(OryxisColors::t().text_muted),
+                Space::new().height(14),
+                text(t("cloud_cli_region"))
+                    .size(12)
+                    .color(OryxisColors::t().text_secondary),
+                Space::new().height(4),
+                self.panel_nav_slot(
+                    crate::keynav::RowAction::input(iced::widget::Id::new(
+                        "panel-cloud-cli-region",
+                    )),
+                    10.0,
+                    text_input(t("cloud_tencent_region_ph"), &self.cloud_form.cli_region)
+                        .id(iced::widget::Id::new("panel-cloud-cli-region"))
+                        .on_input(|v| Message::Cloud(CloudMessage::CloudFormCliRegionChanged(v)))
+                        .padding(10)
+                        .style(crate::widgets::rounded_input_style)
+                        .align_x(dir_align_x())
+                        .into(),
+                ),
+                Space::new().height(4),
+                text(t("cloud_cli_region_hint"))
                     .size(10)
                     .color(OryxisColors::t().text_muted),
             ]

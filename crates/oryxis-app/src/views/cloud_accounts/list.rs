@@ -242,6 +242,8 @@ impl Oryxis {
                     "k8s" => "Kubernetes",
                     "gcp" => "GCP",
                     "azure" => "Azure",
+                    "aliyun" => "Alibaba Cloud",
+                    "tencent" => "Tencent Cloud",
                     other => other,
                 };
 

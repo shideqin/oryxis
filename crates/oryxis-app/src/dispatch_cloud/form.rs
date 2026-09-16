@@ -122,6 +122,8 @@ impl Oryxis {
                     self.cloud_form.context = str_field("context");
                     self.cloud_form.gcp_project = str_field("project");
                     self.cloud_form.azure_subscription = str_field("subscription");
+                    self.cloud_form.cli_profile = str_field("profile");
+                    self.cloud_form.cli_region = str_field("region");
                     // Never pre-fill the secret. Same convention as
                     // identity / proxy passwords, we just flag that
                     // one exists so the user knows leaving the field
@@ -161,6 +163,8 @@ impl Oryxis {
                     self.cloud_form.context = String::new();
                     self.cloud_form.gcp_project = String::new();
                     self.cloud_form.azure_subscription = String::new();
+                    self.cloud_form.cli_profile = String::new();
+                    self.cloud_form.cli_region = String::new();
                 }
                 self.cloud_form.aws_access_key_secret_visible = false;
             }
@@ -182,6 +186,8 @@ impl Oryxis {
                     CloudProviderChoice::K8s => CloudAuthChoice::Kubeconfig,
                     CloudProviderChoice::Gcp => CloudAuthChoice::GcloudCli,
                     CloudProviderChoice::Azure => CloudAuthChoice::AzCli,
+                    CloudProviderChoice::Aliyun => CloudAuthChoice::AliyunCli,
+                    CloudProviderChoice::Tencent => CloudAuthChoice::TccliCli,
                 };
                 self.cloud_form.test_state = CloudTestState::Idle;
             }
@@ -199,6 +205,14 @@ impl Oryxis {
             }
             CloudMessage::CloudFormAzureSubscriptionChanged(v) => {
                 self.cloud_form.azure_subscription = v;
+                self.cloud_form.test_state = CloudTestState::Idle;
+            }
+            CloudMessage::CloudFormCliProfileChanged(v) => {
+                self.cloud_form.cli_profile = v;
+                self.cloud_form.test_state = CloudTestState::Idle;
+            }
+            CloudMessage::CloudFormCliRegionChanged(v) => {
+                self.cloud_form.cli_region = v;
                 self.cloud_form.test_state = CloudTestState::Idle;
             }
             CloudMessage::CloudFormContextChanged(v) => {
@@ -389,9 +403,24 @@ impl Oryxis {
             }
             CloudMessage::DeleteCloudProfile(id) => {
                 self.overlay = None;
+                // A Kubernetes account minted from an ACK / TKE cluster owns
+                // the kubeconfig file it points at, and that file holds a
+                // credential: it goes with the account. Only paths under
+                // the app's own kubeconfig directory qualify; a file the
+                // user typed in by hand is theirs.
+                let owned_kubeconfig = self
+                    .cloud_profiles
+                    .iter()
+                    .find(|p| p.id == id && p.provider == "k8s")
+                    .and_then(|p| serde_json::from_str::<serde_json::Value>(&p.config).ok())
+                    .and_then(|v| v.get("kubeconfig")?.as_str().map(str::to_string))
+                    .filter(|path| crate::kubeconfig_file::is_managed_path(path));
                 if let Some(vault) = &self.vault {
                     let _ = vault.delete_cloud_profile(&id);
                     self.load_data_from_vault();
+                }
+                if let Some(path) = owned_kubeconfig {
+                    let _ = std::fs::remove_file(path);
                 }
             }
             CloudMessage::ShowCloudCardMenu(id) => {

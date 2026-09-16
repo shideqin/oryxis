@@ -22,7 +22,7 @@ pub use error::CloudError;
 pub use registry::{CloudProviderRegistry, RegisteredProvider};
 pub use resource::{
     DiscoveredAksCluster, DiscoveredEc2, DiscoveredEcsService, DiscoveredGkeCluster,
-    DiscoveredHost, DiscoveredK8sWorkload, DiscoveryResult,
+    DiscoveredHost, DiscoveredK8sWorkload, DiscoveredManagedCluster, DiscoveryResult,
 };
 pub use session::SessionPayload;
 
@@ -142,5 +142,19 @@ pub trait CloudProvider: Send + Sync {
         _resource_group: &str,
     ) -> Result<String, CloudError> {
         Err(CloudError::Unsupported("aks_get_credentials".into()))
+    }
+
+    /// Return a managed cluster's kubeconfig as YAML text, for the
+    /// providers whose CLI hands the credential back instead of writing
+    /// it (ACK's `DescribeClusterUserKubeconfig`, TKE's
+    /// `DescribeClusterKubeconfig`). The caller stores it in a file of its
+    /// own and creates a Kubernetes account pointed at that file. Every
+    /// other provider keeps the default `Unsupported`.
+    async fn cluster_kubeconfig(
+        &self,
+        _profile: &CloudProfile,
+        _cluster_id: &str,
+    ) -> Result<String, CloudError> {
+        Err(CloudError::Unsupported("cluster_kubeconfig".into()))
     }
 }

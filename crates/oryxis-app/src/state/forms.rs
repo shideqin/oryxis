@@ -1000,6 +1000,15 @@ pub(crate) struct CloudForm {
     /// blank = whatever `az account show` resolves (the active
     /// subscription).
     pub azure_subscription: String,
+    /// CLI profile + region for the providers driven through a CLI that
+    /// keeps named profiles of its own (`aliyun configure --profile`,
+    /// `tccli configure --profile`). Shared by Alibaba Cloud and Tencent
+    /// Cloud, since only one provider is selected at a time and both
+    /// persist the pair under the same `profile` / `region` config keys.
+    /// Optional: blank profile = the CLI's default, blank region = the
+    /// region that profile is configured with.
+    pub cli_profile: String,
+    pub cli_region: String,
     /// `Some` when editing an existing profile (update in place).
     pub editing_id: Option<Uuid>,
     pub error: Option<String>,

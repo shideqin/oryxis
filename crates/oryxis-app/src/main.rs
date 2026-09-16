@@ -107,6 +107,9 @@ mod pane_drop;
 // no user behind them.
 mod proxy_consent;
 mod relay_deploy;
+// Per-cluster kubeconfig files for the managed clusters whose provider
+// returns the credential (ACK, TKE) instead of writing ~/.kube/config.
+mod kubeconfig_file;
 // Cloud-provider plugin subsystem. Inert until the cloud dispatch
 // path is rewired onto it in a later PR, the `allow` keeps the
 // clippy `-D warnings` gate green while the infra (and its public

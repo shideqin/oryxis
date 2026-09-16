@@ -536,7 +536,7 @@ Setup for Claude Code (`~/.claude.json`):
 
 If your vault has no password, omit the `env` field.
 
-## Cloud accounts (AWS, GCP, Azure, Kubernetes)
+## Cloud accounts (AWS, GCP, Azure, Alibaba Cloud, Tencent Cloud, Kubernetes)
 
 - **AWS.** Encrypted profiles (named profile, static keys, or IAM Identity
   Center / SSO) with a "Test credentials" button; EC2 and ECS discovery
@@ -548,6 +548,17 @@ If your vault has no password, omit the `env` field.
   up as a Kubernetes account (runs `get-credentials` for you).
 - **Azure.** VM discovery and AKS clusters via the `az` CLI; AKS clusters
   become Kubernetes accounts the same way.
+- **Alibaba Cloud.** ECS discovery and ACK clusters via the `aliyun` CLI
+  you already configured (optional profile + region). ACK hands the
+  kubeconfig back instead of writing `~/.kube/config`, so Oryxis stores it
+  in a file of its own under `~/.oryxis/kubeconfig/` and points the
+  Kubernetes account at that file; the same button refreshes the
+  credential when it expires.
+- **Tencent Cloud.** CVM discovery and TKE clusters via `tccli`, the same
+  shape: optional profile + region, TKE kubeconfig stored per cluster.
+  Both providers request the cluster's public endpoint; a cluster with
+  public access off is reachable only from inside its VPC, and the
+  account says so.
 - **Kubernetes.** Kubeconfig auth (path + context), discovers Deployments /
   StatefulSets / DaemonSets across namespaces, imports them as dynamic
   groups that resolve to live pods, and opens an interactive shell via

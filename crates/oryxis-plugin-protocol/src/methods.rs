@@ -36,6 +36,7 @@ pub mod method {
     pub const PUSH_INSTANCE_CONNECT_KEY: &str = "transport.push_instance_connect_key";
     pub const GKE_GET_CREDENTIALS: &str = "provider.gke_get_credentials";
     pub const AKS_GET_CREDENTIALS: &str = "provider.aks_get_credentials";
+    pub const CLUSTER_KUBECONFIG: &str = "provider.cluster_kubeconfig";
 }
 
 /// Links a JSON-RPC method name to its typed params and result.
@@ -285,6 +286,31 @@ impl Method for AksGetCredentials {
 }
 
 // ---------------------------------------------------------------------------
+// provider.cluster_kubeconfig
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterKubeconfigParams {
+    pub profile: CloudProfile,
+    /// Managed cluster id (`DiscoveredManagedCluster::id`).
+    pub cluster_id: String,
+}
+
+/// `provider.cluster_kubeconfig`, return a managed Kubernetes cluster's
+/// kubeconfig as YAML text. For the providers whose API hands the
+/// credential back rather than writing `~/.kube/config` (ACK, TKE); the
+/// host writes it to a file and points a Kubernetes account at it.
+/// Plugins of the other shape never implement it and answer
+/// `METHOD_NOT_FOUND`, which the host maps to a provider error (additive
+/// method, no version bump).
+pub struct ClusterKubeconfig;
+impl Method for ClusterKubeconfig {
+    const NAME: &'static str = method::CLUSTER_KUBECONFIG;
+    type Params = ClusterKubeconfigParams;
+    type Result = String;
+}
+
+// ---------------------------------------------------------------------------
 // transport.push_instance_connect_key
 // ---------------------------------------------------------------------------
 
@@ -355,6 +381,9 @@ mod tests {
             StartEcsExec::NAME,
             StartSsmSession::NAME,
             PushInstanceConnectKey::NAME,
+            GkeGetCredentials::NAME,
+            AksGetCredentials::NAME,
+            ClusterKubeconfig::NAME,
         ];
         let mut seen = std::collections::HashSet::new();
         for n in names {

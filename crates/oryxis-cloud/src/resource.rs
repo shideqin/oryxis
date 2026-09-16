@@ -2,9 +2,10 @@ use serde::{Deserialize, Serialize};
 
 /// Result of a one-shot wizard discovery, the user picks a subset and
 /// imports it. Discovered EC2s / VMs become individual hosts; discovered
-/// ECS services / K8s workloads become dynamic groups; discovered GKE
-/// clusters become Kubernetes accounts (get-credentials then a k8s
-/// profile) the user can discover workloads in.
+/// ECS services / K8s workloads become dynamic groups; discovered GKE /
+/// AKS clusters become Kubernetes accounts (get-credentials then a k8s
+/// profile) the user can discover workloads in, and ACK / TKE clusters
+/// do the same through a kubeconfig the provider returns.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DiscoveryResult {
     pub ec2: Vec<DiscoveredEc2>,
@@ -21,6 +22,13 @@ pub struct DiscoveryResult {
     /// profile); `#[serde(default)]` for the same forward/back reason.
     #[serde(default)]
     pub aks_clusters: Vec<DiscoveredAksCluster>,
+    /// Managed Kubernetes clusters whose provider RETURNS the kubeconfig
+    /// instead of writing it (ACK on Alibaba Cloud, TKE on Tencent Cloud;
+    /// see [`DiscoveredManagedCluster`]). One list for every such family,
+    /// so a new provider of this shape adds an entry, not a section.
+    /// `#[serde(default)]` for the same forward/back reason.
+    #[serde(default)]
+    pub managed_clusters: Vec<DiscoveredManagedCluster>,
 }
 
 /// A GKE (managed Kubernetes) cluster surfaced by GCP discovery. Not a
@@ -68,6 +76,38 @@ pub struct DiscoveredAksCluster {
     /// name, which is what `az aks get-credentials` writes by default),
     /// so the UI can dup-check against existing k8s profiles before adding.
     pub context: String,
+}
+
+/// A managed Kubernetes cluster whose provider hands back the kubeconfig
+/// as CONTENT (`provider.cluster_kubeconfig`) rather than merging it into
+/// `~/.kube/config` the way `gcloud` / `az` do. Alibaba Cloud's ACK
+/// (`DescribeClusterUserKubeconfig`) and Tencent Cloud's TKE
+/// (`DescribeClusterKubeconfig`) are both this shape. "Adding" one writes
+/// the returned YAML to a file of its own under the app's data directory
+/// and creates a Kubernetes account pointed at that file, after which
+/// the normal K8s workload discovery / dynamic-group flow applies.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredManagedCluster {
+    /// Product family the cluster belongs to: `"ack"` or `"tke"`. Drives
+    /// the section header and the account label; an app older than a
+    /// plugin may see a value it does not know and falls back to
+    /// showing it verbatim.
+    pub family: String,
+    /// Cluster id, the handle `cluster_kubeconfig` takes
+    /// (`c3fb96524f9274b4...` on ACK, `cls-abc12345` on TKE).
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Region the cluster lives in, informational.
+    pub region: String,
+    /// `running`, `Running`, `Creating`, ... as the provider emits it.
+    pub status: String,
+    /// Kubernetes version as the provider reports it, informational.
+    #[serde(default)]
+    pub version: String,
+    /// Node count as the provider reports it.
+    #[serde(default)]
+    pub node_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

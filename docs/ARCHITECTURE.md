@@ -1,6 +1,6 @@
 # Architecture
 
-Oryxis is a Cargo workspace of 25 crates. The UI layer is an
+Oryxis is a Cargo workspace of 29 crates. The UI layer is an
 [iced](https://iced.rs) application on the wgpu backend; everything below it
 is a set of focused engines (SSH, Telnet, serial, vault, sync, terminal)
 that the app composes.
@@ -26,7 +26,7 @@ that the app composes.
 +--------------------------------------------------------------------+
 | Cloud providers + plugin subsystem                                 |
 | oryxis-cloud              provider trait (discovery + transport)   |
-| oryxis-cloud-aws/-gcp/-azure/-k8s        provider implementations  |
+| oryxis-cloud-aws/-gcp/-azure/-aliyun/-tencent/-k8s    providers    |
 | *-plugin                  subprocess binaries (JSON-RPC 2.0)       |
 | oryxis-plugin-protocol    stdio wire contract                      |
 | oryxis-plugin-signer      Ed25519 sign + SHA-256                   |
@@ -69,10 +69,14 @@ that the app composes.
 | `oryxis-cloud-aws` | AWS provider: named profiles, static keys, IAM Identity Center (SSO), EC2 + ECS discovery |
 | `oryxis-cloud-gcp` | Google Cloud provider: Compute Engine + GKE discovery driven through the `gcloud` CLI |
 | `oryxis-cloud-azure` | Azure provider: VMs + AKS discovery driven through the `az` CLI |
+| `oryxis-cloud-aliyun` | Alibaba Cloud provider: ECS + ACK discovery driven through the `aliyun` CLI; ACK kubeconfigs are returned by the API and stored per cluster |
+| `oryxis-cloud-tencent` | Tencent Cloud provider: CVM + TKE discovery driven through `tccli`; TKE kubeconfigs are returned by the API and stored per cluster |
 | `oryxis-cloud-k8s` | Kubernetes provider: kubeconfig auth, workload discovery and pod shells driven through the `kubectl` CLI |
 | `oryxis-cloud-aws-plugin` | AWS provider packaged as a standalone subprocess (JSON-RPC 2.0 over stdio) |
 | `oryxis-cloud-gcp-plugin` | Google Cloud provider packaged as a standalone subprocess |
 | `oryxis-cloud-azure-plugin` | Azure provider packaged as a standalone subprocess |
+| `oryxis-cloud-aliyun-plugin` | Alibaba Cloud provider packaged as a standalone subprocess |
+| `oryxis-cloud-tencent-plugin` | Tencent Cloud provider packaged as a standalone subprocess |
 | `oryxis-cloud-k8s-plugin` | Kubernetes provider packaged as a standalone subprocess |
 | `oryxis-plugin-protocol` | Wire protocol for cloud-provider plugins: line-delimited JSON-RPC 2.0 over stdio |
 | `oryxis-plugin-signer` | CLI that signs a plugin binary with the Ed25519 key and computes the SHA-256 the manifest needs |
@@ -87,7 +91,7 @@ that the app composes.
 | Terminal | alacritty_terminal |
 | SSH | russh (async, pure Rust, RSA-SHA2) |
 | Telnet / Serial / ZMODEM | native Rust engines (`oryxis-telnet`, `oryxis-serial`, `oryxis-zmodem`) |
-| Cloud | AWS (EC2/ECS, SSM, EC2 Instance Connect), GCP (`gcloud`), Azure (`az`), Kubernetes (`kubectl`), as Ed25519-signed subprocess plugins |
+| Cloud | AWS (EC2/ECS, SSM, EC2 Instance Connect), GCP (`gcloud`), Azure (`az`), Alibaba Cloud (`aliyun`), Tencent Cloud (`tccli`), Kubernetes (`kubectl`), as Ed25519-signed subprocess plugins |
 | AI | reqwest + Anthropic / OpenAI-compatible / Gemini APIs |
 | MCP | JSON-RPC 2.0 over stdio |
 | P2P Sync | quinn (QUIC), mDNS, STUN, HTTP relay fallback, Ed25519/X25519, XChaCha20-Poly1305 |

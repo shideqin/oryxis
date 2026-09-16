@@ -64,6 +64,9 @@ impl Oryxis {
                 | CloudMessage::CloudDiscoverAddAks { .. }
                 | CloudMessage::CloudDiscoverAksCredentials(..)
                 | CloudMessage::CloudDiscoverAksAdded(..)
+                | CloudMessage::CloudDiscoverAddManagedCluster { .. }
+                | CloudMessage::CloudDiscoverManagedClusterStored { .. }
+                | CloudMessage::CloudDiscoverManagedClusterFailed(..)
             ) => self.handle_discover_clusters(m),
             m @ (
                 CloudMessage::CloudAutoRefreshTick

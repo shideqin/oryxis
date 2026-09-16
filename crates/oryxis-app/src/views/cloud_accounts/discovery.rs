@@ -1067,7 +1067,164 @@ impl Oryxis {
             }
         }
 
-        // Both sections hid themselves under the active filter, show
+        // ACK / TKE clusters: the providers whose API returns the
+        // kubeconfig instead of writing it. One section per family, in
+        // the order the result lists them; each cluster is added
+        // individually, which writes its kubeconfig to a file of its own
+        // and creates a Kubernetes account pointed at it. An added
+        // cluster keeps its button as a refresh: the ACK credential is
+        // temporary, so the file has to be re-fetchable from here.
+        let managed_filtered: Vec<&oryxis_cloud::DiscoveredManagedCluster> = result
+            .managed_clusters
+            .iter()
+            .filter(|c| {
+                needle.is_empty()
+                    || format!("{} {} {} {}", c.name, c.id, c.region, c.status)
+                        .to_lowercase()
+                        .contains(&needle)
+            })
+            .collect();
+        if !managed_filtered.is_empty() {
+            // Dup-guard by the kubeconfig FILE a k8s profile points at,
+            // which is deterministic per (family, id): no context name
+            // has to be known before the fetch.
+            let existing_kubeconfigs: std::collections::HashSet<String> = self
+                .cloud_profiles
+                .iter()
+                .filter(|p| p.provider == "k8s")
+                .filter_map(|p| {
+                    serde_json::from_str::<serde_json::Value>(&p.config)
+                        .ok()?
+                        .get("kubeconfig")?
+                        .as_str()
+                        .map(str::to_string)
+                })
+                .collect();
+            let mut families: Vec<&str> = Vec::new();
+            for c in &managed_filtered {
+                if !families.contains(&c.family.as_str()) {
+                    families.push(&c.family);
+                }
+            }
+            for family in families {
+                let rows: Vec<&&oryxis_cloud::DiscoveredManagedCluster> =
+                    managed_filtered.iter().filter(|c| c.family == family).collect();
+                let total = result
+                    .managed_clusters
+                    .iter()
+                    .filter(|c| c.family == family)
+                    .count();
+                // A family this build does not know (a newer plugin) is
+                // named verbatim rather than hidden.
+                let title: String = match family {
+                    "ack" => t("cloud_ack_clusters").to_string(),
+                    "tke" => t("cloud_tke_clusters").to_string(),
+                    other => other.to_uppercase(),
+                };
+                sections.push(Space::new().height(8).into());
+                let header = if needle.is_empty() {
+                    format!("{title} ({total})")
+                } else {
+                    format!("{title} ({} / {total})", rows.len())
+                };
+                // The collapse key is static like the other sections'
+                // (`section_header` wants a `'static` id); an unknown
+                // family shares one key rather than growing a new one.
+                let section_key: &'static str = match family {
+                    "ack" => "ack",
+                    "tke" => "tke",
+                    _ => "managed",
+                };
+                let collapsed = self.cloud_discover.collapsed.contains(section_key);
+                sections.push(self.panel_nav_slot(
+                    crate::keynav::RowAction::activate(Message::Cloud(
+                        CloudMessage::CloudDiscoverToggleSection(section_key.to_string()),
+                    )),
+                    4.0,
+                    section_header(section_key, &header, collapsed),
+                ));
+                sections.push(Space::new().height(6).into());
+                if collapsed {
+                    continue;
+                }
+                for c in rows {
+                    let added = crate::kubeconfig_file::path_for(&c.family, &c.id)
+                        .map(|p| existing_kubeconfigs.contains(&p.to_string_lossy().into_owned()))
+                        .unwrap_or(false);
+                    let mut info = format!("{}  ·  {}", c.name, c.region);
+                    if !c.version.trim().is_empty() {
+                        info.push_str(&format!("  ·  {}", c.version));
+                    }
+                    info.push_str(&format!(
+                        "  ·  {} {}  ·  {}",
+                        c.node_count,
+                        t("cloud_discover_nodes_unit"),
+                        c.status
+                    ));
+                    if added {
+                        info.push_str(&format!("  ·  {}", t("cloud_discover_already_imported")));
+                    }
+                    let add_msg = Message::Cloud(CloudMessage::CloudDiscoverAddManagedCluster {
+                        family: c.family.clone(),
+                        id: c.id.clone(),
+                        name: c.name.clone(),
+                    });
+                    let button_label = if added {
+                        t("cloud_managed_cluster_refresh")
+                    } else {
+                        t("cloud_managed_cluster_add")
+                    };
+                    let info_color = if added {
+                        OryxisColors::t().text_muted
+                    } else {
+                        OryxisColors::t().text_secondary
+                    };
+                    let row_el: Element<'_, Message> = dir_row(vec![
+                        text(info)
+                            .size(11)
+                            .color(info_color)
+                            .width(Length::Fill)
+                            .into(),
+                        self.panel_nav_slot(
+                            crate::keynav::RowAction::activate(add_msg.clone()),
+                            4.0,
+                            button(
+                                text(button_label)
+                                    .size(11)
+                                    .color(OryxisColors::t().text_primary),
+                            )
+                            .on_press(add_msg)
+                            .padding(Padding { top: 3.0, right: 10.0, bottom: 3.0, left: 10.0 })
+                            .style(|_, status| {
+                                let bg = match status {
+                                    BtnStatus::Hovered | BtnStatus::Pressed => {
+                                        OryxisColors::t().bg_hover
+                                    }
+                                    _ => OryxisColors::t().bg_surface,
+                                };
+                                button::Style {
+                                    background: Some(Background::Color(bg)),
+                                    border: Border {
+                                        radius: Radius::from(4.0),
+                                        width: 1.0,
+                                        color: OryxisColors::t().border,
+                                    },
+                                    ..Default::default()
+                                }
+                            })
+                            .into(),
+                        ),
+                    ])
+                    .align_y(iced::Alignment::Center)
+                    .into();
+                    sections.push(row_el);
+                    sections.push(Space::new().height(2).into());
+                }
+                sections.push(Space::new().height(8).into());
+            }
+        }
+
+        // Every section hid itself under the active filter, show
         // a friendly hint instead of an empty scroll area so the
         // panel doesn't read as "broken".
         if !show_ec2_section
@@ -1075,6 +1232,7 @@ impl Oryxis {
             && k8s_filtered.is_empty()
             && gke_filtered.is_empty()
             && aks_filtered.is_empty()
+            && managed_filtered.is_empty()
             && !needle.is_empty()
         {
             sections.push(

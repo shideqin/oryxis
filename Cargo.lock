@@ -5450,6 +5450,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "oryxis-cloud-aliyun"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "oryxis-cloud",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "oryxis-cloud-aliyun-plugin"
+version = "0.1.0"
+dependencies = [
+ "oryxis-cloud",
+ "oryxis-cloud-aliyun",
+ "oryxis-plugin-protocol",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "oryxis-cloud-aws"
 version = "0.1.0"
 dependencies = [
@@ -5553,6 +5578,31 @@ version = "0.1.0"
 dependencies = [
  "oryxis-cloud",
  "oryxis-cloud-k8s",
+ "oryxis-plugin-protocol",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "oryxis-cloud-tencent"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "oryxis-cloud",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "oryxis-cloud-tencent-plugin"
+version = "0.1.0"
+dependencies = [
+ "oryxis-cloud",
+ "oryxis-cloud-tencent",
  "oryxis-plugin-protocol",
  "serde",
  "serde_json",

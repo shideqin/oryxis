@@ -1,7 +1,7 @@
 //! Plugins panel, manage the downloaded cloud-provider plugins.
 //!
-//! Cloud providers (AWS + Kubernetes today, gcp / azure later) run as
-//! subprocess plugins downloaded on demand. This screen is the
+//! Cloud providers (AWS, Kubernetes, Google Cloud, Azure, Alibaba Cloud,
+//! Tencent Cloud) run as subprocess plugins downloaded on demand. This screen is the
 //! IDE-style management surface: per-provider status, install /
 //! update / uninstall, and the auto-update toggles. The first-use
 //! install opt-in modal (`view_plugin_install_modal`) lives here too

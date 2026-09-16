@@ -127,6 +127,7 @@ pub(crate) async fn discover_workloads(
         k8s_workloads,
         gke_clusters: Vec::new(),
         aks_clusters: Vec::new(),
+        managed_clusters: Vec::new(),
     })
 }
 

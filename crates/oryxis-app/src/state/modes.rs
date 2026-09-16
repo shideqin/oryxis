@@ -459,7 +459,8 @@ pub enum PluginUiStatus {
 /// profile / access key / SSO; Kubernetes via a kubeconfig; GCP via the
 /// already-authenticated `gcloud` CLI (scoped to an optional project);
 /// Azure via the already-authenticated `az` CLI (scoped to an optional
-/// subscription).
+/// subscription); Alibaba Cloud and Tencent Cloud via their configured
+/// CLIs (`aliyun` / `tccli`, scoped to an optional profile + region).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CloudProviderChoice {
     #[default]
@@ -467,6 +468,8 @@ pub enum CloudProviderChoice {
     K8s,
     Gcp,
     Azure,
+    Aliyun,
+    Tencent,
 }
 
 /// Which kind of `PodSelector` a K8s dynamic group's editor produces.
@@ -508,6 +511,8 @@ impl CloudProviderChoice {
             Self::K8s => "k8s",
             Self::Gcp => "gcp",
             Self::Azure => "azure",
+            Self::Aliyun => "aliyun",
+            Self::Tencent => "tencent",
         }
     }
 
@@ -516,6 +521,8 @@ impl CloudProviderChoice {
             "k8s" => Self::K8s,
             "gcp" => Self::Gcp,
             "azure" => Self::Azure,
+            "aliyun" => Self::Aliyun,
+            "tencent" => Self::Tencent,
             _ => Self::Aws,
         }
     }
@@ -537,6 +544,12 @@ pub enum CloudAuthChoice {
     /// Azure: the ambient `az` login (`az login`); no secret stored, just
     /// an optional subscription scope.
     AzCli,
+    /// Alibaba Cloud: the `aliyun` CLI's own configuration (`aliyun
+    /// configure`); no secret stored, just an optional profile + region.
+    AliyunCli,
+    /// Tencent Cloud: the `tccli` CLI's own configuration (`tccli
+    /// configure`); no secret stored, just an optional profile + region.
+    TccliCli,
 }
 
 impl CloudAuthChoice {
@@ -548,6 +561,8 @@ impl CloudAuthChoice {
             Self::Kubeconfig => "kubeconfig",
             Self::GcloudCli => "gcloud",
             Self::AzCli => "az",
+            Self::AliyunCli => "aliyun_cli",
+            Self::TccliCli => "tccli",
         }
     }
 
@@ -558,6 +573,8 @@ impl CloudAuthChoice {
             "kubeconfig" => Self::Kubeconfig,
             "gcloud" => Self::GcloudCli,
             "az" => Self::AzCli,
+            "aliyun_cli" => Self::AliyunCli,
+            "tccli" => Self::TccliCli,
             _ => Self::Profile,
         }
     }

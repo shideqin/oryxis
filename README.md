@@ -146,9 +146,9 @@ matching installer. Windows binaries are Authenticode-signed (see
   default, opens as its own tab): DNS records, ping, traceroute, TCP
   port test, HTTP redirect chain and certificate inspection, WHOIS, and
   the public spam blocklists.
-- **Cloud accounts.** AWS, Google Cloud, Azure and Kubernetes discovery
-  and connect (EC2, SSM, ECS Exec, GKE, AKS, `kubectl`), shipped as
-  signed on-demand plugins.
+- **Cloud accounts.** AWS, Google Cloud, Azure, Alibaba Cloud, Tencent
+  Cloud and Kubernetes discovery and connect (EC2, SSM, ECS Exec, GKE,
+  AKS, ACK, TKE, `kubectl`), shipped as signed on-demand plugins.
 - **AI where you work.** A per-tab assistant (bring your own key:
   Anthropic, OpenAI, Gemini, or compatible) with layered auto-exec safety,
   plus an [MCP server](docs/FEATURES.md#mcp-server) that exposes your
@@ -278,8 +278,6 @@ tracks it interactively.
 - **Native FIDO2:** talk to security keys directly (USB / NFC) for
   `sk-ssh-ed25519` / `sk-ecdsa-sk`, without delegating the touch to an
   external agent.
-- **China & CJK:** Alibaba Cloud (ECS) and Tencent Cloud (CVM)
-  providers.
 - **AI ops toolkit:** the assistant graduates from generating shell
   strings to typed, structured operations synthesized for the host's
   actual OS, with dry-run previews on every state change, an audit

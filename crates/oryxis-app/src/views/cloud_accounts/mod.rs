@@ -77,6 +77,8 @@ impl std::fmt::Display for CloudProviderChoice {
             Self::K8s => write!(f, "Kubernetes"),
             Self::Gcp => write!(f, "GCP"),
             Self::Azure => write!(f, "Azure"),
+            Self::Aliyun => write!(f, "Alibaba Cloud"),
+            Self::Tencent => write!(f, "Tencent Cloud"),
         }
     }
 }
@@ -90,6 +92,8 @@ impl std::fmt::Display for CloudAuthChoice {
             Self::Kubeconfig => write!(f, "Kubeconfig"),
             Self::GcloudCli => write!(f, "gcloud CLI"),
             Self::AzCli => write!(f, "az CLI"),
+            Self::AliyunCli => write!(f, "aliyun CLI"),
+            Self::TccliCli => write!(f, "tccli"),
         }
     }
 }

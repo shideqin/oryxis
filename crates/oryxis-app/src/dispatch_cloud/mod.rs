@@ -55,6 +55,8 @@ impl Oryxis {
             | CloudMessage::CloudFormContextChanged(..)
             | CloudMessage::CloudFormGcpProjectChanged(..)
             | CloudMessage::CloudFormAzureSubscriptionChanged(..)
+            | CloudMessage::CloudFormCliProfileChanged(..)
+            | CloudMessage::CloudFormCliRegionChanged(..)
             | CloudMessage::CloudFormTestCredentials
             | CloudMessage::CloudFormTestResult(..)
             | CloudMessage::SaveCloudProfile
@@ -83,6 +85,9 @@ impl Oryxis {
             | CloudMessage::CloudDiscoverAddAks{ .. }
             | CloudMessage::CloudDiscoverAksCredentials(..)
             | CloudMessage::CloudDiscoverAksAdded(..)
+            | CloudMessage::CloudDiscoverAddManagedCluster { .. }
+            | CloudMessage::CloudDiscoverManagedClusterStored { .. }
+            | CloudMessage::CloudDiscoverManagedClusterFailed(..)
             | CloudMessage::CloudDiscoverDefaultTransportChanged(..)
             | CloudMessage::CloudDiscoverDefaultGroupNameChanged(..)
             | CloudMessage::CloudDiscoverDefaultGroupPick(..)
@@ -494,10 +499,12 @@ impl Oryxis {
                     }
                     CloudAuthChoice::Kubeconfig
                     | CloudAuthChoice::GcloudCli
-                    | CloudAuthChoice::AzCli => {
-                        // Kubeconfig / gcloud / az auth belong to other
-                        // providers; under AWS an impossible combo, so
-                        // write nothing.
+                    | CloudAuthChoice::AzCli
+                    | CloudAuthChoice::AliyunCli
+                    | CloudAuthChoice::TccliCli => {
+                        // Kubeconfig / gcloud / az / aliyun / tccli auth
+                        // belong to other providers; under AWS an
+                        // impossible combo, so write nothing.
                     }
                 }
             }
@@ -516,6 +523,13 @@ impl Oryxis {
                 // Optional subscription scope; blank = az's active
                 // subscription.
                 put(&mut obj, "subscription", &self.cloud_form.azure_subscription);
+            }
+            CloudProviderChoice::Aliyun | CloudProviderChoice::Tencent => {
+                // Optional CLI profile + region; blank = the CLI's default
+                // profile and the region it is configured with. Both
+                // providers read the same two keys.
+                put(&mut obj, "profile", &self.cloud_form.cli_profile);
+                put(&mut obj, "region", &self.cloud_form.cli_region);
             }
         }
         serde_json::Value::Object(obj).to_string()

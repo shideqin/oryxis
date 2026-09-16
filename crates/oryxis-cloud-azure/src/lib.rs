@@ -217,6 +217,7 @@ impl CloudProvider for AzureProvider {
             k8s_workloads: Vec::new(),
             gke_clusters: Vec::new(),
             aks_clusters,
+            managed_clusters: Vec::new(),
         })
     }
 

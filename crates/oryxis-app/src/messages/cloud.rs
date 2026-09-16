@@ -36,6 +36,11 @@ pub enum CloudMessage {
     /// GCP project id field in the cloud wizard.
     CloudFormGcpProjectChanged(String),
     CloudFormAzureSubscriptionChanged(String),
+    /// CLI profile / region fields shared by the Alibaba Cloud and
+    /// Tencent Cloud wizard panels (`CloudForm::cli_profile` /
+    /// `cli_region`).
+    CloudFormCliProfileChanged(String),
+    CloudFormCliRegionChanged(String),
     /// Kicks off a `test_credentials` round-trip via the registered
     /// provider. The result lands as `CloudFormTestResult`.
     CloudFormTestCredentials,
@@ -93,6 +98,28 @@ pub enum CloudMessage {
     /// Result of the AKS add: `Ok(())` created the k8s account (refresh),
     /// `Err(msg)` surfaces on the discovery panel.
     CloudDiscoverAksAdded(Result<(), String>),
+    /// Add (or refresh) a managed cluster whose provider RETURNS the
+    /// kubeconfig (ACK / TKE, `DiscoveredManagedCluster`): fetch the YAML,
+    /// store it in the cluster's own file and create a Kubernetes account
+    /// pointed at that file. `family` is the product family (`ack` /
+    /// `tke`), `id` the cluster id, `name` the display name for the label.
+    CloudDiscoverAddManagedCluster {
+        family: String,
+        id: String,
+        name: String,
+    },
+    /// The kubeconfig was written: `label` for the new account, `path`
+    /// of the file, the file's `context` (blank when it names none) and
+    /// whether every server it names is a private address. The YAML
+    /// itself never rides a message: `Message` derives `Debug`.
+    CloudDiscoverManagedClusterStored {
+        label: String,
+        path: String,
+        context: String,
+        intranet: bool,
+    },
+    /// The fetch or the write failed; the message surfaces as a toast.
+    CloudDiscoverManagedClusterFailed(String),
     CloudDiscoverDefaultTransportChanged(oryxis_core::models::cloud::TransportKind),
     CloudDiscoverDefaultGroupNameChanged(String),
     CloudDiscoverDefaultGroupPick(String),

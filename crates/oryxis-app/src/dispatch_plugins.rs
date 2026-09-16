@@ -28,6 +28,8 @@ const KNOWN_PLUGINS: &[(&str, &str)] = &[
     ("k8s", "Kubernetes"),
     ("gcp", "Google Cloud"),
     ("azure", "Microsoft Azure"),
+    ("aliyun", "Alibaba Cloud"),
+    ("tencent", "Tencent Cloud"),
     ("mcp", "Oryxis MCP Server"),
     // Distribution-only like MCP, but spawned by the app itself: the
     // History screen's "Export GIF" renders a recording through it
@@ -39,7 +41,8 @@ const KNOWN_PLUGINS: &[(&str, &str)] = &[
 /// `KNOWN_PLUGINS` except `mcp`, which external clients spawn). Drives
 /// the Cloud Accounts "no provider installed" explainer and the
 /// hide-on-uninstall display filters.
-pub(crate) const CLOUD_PROVIDER_IDS: &[&str] = &["aws", "k8s", "gcp", "azure"];
+pub(crate) const CLOUD_PROVIDER_IDS: &[&str] =
+    &["aws", "k8s", "gcp", "azure", "aliyun", "tencent"];
 
 /// Build the initial `PluginUiEntry` rows from the on-disk cache plus
 /// the per-plugin settings. Called once from `boot::load_data_from_vault`.
