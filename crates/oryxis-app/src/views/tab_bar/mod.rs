@@ -2,11 +2,12 @@
 //!
 //! Tabs render as pill-shaped chips with an OS-coloured icon badge on the
 //! left that morphs into an X on hover/active (Termius-style close
-//! affordance). The right-hand cluster, `[+]`, `[⋯]`, then the window
-//! chrome (minimize / maximize / close), is pinned to the window edge and
-//! never gets pushed off when many tabs are open. Tabs themselves shrink
-//! uniformly to a minimum width as the bar fills, while the active tab
-//! keeps its natural width so its label stays fully readable.
+//! affordance). The right-hand cluster, `[+]`, the drag handle, `[⋯]`,
+//! then the window chrome (minimize / maximize / close), is pinned to the
+//! window edge and never gets pushed off when many tabs are open. Tabs
+//! themselves shrink uniformly to a minimum width as the bar fills, while
+//! the active tab keeps its natural width so its label stays fully
+//! readable.
 
 pub(crate) use iced::border::Radius;
 pub(crate) use iced::widget::button::Status as BtnStatus;
@@ -94,6 +95,16 @@ pub(crate) const DOTS_BUTTON_WIDTH: f32 = 46.0;
 pub(crate) const SIDEBAR_BUTTON_WIDTH: f32 = 46.0;
 pub(crate) const CHROME_BUTTON_WIDTH: f32 = 46.0;
 pub(crate) const CHROME_TOTAL_WIDTH: f32 = CHROME_BUTTON_WIDTH * 3.0;
+/// The window-drag handle reserved between the tab strip and the `⋯` /
+/// chrome cluster (issue #226). The strip's own empty area drags the
+/// window, but once the tabs overflow the hidden-scrollbar scrollable
+/// fills the whole slot with chips, the `+` docks, and every remaining
+/// pixel of the bar is a button: nothing left to grab. Firefox reserves
+/// the same 40 px (`.titlebar-spacer`) next to its tabs for exactly this,
+/// and the width is a floor, not a size: with fewer tabs the strip's
+/// slack extends it leftward. Always present rather than overflow-only,
+/// so the place a hand learned to grab never vanishes under it.
+pub(crate) const DRAG_SPACER_WIDTH: f32 = 40.0;
 
 impl Oryxis {
     /// The default top bar: burger + tab strip + `+`/`⋯` + side-panel
@@ -149,6 +160,10 @@ impl Oryxis {
         let ghost_ctx: Option<StripCtx> = pins_here.then(|| self.chrome_bar_pins_ctx());
         if let Some(ref ctx) = ghost_ctx {
             leading.push(self.chrome_bar_pins(ctx));
+            // Enough pins fill that scrollable edge to edge the way the
+            // tab strip fills the combined bar, and the drag contract
+            // would go with the empty area (issue #226).
+            leading.push(drag_spacer());
         } else {
             leading.push(
                 MouseArea::new(
@@ -440,16 +455,10 @@ impl Oryxis {
     /// and chrome live in the slim top bar.
     fn approx_strip_width(&self, bottom: bool) -> f32 {
         let toggle_count = if self.active_tab.is_some() {
-            self.sidebar_toggle_sides().len() as f32
+            self.sidebar_toggle_sides().len()
         } else {
-            0.0
+            0
         };
-        let right_cluster_width: f32 = toggle_count * (SIDEBAR_BUTTON_WIDTH + 2.0)
-            + PLUS_BUTTON_WIDTH
-            + 2.0
-            + DOTS_BUTTON_WIDTH
-            + 2.0
-            + CHROME_TOTAL_WIDTH;
         // Workspace mode prepends area tabs (Hosts, SFTP) that consume
         // strip width before the connection tabs even start. Each is
         // roughly icon(16) + gap(6) + label(~50) + padding(20) ~= 90 px.
@@ -457,11 +466,7 @@ impl Oryxis {
         const AREA_TAB_APPROX_WIDTH: f32 = 100.0;
         let area_tabs_total =
             area_tab_count as f32 * (AREA_TAB_APPROX_WIDTH + TAB_SPACING);
-        let reserved = if bottom {
-            PLUS_BUTTON_WIDTH + 2.0 + DOTS_BUTTON_WIDTH
-        } else {
-            SIDEBAR_TOGGLE_WIDTH + right_cluster_width
-        };
+        let reserved = strip_reserved_width(bottom, toggle_count);
         (self.window_size.width - reserved - area_tabs_total - 12.0).max(120.0)
     }
 
@@ -731,6 +736,13 @@ impl Oryxis {
                 leading.push(dots);
             }
         } else {
+            // The drag handle the strip's slack can no longer promise
+            // once the tabs overflow (issue #226): between the strip
+            // (and the `+` docked at its edge) and the `⋯` / chrome
+            // cluster, where the slack sits while there is some. The
+            // bottom-docked strip has no chrome, the slim top bar keeps
+            // its own drag area there.
+            leading.push(drag_spacer());
             // The right cluster sits on the trailing edge of the tab bar.
             // Build it in reading order ([extras] then chrome) and let
             // `dir_row` flip the order in RTL so chrome lands on the

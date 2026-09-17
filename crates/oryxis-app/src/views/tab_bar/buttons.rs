@@ -43,6 +43,26 @@ pub(crate) fn new_tab_btn<'a>(inline: bool) -> Element<'a, Message> {
         .into()
 }
 
+/// The reserved window-drag handle (`DRAG_SPACER_WIDTH`, issue #226):
+/// the same three gestures the strip's empty area answers, because it
+/// IS that area with a floor under it. Drag moves the window,
+/// double-click toggles maximize (the native title-bar convention), and
+/// a right-click opens the strip menu the way the strip's own slack does
+/// (issue #186); the menu carries nothing destructive for exactly this
+/// reason, these pixels are one flick away from a window drag. Not a
+/// button: it has no click and therefore no hover feedback to owe.
+pub(crate) fn drag_spacer<'a>() -> Element<'a, Message> {
+    MouseArea::new(
+        container(Space::new())
+            .width(Length::Fixed(DRAG_SPACER_WIDTH))
+            .height(Length::Fixed(BAR_HEIGHT)),
+    )
+    .on_press(Message::Tabs(TabsMessage::WindowDrag))
+    .on_double_click(Message::Tabs(TabsMessage::WindowMaximizeToggle))
+    .on_right_press(Message::Tabs(TabsMessage::ShowTabBarMenu))
+    .into()
+}
+
 /// Tab-jump button, opens the Termius-style "Jump to" modal listing
 /// all open tabs + Quick connect entries. Always visible regardless of
 /// how many tabs are open, so the user has a discoverable escape hatch

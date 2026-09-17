@@ -429,12 +429,64 @@ pub(crate) fn active_tab_bg(accent: Color, solid_fill: bool) -> Background {
     ))
 }
 
+/// The width the horizontal bar spends on everything that is NOT the
+/// tab strip, so `approx_strip_width` can hand the strip the rest. It
+/// must add up to what the row actually renders: the `+` docks and the
+/// `⋯` appears when the tabs no longer fit THIS budget, so a fixed
+/// element the budget forgets makes both fire late, after the strip has
+/// already swallowed the slack it was meant to protect. The combined
+/// top bar reserves the sidebar toggle, the `+`, the drag handle, the
+/// `⋯`, one side-panel toggle per region and the window chrome; the
+/// bottom-docked strip carries only the `+` and the `⋯` (its chrome and
+/// drag area live in the slim top bar).
+pub(crate) fn strip_reserved_width(bottom: bool, toggle_count: usize) -> f32 {
+    if bottom {
+        return PLUS_BUTTON_WIDTH + 2.0 + DOTS_BUTTON_WIDTH;
+    }
+    SIDEBAR_TOGGLE_WIDTH
+        + toggle_count as f32 * (SIDEBAR_BUTTON_WIDTH + 2.0)
+        + PLUS_BUTTON_WIDTH
+        + 2.0
+        + DRAG_SPACER_WIDTH
+        + DOTS_BUTTON_WIDTH
+        + 2.0
+        + CHROME_TOTAL_WIDTH
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use iced::{Point, Size};
 
     const WIN: Size = Size { width: 1600.0, height: 900.0 };
+
+    /// The strip's budget counts the drag handle (issue #226). Without
+    /// it the tabs are allowed 40 px they do not have, the `+` docks and
+    /// the `⋯` appears one tab late, and meanwhile the scrollable has
+    /// already grown over the handle's slot. The bottom-docked strip has
+    /// no handle to count: its drag area is the slim top bar.
+    #[test]
+    fn the_top_bar_budget_reserves_the_drag_handle() {
+        for toggles in 0..=2 {
+            let without_handle = SIDEBAR_TOGGLE_WIDTH
+                + toggles as f32 * (SIDEBAR_BUTTON_WIDTH + 2.0)
+                + PLUS_BUTTON_WIDTH
+                + 2.0
+                + DOTS_BUTTON_WIDTH
+                + 2.0
+                + CHROME_TOTAL_WIDTH;
+            assert_eq!(
+                strip_reserved_width(false, toggles),
+                without_handle + DRAG_SPACER_WIDTH,
+                "top bar with {toggles} panel toggles"
+            );
+        }
+        assert_eq!(
+            strip_reserved_width(true, 2),
+            PLUS_BUTTON_WIDTH + 2.0 + DOTS_BUTTON_WIDTH,
+            "the bottom strip carries no chrome and no handle"
+        );
+    }
 
     /// The invariant the two halves of the label math must hold: a chip
     /// sized by `tab_content_width` never ellipsizes its own label. It

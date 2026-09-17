@@ -17,6 +17,9 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 - The relay wizard's systemd file now runs the service hardened (`ProtectSystem=strict`, `NoNewPrivileges`), and relay releases ship Ed25519-signed Linux binaries with a `relay.json` manifest.
 - The Sync host picker answers Esc and the keyboard like every other dialog.
 
+### Fixed
+- The tab bar keeps a drag handle in front of the `⋯` button, so the window can still be moved once the tabs fill the bar (#226, reported by @moliyadi).
+
 ## [0.18.0] - 2026-09-09
 
 Offline mode: Oryxis can be told to make no request of its own, and an offline bundle carries the plugins and fonts a machine with no network would otherwise download. Alongside it, sync stops losing track of a device that moved, an SSH key arrives usable on the peer that received it, and Touch ID unlock works for the first time.
