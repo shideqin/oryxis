@@ -689,9 +689,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "model" => "模型",
         "api_key_saved" => "API 金鑰已儲存",
         "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} 已儲存，輸入以取代",
-        "sync_passphrase_new_placeholder" => "輸入新口令",
-        "sync_passphrase_match_hint" => "與已儲存的口令一致",
-        "sync_passphrase_mismatch_hint" => "與已儲存的口令不同",
+        "sync_passphrase_edit_placeholder" => "輸入同步通關密語",
         "sync_passphrase_forgot_hint" => "忘記口令了？刪除遠端快照後重新同步",
 
         "welcome" => "歡迎使用 Oryxis",
@@ -1353,6 +1351,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "folder_sync_no_path" => "\u{8acb}\u{70ba}\u{5feb}\u{7167}\u{9078}\u{4e00}\u{500b}\u{8cc7}\u{6599}\u{593e}",
         "folder_sync_missing_dir" => "\u{8a72}\u{8cc7}\u{6599}\u{593e}\u{4e0d}\u{5b58}\u{5728}\u{3002}\u{8acb}\u{6aa2}\u{67e5}\u{8def}\u{5f91}\u{ff0c}\u{6216}\u{78c1}\u{789f}\u{662f}\u{5426}\u{5df2}\u{639b}\u{8f09}\u{3002}",
         "snapshot_sync_ok" => "已同步，自快照取得 {n} 筆記錄",
+        "sync_passphrase_substituted_hint" => "你輸入的口令與已儲存的口令不同，本次同步使用的是已儲存的口令",
         "folder_sync_shared_warning" => "\u{5169}\u{53f0}\u{6a5f}\u{5668}\u{5beb}\u{5165}\u{540c}\u{4e00}\u{500b}\u{96f2}\u{7aef}\u{93e1}\u{50cf}\u{8cc7}\u{6599}\u{593e}\u{53ef}\u{80fd}\u{4e92}\u{76f8}\u{7af6}\u{722d}\u{ff0c}\u{96f2}\u{7aef}\u{7528}\u{6236}\u{7aef}\u{4e5f}\u{53ef}\u{80fd}\u{7559}\u{4e0b}\u{81ea}\u{5df1}\u{7684}\u{885d}\u{7a81}\u{526f}\u{672c}\u{3002}\u{5728}\u{540c}\u{4e00}\u{7db2}\u{8def}\u{4e0b}\u{ff0c}P2P \u{662f}\u{66f4}\u{597d}\u{7684}\u{9078}\u{64c7}\u{3002}",
         "sftp_sync_running" => "正在透過 SFTP 同步...",
         "sftp_sync_active_label" => "SFTP 同步執行中",

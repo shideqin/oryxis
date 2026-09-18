@@ -95,6 +95,8 @@ impl Oryxis {
         if self.sync.webdav.in_progress {
             return Task::none();
         }
+        // Resolved before the guards, so a retry's reserved key is consumed.
+        let mut keys = self.take_or_resolve_keys(trigger);
         // A locked vault has no master key to decrypt with; the
         // manual buttons must not rely on the lock screen hiding them.
         if !self.sync_round_allowed() {
@@ -108,12 +110,13 @@ impl Oryxis {
         let Some(vault) = &self.vault else {
             return Task::none();
         };
-        // Group key: the typed buffer for a manual round, else the
-        // stored value.
-        let Some(key) = self.sync_round_passphrase(trigger) else {
+        // One key per attempt; the rest wait for a key failure to retry.
+        if keys.is_empty() {
             self.sync.webdav.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
             return Task::none();
-        };
+        }
+        let key = keys.remove(0);
+        self.sync.pending_keys = keys;
         // Argon2id derivation (~0.4 s) runs on a worker thread, not on
         // the UI thread (same reason as the Git transport).
         let db_path = vault.db_path().to_path_buf();

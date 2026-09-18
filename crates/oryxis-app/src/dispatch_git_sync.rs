@@ -216,6 +216,8 @@ impl Oryxis {
         if self.sync.git.in_progress {
             return Task::none();
         }
+        // Resolved before the guards, so a retry's reserved key is consumed.
+        let mut keys = self.take_or_resolve_keys(trigger);
         // A locked vault has no master key to decrypt with; the
         // manual buttons must not rely on the lock screen hiding them.
         if !self.sync_round_allowed() {
@@ -229,16 +231,18 @@ impl Oryxis {
         let Some(vault) = &self.vault else {
             return Task::none();
         };
-        // Group key: the typed buffer for a manual round, else the
-        // stored value. The four transports share one row and one edit
-        // buffer, so there is no stale-form drift to guard against; what
-        // still has to be guarded is drift in TIME (an auto round never
-        // reads the buffer) and IN FLIGHT (the key is armed below and
-        // committed by value, never re-read from the field).
-        let Some(key) = self.sync_round_passphrase(trigger) else {
+        // One key per attempt; the rest wait for a key failure to retry.
+        // The four transports share one row and one edit buffer, so there
+        // is no stale-form drift to guard against; what still has to be
+        // guarded is drift in TIME (an auto round never reads the buffer)
+        // and IN FLIGHT (the key is armed below and committed by value,
+        // never re-read from the field).
+        if keys.is_empty() {
             self.sync.git.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
             return Task::none();
-        };
+        }
+        let key = keys.remove(0);
+        self.sync.pending_keys = keys;
         // The Argon2id derivation (~0.4 s) runs inside the blocking
         // task, not on the UI thread: it used to freeze the app for
         // every "Sync now" click (the stall watchdog logged GitSyncNow

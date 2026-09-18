@@ -279,7 +279,6 @@ impl Oryxis {
                     // must not sit in RAM behind the lock screen (the
                     // stored value itself rides the encrypted setting).
                     self.sync.passphrase_input.clear();
-                    self.sync.passphrase_matches = None;
                     self.sync.passphrase_editing = false;
                     self.sync.passphrase_field_id = None;
                     // Same for a round's armed key: a locked vault cannot
@@ -287,6 +286,10 @@ impl Oryxis {
                     // the master key), so the round that comes back
                     // finds nothing to commit.
                     self.sync.passphrase_sealed = None;
+                    // And the reserve the retry would have used: a
+                    // locked vault cannot store it either, and it must
+                    // not survive into an unrelated round.
+                    self.sync.pending_keys.clear();
                     // Land the keyboard in the unlock field so the user
                     // returning to the machine just types the password.
                     return crate::widgets::focus_input(iced::widget::Id::new(

@@ -691,9 +691,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "model" => "Model",
         "api_key_saved" => "Klucz API zapisany",
         "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} zapisano, wpisz aby zastąpić",
-        "sync_passphrase_new_placeholder" => "Wpisz nowe hasło synchronizacji",
-        "sync_passphrase_match_hint" => "Zgadza się z zapisanym hasłem synchronizacji",
-        "sync_passphrase_mismatch_hint" => "Różni się od zapisanego hasła synchronizacji",
+        "sync_passphrase_edit_placeholder" => "Wpisz hasło synchronizacji",
         "sync_passphrase_forgot_hint" => "Zapomniałeś hasła synchronizacji? Usuń zdalny snapshot i zsynchronizuj ponownie",
 
         // Vault
@@ -941,6 +939,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "folder_sync_no_path" => "Wybierz folder na migawk\u{119}",
         "folder_sync_missing_dir" => "Taki folder nie istnieje. Sprawd\u{17a} \u{15b}cie\u{17c}k\u{119} albo czy dysk jest zamontowany.",
         "snapshot_sync_ok" => "Zsynchronizowano, rekordów z migawki: {n}",
+        "sync_passphrase_substituted_hint" => "Wpisane hasło różni się od zapisanego, więc użyto zapisanego",
         "folder_sync_shared_warning" => "Dwie maszyny pisz\u{105}ce do tego samego folderu w chmurze mog\u{105} si\u{119} \u{15b}ciga\u{107}, a klient chmury mo\u{17c}e zostawi\u{107} w\u{142}asn\u{105} kopi\u{119} konfliktu. W tej samej sieci lepszy jest P2P.",
         "sftp_sync_running" => "Synchronizacja przez SFTP...",
         "sftp_sync_active_label" => "Synchronizacja SFTP aktywna",

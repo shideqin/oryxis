@@ -6,12 +6,18 @@ mode: Zen
 # to it: the dot run visibly grew, typing was impossible to reason
 # about, and the appended value silently swapped the group key, so the
 # next round failed with "Crypto error: Decryption failed (wrong
-# key?)". The field now starts EMPTY and the stored value never
+# key?) ". The field now starts EMPTY and the stored value never
 # pre-fills it; with a stored passphrase the field is a plain clickable
 # masked box (no pencil, no tooltip; the hover border carries it),
-# typing never writes through, the key only changes when a round
-# SUCCEEDS with the typed value, and a live hint under the field says
-# whether the typed value matches the saved passphrase.
+# typing never writes through, and the key only changes when a round
+# SUCCEEDS with the typed value. The edit field has a reveal eye, so
+# what was typed can be read back (the mask is what hid a stray
+# character the user could not see). A typed value that disagrees with
+# the saved one is only a first attempt: the round falls back to the
+# saved passphrase rather than failing, so a stray character (which the
+# mask hides) cannot break a sync the saved key could complete, and the
+# status line marks the substitution with a warning icon whose tooltip
+# carries the explanation.
 expect "Welcome to Oryxis"
 click "Skip"
 click "Continue without password"
@@ -81,22 +87,29 @@ settle
 click #sync-folder-pass
 type "not-the-key"
 settle
-expect "Different from the saved passphrase"
 click "Sync Now"
 settle 800
-expect "Crypto error: Decryption failed (wrong key?)"
-# A passphrase mismatch is a dead end until the remote snapshot is
-# discarded, so the card shows the recovery path under the error.
-expect "Forgot the passphrase? Delete the remote snapshot and sync again"
-# Re-entering the SAVED passphrase flips the hint to green and syncs.
-# (The Sync now click left focus on the button, so re-focus the field
-# before the select-all.)
+# What a substitution is NOT is a lost key: the round fell back to the
+# stored passphrase, which still opens the snapshot, so it succeeded
+# instead of failing and offering the destructive "delete the remote
+# snapshot" recovery. Nothing was committed from the field (the stored
+# key is already stored), so the edit stays open on the typed text. The
+# substitution itself is now marked by a warning icon in FRONT of the
+# status line, its explanation in a tooltip: a hover is outside what the
+# recorder can do, so the mark is pinned by the steps around it instead
+# of by an assertion here.
+absent "Decryption failed"
+absent "Forgot the passphrase"
+expect "records from the snapshot"
+# Re-entering the SAVED passphrase syncs on it: the round commits the
+# typed value and the read-only masked box comes back. (The Sync now
+# click left focus on the button, so re-focus the field before the
+# select-all.)
 click #sync-folder-pass
 type ctrl+a
 type backspace
 type "hunter2"
 settle
-expect "Matches the saved passphrase"
 click "Sync Now"
 settle 800
 # The round succeeded, so the typed value was committed and the

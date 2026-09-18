@@ -689,9 +689,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "model" => "Modèle",
         "api_key_saved" => "Clé API enregistrée",
         "ai_key_saved_placeholder" => "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} enregistrée, tapez pour remplacer",
-        "sync_passphrase_new_placeholder" => "Saisissez la nouvelle phrase secrète",
-        "sync_passphrase_match_hint" => "Identique à la phrase secrète enregistrée",
-        "sync_passphrase_mismatch_hint" => "Différente de la phrase secrète enregistrée",
+        "sync_passphrase_edit_placeholder" => "Saisissez la phrase secrète de synchronisation",
         "sync_passphrase_forgot_hint" => "Phrase secrète oubliée ? Supprimez l'instantané distant et resynchronisez",
 
         "welcome" => "Bienvenue sur Oryxis",
@@ -1353,6 +1351,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "folder_sync_no_path" => "Choisissez un dossier pour l\u{2019}instantan\u{e9}",
         "folder_sync_missing_dir" => "Ce dossier n\u{2019}existe pas. V\u{e9}rifiez le chemin, ou si le disque est mont\u{e9}.",
         "snapshot_sync_ok" => "Synchronisé, {n} enregistrements depuis l'instantané",
+        "sync_passphrase_substituted_hint" => "La phrase secrète saisie diffère de celle enregistrée, cette synchronisation a donc utilisé celle enregistrée",
         "folder_sync_shared_warning" => "Deux machines \u{e9}crivant dans un m\u{ea}me dossier synchronis\u{e9} peuvent entrer en concurrence, et le client cloud peut laisser sa propre copie de conflit. Sur le m\u{ea}me r\u{e9}seau, le P2P est pr\u{e9}f\u{e9}rable.",
         "sftp_sync_running" => "Synchronisation via SFTP...",
         "sftp_sync_active_label" => "Synchronisation SFTP active",

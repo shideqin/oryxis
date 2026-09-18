@@ -13,6 +13,23 @@ use super::{
 };
 use crate::sync_runtime::SyncRuntime;
 
+/// One passphrase a round may seal its snapshot with, plus where it came
+/// from.
+///
+/// A round resolves its key to a LIST of these (`Oryxis::round_keys`) and
+/// uses them in order: the value the user typed first, the stored
+/// passphrase behind it as the fallback. Carried by value from that single
+/// resolve point, so nothing downstream re-reads the field, which is the
+/// whole point, since the field stays editable for the entire round.
+#[derive(Debug, Clone)]
+pub(crate) struct RoundKey {
+    pub(crate) value: zeroize::Zeroizing<String>,
+    /// True when it came from the TYPED buffer, so it is a candidate for
+    /// the stored group key and gets committed if the round succeeds. A
+    /// key read from storage is already the group key.
+    pub(crate) candidate: bool,
+}
+
 /// All sync settings + runtime + transient form state. Settings hydrate from
 /// the `settings` table on boot; the runtime handles (`runtime`, `abort_tx`)
 /// live only while sync is active. Not `Clone` (holds a oneshot sender and the
@@ -96,15 +113,12 @@ pub(crate) struct SyncState {
     /// passphrase.
     pub(crate) passphrase_input: SecretInput,
     /// Whether a group passphrase is stored. Drives the read-only
-    /// masked display (no stored value, no mask) and the edit mode's
-    /// match hint. Hydrated at boot from `get_sync_sftp_passphrase`;
-    /// the value itself never reaches state.
+    /// masked display (no stored value, no mask). Hydrated at boot from
+    /// `get_sync_sftp_passphrase`; the value itself never reaches state.
     pub(crate) passphrase_known: bool,
     /// "Change passphrase" edit mode: with a stored passphrase the field
     /// is READ-ONLY until the user asks to change it, so a mistyped
     /// re-entry can't swap the group key under the existing snapshot.
-    /// While editing, the input is live and the match hint below it
-    /// compares against the stored value.
     pub(crate) passphrase_editing: bool,
     /// The editable field's id while an edit is open, so the blur probe
     /// can tell "still on the field" from "focus moved away" (an empty
@@ -117,13 +131,6 @@ pub(crate) struct SyncState {
     /// field?" is a geometry question, not a focus question. Zeroed
     /// until the edit field renders once.
     pub(crate) passphrase_field_bounds: crate::widgets::BoundsCell,
-    /// Live "does the typed value equal the stored passphrase?" state,
-    /// recomputed per keystroke by `set_sync_passphrase`. Powers the
-    /// green / warning hint under the field: re-entering the saved
-    /// passphrase keeps the group working, typing anything else makes
-    /// the existing snapshot undecryptable until it matches again.
-    /// `None` while the field is untouched or no passphrase is stored.
-    pub(crate) passphrase_matches: Option<bool>,
     /// The key an IN-FLIGHT round sealed its snapshot with, armed at the
     /// start of the round and spent when it finishes: success stores it
     /// as the group key, failure drops it. Committing this instead of
@@ -136,6 +143,23 @@ pub(crate) struct SyncState {
     /// a round, and for any round keyed from storage (nothing to
     /// commit).
     pub(crate) passphrase_sealed: Option<zeroize::Zeroizing<String>>,
+    /// Candidates the in-flight round did NOT use, in preference order.
+    ///
+    /// A manual round leads with the typed value and keeps the stored
+    /// passphrase here as the fallback; a round that failed because the
+    /// typed value could not open the remote snapshot is retried on this
+    /// one instead of reporting a failure (and offering the destructive
+    /// "delete the remote snapshot" recovery) for what is very often a
+    /// typo a masked field cannot show. Consumed — and cleared — by the
+    /// next dispatch, so it never outlives its round.
+    pub(crate) pending_keys: Vec<RoundKey>,
+    /// Whether the last finished round is the RETRY on the stored
+    /// passphrase, after the typed value failed to open the remote
+    /// snapshot. Set when a round takes the reserved candidate, read by
+    /// the transport card to add a note saying the typed value was not the
+    /// key: the field is masked, so staying silent would let the user
+    /// believe the passphrase they typed had been adopted.
+    pub(crate) round_fell_back: bool,
     /// "Set up your own relay" wizard (Settings > Sync > P2P): inputs,
     /// generated-artifact format, and the reachability test state.
     pub(crate) relay_wizard: RelayWizardForm,
@@ -361,8 +385,9 @@ impl Default for SyncState {
             passphrase_editing: false,
             passphrase_field_id: None,
             passphrase_field_bounds: crate::widgets::new_bounds_cell(),
-            passphrase_matches: None,
             passphrase_sealed: None,
+            pending_keys: Vec::new(),
+            round_fell_back: false,
             relay_wizard: RelayWizardForm::default(),
             relay_deploy: RelayDeployForm::default(),
             signaling_last: None,
