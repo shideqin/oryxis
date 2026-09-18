@@ -55,6 +55,147 @@ pub(crate) async fn probe_on(
     Some(String::from_utf8_lossy(&stdout).into_owned())
 }
 
+/// Resolve once the caller withdraws the request. A receiver whose
+/// sender is gone never resolves: an abandoned cancel handle must read
+/// as "nobody is cancelling", not as a cancel.
+pub(crate) async fn cancelled(rx: &mut tokio::sync::watch::Receiver<bool>) {
+    loop {
+        if *rx.borrow_and_update() {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
+/// Open one exec channel on a live connection, run `command`, and
+/// collect its exit status, stdout and stderr. The body behind
+/// [`SshSession::exec_capture`] and
+/// [`MonitorConn::exec_capture`](super::MonitorConn::exec_capture).
+///
+/// Two bounds, deliberately not one. `open_timeout` covers the channel
+/// open and the exec request, the one round trip that tells whether the
+/// connection is still there: a link a NAT dropped silently keeps its
+/// socket until the keepalives give up, and a single bound around the
+/// whole call would spend the caller's entire budget finding that out.
+/// `run_timeout` covers the command itself. The two failures are typed
+/// apart ([`SshError::Channel`] against [`SshError::ExecTimeout`]) so a
+/// caller holding a pooled connection can redial on the first and
+/// must not on the second.
+///
+/// `cancel` is watched while the command runs. On cancel the channel is
+/// CLOSED before returning [`SshError::Cancelled`], never merely
+/// dropped: on a shared connection a dropped receiver leaves the
+/// server's side of the channel open until the command ends, and a
+/// long one would hold a session slot the next call needs. The open
+/// phase is not raced against it; it is one round trip and bounded on
+/// its own, and dropping a pending open mid-flight is what the timeout
+/// already does.
+///
+/// The handle lock is released as soon as the channel is open, so other
+/// channels on the same connection are not blocked while the command
+/// runs. Output is capped (the host is untrusted), the loop reads until
+/// the channel CLOSES rather than stopping at `Eof` because some
+/// servers deliver `ExitStatus` afterwards, and a server that closes
+/// without a status reports 255.
+pub(crate) async fn exec_capture_on(
+    handle: &Arc<tokio::sync::Mutex<client::Handle<ClientHandler>>>,
+    command: &str,
+    stdin: Option<Vec<u8>>,
+    open_timeout: std::time::Duration,
+    run_timeout: std::time::Duration,
+    mut cancel: Option<tokio::sync::watch::Receiver<bool>>,
+) -> Result<ExecResult, SshError> {
+    let open = async {
+        let handle = handle.lock().await;
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| SshError::Channel(format!("open session: {e}")))?;
+        channel
+            .exec(true, command)
+            .await
+            .map_err(|e| SshError::Channel(format!("exec: {e}")))?;
+        Ok::<_, SshError>(channel)
+    };
+    let mut channel = tokio::time::timeout(open_timeout, open)
+        .await
+        .map_err(|_| {
+            SshError::Channel(format!(
+                "channel open timed out after {}s",
+                open_timeout.as_secs()
+            ))
+        })??;
+    if let Some(data) = stdin {
+        channel
+            .data(&data[..])
+            .await
+            .map_err(|e| SshError::Channel(format!("stdin: {e}")))?;
+        // Without the EOF a `sudo -S` that never reads (NOPASSWD
+        // path) leaves the channel half-open until the timeout.
+        channel
+            .eof()
+            .await
+            .map_err(|e| SshError::Channel(format!("stdin eof: {e}")))?;
+    }
+
+    // Enough for a socket table, small enough that a hostile command
+    // can't stream memory away inside the timeout window. Excess is
+    // drained and dropped, not an error.
+    const EXEC_OUTPUT_CAP: usize = 512 * 1024;
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut exit_code: Option<u32> = None;
+    let collect = async {
+        loop {
+            let msg = match cancel.as_mut() {
+                Some(rx) => tokio::select! {
+                    msg = channel.wait() => msg,
+                    () = cancelled(rx) => {
+                        let _ = channel.close().await;
+                        return Err(SshError::Cancelled);
+                    }
+                },
+                None => channel.wait().await,
+            };
+            match msg {
+                Some(russh::ChannelMsg::Data { data }) if stdout.len() < EXEC_OUTPUT_CAP => {
+                    let room = EXEC_OUTPUT_CAP - stdout.len();
+                    stdout.extend_from_slice(&data[..data.len().min(room)]);
+                }
+                Some(russh::ChannelMsg::ExtendedData { data, ext: 1 })
+                    if stderr.len() < EXEC_OUTPUT_CAP =>
+                {
+                    let room = EXEC_OUTPUT_CAP - stderr.len();
+                    stderr.extend_from_slice(&data[..data.len().min(room)]);
+                }
+                Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
+                    exit_code = Some(exit_status);
+                }
+                None => break,
+                _ => {}
+            }
+        }
+        Ok(())
+    };
+    match tokio::time::timeout(run_timeout, collect).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => return Err(e),
+        Err(_) => {
+            // Same courtesy as the cancel: release the server's side of
+            // the channel rather than leaving it to the connection's end.
+            let _ = channel.close().await;
+            return Err(SshError::ExecTimeout(run_timeout.as_secs()));
+        }
+    }
+    Ok(ExecResult {
+        exit_code: exit_code.unwrap_or(255),
+        stdout: String::from_utf8_lossy(&stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr).into_owned(),
+    })
+}
+
 /// A live SSH session with a remote PTY channel.
 pub struct SshSession {
     /// The CONNECTION this session's channel rides on, shared with
@@ -259,67 +400,19 @@ impl SshSession {
     /// EOF'd before the collect loop: a secret must never travel in the
     /// command line, where `ps` on the host would show it to every user.
     ///
-    /// Same channel discipline as `probe`: the shared handle lock is
-    /// released as soon as the channel is open, output is capped (the
-    /// host is untrusted), and the loop reads until the channel CLOSES
-    /// rather than stopping at `Eof`, because some servers deliver
-    /// `ExitStatus` afterwards and an early break would report 255 for a
-    /// command that succeeded. Returns `None` on any channel failure or
-    /// if the command outlives `timeout`.
+    /// The body is [`exec_capture_on`]; `timeout` bounds the channel
+    /// open and the run alike, and there is nobody to cancel a tab's
+    /// own side channel. Returns `None` on any channel failure or if
+    /// the command outlives `timeout`.
     pub async fn exec_capture(
         &self,
         command: &str,
         stdin: Option<Vec<u8>>,
         timeout: std::time::Duration,
     ) -> Option<ExecResult> {
-        let handle = self.transport.handle().lock().await;
-        let mut channel = handle.channel_open_session().await.ok()?;
-        channel.exec(true, command).await.ok()?;
-        drop(handle); // release so other tasks can use the shared handle
-        if let Some(data) = stdin {
-            channel.data(&data[..]).await.ok()?;
-            // Without the EOF a `sudo -S` that never reads (NOPASSWD
-            // path) leaves the channel half-open until the timeout.
-            channel.eof().await.ok()?;
-        }
-
-        // Same cap as `probe`: enough for a socket table, small enough
-        // that a hostile command can't stream memory away inside the
-        // timeout window. Excess is drained and dropped, not an error.
-        const EXEC_OUTPUT_CAP: usize = 512 * 1024;
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let mut exit_code: Option<u32> = None;
-        let collect = async {
-            loop {
-                match channel.wait().await {
-                    Some(russh::ChannelMsg::Data { data }) if stdout.len() < EXEC_OUTPUT_CAP => {
-                        let room = EXEC_OUTPUT_CAP - stdout.len();
-                        stdout.extend_from_slice(&data[..data.len().min(room)]);
-                    }
-                    Some(russh::ChannelMsg::ExtendedData { data, ext: 1 })
-                        if stderr.len() < EXEC_OUTPUT_CAP =>
-                    {
-                        let room = EXEC_OUTPUT_CAP - stderr.len();
-                        stderr.extend_from_slice(&data[..data.len().min(room)]);
-                    }
-                    Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
-                        exit_code = Some(exit_status);
-                    }
-                    None => break,
-                    _ => {}
-                }
-            }
-        };
-        tokio::time::timeout(timeout, collect).await.ok()?;
-        Some(ExecResult {
-            // A server that closes the channel without an exit status
-            // leaves us with 255, the same "unknown failure" convention
-            // the SFTP exec path uses.
-            exit_code: exit_code.unwrap_or(255),
-            stdout: String::from_utf8_lossy(&stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&stderr).into_owned(),
-        })
+        exec_capture_on(self.transport.handle(), command, stdin, timeout, timeout, None)
+            .await
+            .ok()
     }
 
     pub fn is_alive(&self) -> bool {

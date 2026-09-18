@@ -43,6 +43,33 @@ impl MonitorConn {
         super::session::probe_on(&self.handle, command, timeout).await
     }
 
+    /// Run a command on this connection and return its full result.
+    /// The body is [`exec_capture_on`](super::session::exec_capture_on);
+    /// see it for the two bounds and the cancel contract. A closed
+    /// connection answers with a channel error, the same reading a
+    /// dead link gets, so a caller pooling these treats both alike.
+    pub async fn exec_capture(
+        &self,
+        command: &str,
+        stdin: Option<Vec<u8>>,
+        open_timeout: std::time::Duration,
+        run_timeout: std::time::Duration,
+        cancel: Option<tokio::sync::watch::Receiver<bool>>,
+    ) -> Result<ExecResult, SshError> {
+        if self.closed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(SshError::Channel("connection closed".into()));
+        }
+        super::session::exec_capture_on(
+            &self.handle,
+            command,
+            stdin,
+            open_timeout,
+            run_timeout,
+            cancel,
+        )
+        .await
+    }
+
     /// Whether the transport can still carry a probe. Without reader /
     /// writer tasks the only signals are the close latch and the russh
     /// handle's own closed flag (set when the peer drops the TCP
@@ -56,6 +83,22 @@ impl MonitorConn {
             // A held lock means a probe is mid-open on a live handle.
             Err(_) => true,
         }
+    }
+
+    /// Tear the connection down and wait for the disconnect to go out.
+    /// The awaited twin of [`close`](Self::close), for a shutdown that
+    /// wants the courtesy message on the wire before the process ends;
+    /// a spawned task would be cut off by `process::exit`. Idempotent
+    /// with `close`: whichever latches first does the work.
+    pub async fn disconnect(&self) {
+        use std::sync::atomic::Ordering;
+        if self.closed.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let h = self.handle.lock().await;
+        let _ = h
+            .disconnect(russh::Disconnect::ByApplication, "monitor closed", "")
+            .await;
     }
 
     /// Tear the connection down. Idempotent: only the first call acts.

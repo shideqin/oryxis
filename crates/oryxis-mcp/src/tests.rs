@@ -9,8 +9,17 @@ mod tests {
     use oryxis_core::models::key::{KeyAlgorithm, SshKey};
     use oryxis_vault::VaultStore;
 
-    use crate::server::handle_request;
+    use crate::handlers::dial_signature;
+    use crate::server::Server;
+    use crate::stdio;
     use crate::tools::tool_definitions;
+
+    /// A cancel handle nobody will ever pull.
+    fn no_cancel() -> tokio::sync::watch::Receiver<bool> {
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        std::mem::forget(tx);
+        rx
+    }
 
     fn test_vault() -> VaultStore {
         let tmp = NamedTempFile::new().unwrap();
@@ -36,8 +45,8 @@ mod tests {
 
     #[tokio::test]
     async fn initialize_returns_server_info() {
-        let vault = test_vault();
-        let resp = handle_request("initialize", json!(1), None, &vault).await;
+        let server = Server::new(test_vault());
+        let resp = server.handle_request("initialize", json!(1), None, no_cancel()).await;
         let result = resp.result.unwrap();
         assert_eq!(result["serverInfo"]["name"], "oryxis-mcp");
         assert_eq!(result["serverInfo"]["version"], env!("CARGO_PKG_VERSION"));
@@ -48,14 +57,14 @@ mod tests {
 
     #[tokio::test]
     async fn initialize_echoes_supported_requested_version() {
-        let vault = test_vault();
+        let server = Server::new(test_vault());
         for requested in ["2024-11-05", "2025-03-26", "2025-06-18"] {
             let params = json!({
                 "protocolVersion": requested,
                 "capabilities": {},
                 "clientInfo": {"name": "test", "version": "1.0"}
             });
-            let resp = handle_request("initialize", json!(1), Some(&params), &vault).await;
+            let resp = server.handle_request("initialize", json!(1), Some(&params), no_cancel()).await;
             let result = resp.result.unwrap();
             assert_eq!(result["protocolVersion"], requested);
         }
@@ -63,21 +72,21 @@ mod tests {
 
     #[tokio::test]
     async fn initialize_unknown_version_falls_back_to_latest() {
-        let vault = test_vault();
+        let server = Server::new(test_vault());
         let params = json!({
             "protocolVersion": "2099-01-01",
             "capabilities": {},
             "clientInfo": {"name": "test", "version": "1.0"}
         });
-        let resp = handle_request("initialize", json!(1), Some(&params), &vault).await;
+        let resp = server.handle_request("initialize", json!(1), Some(&params), no_cancel()).await;
         let result = resp.result.unwrap();
         assert_eq!(result["protocolVersion"], "2025-06-18");
     }
 
     #[tokio::test]
     async fn ping_returns_empty_result() {
-        let vault = test_vault();
-        let resp = handle_request("ping", json!(11), None, &vault).await;
+        let server = Server::new(test_vault());
+        let resp = server.handle_request("ping", json!(11), None, no_cancel()).await;
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         assert_eq!(result, json!({}));
@@ -85,8 +94,8 @@ mod tests {
 
     #[tokio::test]
     async fn tools_list_returns_all_tools() {
-        let vault = test_vault();
-        let resp = handle_request("tools/list", json!(2), None, &vault).await;
+        let server = Server::new(test_vault());
+        let resp = server.handle_request("tools/list", json!(2), None, no_cancel()).await;
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
         assert_eq!(tools.len(), 5);
@@ -94,12 +103,12 @@ mod tests {
 
     #[tokio::test]
     async fn list_hosts_empty_vault() {
-        let vault = test_vault();
-        let resp = handle_request(
+        let server = Server::new(test_vault());
+        let resp = server.handle_request(
             "tools/call",
             json!(3),
             Some(&json!({"name": "list_hosts", "arguments": {}})),
-            &vault,
+            no_cancel(),
         )
         .await;
         let result = resp.result.unwrap();
@@ -110,21 +119,21 @@ mod tests {
 
     #[tokio::test]
     async fn list_hosts_returns_mcp_enabled_only() {
-        let vault = test_vault();
+        let server = Server::new(test_vault());
 
         let mut c1 = Connection::new("enabled-host", "10.0.0.1");
         c1.mcp_enabled = true;
-        vault.save_connection(&c1, None).unwrap();
+        server.vault().save_connection(&c1, None).unwrap();
 
         let mut c2 = Connection::new("disabled-host", "10.0.0.2");
         c2.mcp_enabled = false;
-        vault.save_connection(&c2, None).unwrap();
+        server.vault().save_connection(&c2, None).unwrap();
 
-        let resp = handle_request(
+        let resp = server.handle_request(
             "tools/call",
             json!(4),
             Some(&json!({"name": "list_hosts", "arguments": {}})),
-            &vault,
+            no_cancel(),
         )
         .await;
         let result = resp.result.unwrap();
@@ -136,15 +145,15 @@ mod tests {
 
     #[tokio::test]
     async fn get_host_returns_details() {
-        let vault = test_vault();
+        let server = Server::new(test_vault());
         let conn = Connection::new("my-server", "192.168.1.100");
-        vault.save_connection(&conn, None).unwrap();
+        server.vault().save_connection(&conn, None).unwrap();
 
-        let resp = handle_request(
+        let resp = server.handle_request(
             "tools/call",
             json!(5),
             Some(&json!({"name": "get_host", "arguments": {"id": conn.id.to_string()}})),
-            &vault,
+            no_cancel(),
         )
         .await;
         let result = resp.result.unwrap();
@@ -157,12 +166,12 @@ mod tests {
 
     #[tokio::test]
     async fn get_host_not_found() {
-        let vault = test_vault();
-        let resp = handle_request(
+        let server = Server::new(test_vault());
+        let resp = server.handle_request(
             "tools/call",
             json!(6),
             Some(&json!({"name": "get_host", "arguments": {"id": "00000000-0000-0000-0000-000000000000"}})),
-            &vault,
+            no_cancel(),
         )
         .await;
         let result = resp.result.unwrap();
@@ -171,15 +180,15 @@ mod tests {
 
     #[tokio::test]
     async fn list_groups_works() {
-        let vault = test_vault();
+        let server = Server::new(test_vault());
         let g = Group::new("Production");
-        vault.save_group(&g).unwrap();
+        server.vault().save_group(&g).unwrap();
 
-        let resp = handle_request(
+        let resp = server.handle_request(
             "tools/call",
             json!(7),
             Some(&json!({"name": "list_groups", "arguments": {}})),
-            &vault,
+            no_cancel(),
         )
         .await;
         let result = resp.result.unwrap();
@@ -191,15 +200,15 @@ mod tests {
 
     #[tokio::test]
     async fn list_keys_no_private_data() {
-        let vault = test_vault();
+        let server = Server::new(test_vault());
         let key = SshKey::new("my-key", KeyAlgorithm::Ed25519);
-        vault.save_key(&key, Some("PRIVATE_KEY_DATA")).unwrap();
+        server.vault().save_key(&key, Some("PRIVATE_KEY_DATA")).unwrap();
 
-        let resp = handle_request(
+        let resp = server.handle_request(
             "tools/call",
             json!(8),
             Some(&json!({"name": "list_keys", "arguments": {}})),
-            &vault,
+            no_cancel(),
         )
         .await;
         let result = resp.result.unwrap();
@@ -213,20 +222,20 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_method_returns_error() {
-        let vault = test_vault();
-        let resp = handle_request("nonexistent/method", json!(9), None, &vault).await;
+        let server = Server::new(test_vault());
+        let resp = server.handle_request("nonexistent/method", json!(9), None, no_cancel()).await;
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, -32601);
     }
 
     #[tokio::test]
     async fn unknown_tool_returns_error() {
-        let vault = test_vault();
-        let resp = handle_request(
+        let server = Server::new(test_vault());
+        let resp = server.handle_request(
             "tools/call",
             json!(10),
             Some(&json!({"name": "nonexistent_tool", "arguments": {}})),
-            &vault,
+            no_cancel(),
         )
         .await;
         let result = resp.result.unwrap();
@@ -235,14 +244,14 @@ mod tests {
 
     #[tokio::test]
     async fn mcp_disabled_rejects_calls() {
-        let vault = test_vault();
-        let _ = vault.set_setting("mcp_server_enabled", "false");
+        let server = Server::new(test_vault());
+        let _ = server.vault().set_setting("mcp_server_enabled", "false");
 
-        let resp = handle_request(
+        let resp = server.handle_request(
             "tools/call",
             json!(11),
             Some(&json!({"name": "list_hosts", "arguments": {}})),
-            &vault,
+            no_cancel(),
         )
         .await;
         let result = resp.result.unwrap();
@@ -253,21 +262,21 @@ mod tests {
 
     #[tokio::test]
     async fn list_hosts_filter_by_tag() {
-        let vault = test_vault();
+        let server = Server::new(test_vault());
 
         let mut c1 = Connection::new("web", "10.0.0.1");
         c1.tags = vec!["production".into()];
-        vault.save_connection(&c1, None).unwrap();
+        server.vault().save_connection(&c1, None).unwrap();
 
         let mut c2 = Connection::new("db", "10.0.0.2");
         c2.tags = vec!["staging".into()];
-        vault.save_connection(&c2, None).unwrap();
+        server.vault().save_connection(&c2, None).unwrap();
 
-        let resp = handle_request(
+        let resp = server.handle_request(
             "tools/call",
             json!(12),
             Some(&json!({"name": "list_hosts", "arguments": {"tag": "production"}})),
-            &vault,
+            no_cancel(),
         )
         .await;
         let result = resp.result.unwrap();
@@ -275,5 +284,139 @@ mod tests {
         let hosts: Vec<Value> = serde_json::from_str(text).unwrap();
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0]["label"], "web");
+    }
+
+    #[test]
+    fn dial_signature_ignores_recency_and_detection() {
+        let mut a = Connection::new("web", "10.0.0.1");
+        let before = dial_signature(&a);
+        // The two narrow updates the app makes on every connect.
+        a.last_used = Some(chrono::Utc::now());
+        a.detected_os = Some("linux".into());
+        a.updated_at = chrono::Utc::now();
+        a.notes = Some("edited".into());
+        assert_eq!(dial_signature(&a), before);
+    }
+
+    #[test]
+    fn dial_signature_follows_the_dial_fields() {
+        let base = Connection::new("web", "10.0.0.1");
+        let before = dial_signature(&base);
+
+        let mut moved = base.clone();
+        moved.hostname = "10.0.0.2".into();
+        assert_ne!(dial_signature(&moved), before);
+
+        let mut reported = base.clone();
+        reported.port = 2222;
+        assert_ne!(dial_signature(&reported), before);
+
+        let mut renamed = base.clone();
+        renamed.username = Some("deploy".into());
+        assert_ne!(dial_signature(&renamed), before);
+
+        let mut rekeyed = base.clone();
+        rekeyed.key_id = Some(uuid::Uuid::new_v4());
+        assert_ne!(dial_signature(&rekeyed), before);
+
+        let mut hopped = base.clone();
+        hopped.jump_chain = vec![uuid::Uuid::new_v4()];
+        assert_ne!(dial_signature(&hopped), before);
+    }
+
+    async fn send(w: &mut tokio::io::DuplexStream, v: Value) {
+        use tokio::io::AsyncWriteExt;
+        w.write_all(format!("{}\n", v).as_bytes()).await.unwrap();
+    }
+
+    async fn next_json(
+        lines: &mut tokio::io::Lines<tokio::io::BufReader<tokio::io::DuplexStream>>,
+        within: std::time::Duration,
+    ) -> Option<Value> {
+        match tokio::time::timeout(within, lines.next_line()).await {
+            Ok(Ok(Some(line))) => Some(serde_json::from_str(&line).unwrap()),
+            Ok(_) => panic!("output closed"),
+            Err(_) => None,
+        }
+    }
+
+    /// The property the loop exists for: a tool call stuck in its dial
+    /// leaves the pipe free. A `ping` sent behind it answers at once, a
+    /// cancel for it is honoured (no response ever goes out for that
+    /// id), and the loop keeps serving afterwards.
+    #[tokio::test]
+    async fn a_dial_in_flight_does_not_block_the_loop_and_a_cancel_silences_it() {
+        use std::sync::Arc;
+        use tokio::io::AsyncBufReadExt;
+
+        let server = Server::new(test_vault());
+        // Listening but never speaking: the TCP handshake completes and
+        // the dial then waits on an SSH banner that never comes.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut conn = Connection::new("silent", "127.0.0.1");
+        conn.port = port;
+        conn.mcp_enabled = true;
+        server.vault().save_connection(&conn, None).unwrap();
+
+        let (mut client_w, server_r) = tokio::io::duplex(1 << 16);
+        let (server_w, client_r) = tokio::io::duplex(1 << 16);
+        let loop_task = tokio::spawn(stdio::serve(Arc::clone(&server), server_r, server_w));
+        let mut lines = tokio::io::BufReader::new(client_r).lines();
+
+        send(
+            &mut client_w,
+            json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "ssh_execute", "arguments": {
+                    "id": conn.id.to_string(), "command": "echo hello"
+                }}
+            }),
+        )
+        .await;
+        send(&mut client_w, json!({"jsonrpc": "2.0", "id": 2, "method": "ping"})).await;
+
+        let pong = next_json(&mut lines, std::time::Duration::from_secs(3))
+            .await
+            .expect("ping answered while a dial is in flight");
+        assert_eq!(pong["id"], 2);
+        assert_eq!(pong["result"], json!({}));
+
+        send(
+            &mut client_w,
+            json!({
+                "jsonrpc": "2.0", "method": "notifications/cancelled",
+                "params": {"requestId": 1, "reason": "user gave up"}
+            }),
+        )
+        .await;
+        // Nothing for the cancelled call, in either direction.
+        assert!(
+            next_json(&mut lines, std::time::Duration::from_secs(2)).await.is_none(),
+            "a cancelled request must not be answered"
+        );
+
+        send(&mut client_w, json!({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})).await;
+        let listed = next_json(&mut lines, std::time::Duration::from_secs(3))
+            .await
+            .expect("the loop keeps serving after a cancel");
+        assert_eq!(listed["id"], 3);
+        assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 5);
+
+        // A line that is not JSON gets the parse error, and nothing else
+        // is disturbed by it.
+        use tokio::io::AsyncWriteExt;
+        client_w.write_all(b"not json\n").await.unwrap();
+        let parse = next_json(&mut lines, std::time::Duration::from_secs(3))
+            .await
+            .expect("parse errors are answered");
+        assert_eq!(parse["error"]["code"], -32700);
+
+        drop(client_w);
+        tokio::time::timeout(std::time::Duration::from_secs(5), loop_task)
+            .await
+            .expect("the loop ends when its input closes")
+            .unwrap();
+        drop(listener);
     }
 }

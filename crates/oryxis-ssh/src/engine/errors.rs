@@ -52,6 +52,21 @@ pub enum SshError {
 
     #[error("Jump host error: {0}")]
     JumpHost(String),
+
+    /// An exec channel outlived its run bound. Its own variant, apart
+    /// from `Channel`, because a caller reusing a live connection reads
+    /// the two differently: a channel that would not OPEN says the link
+    /// is gone and a fresh dial is the answer, while a command that ran
+    /// out of time may already have acted on the host and must never be
+    /// retried behind the caller's back.
+    #[error("Command timed out after {0}s")]
+    ExecTimeout(u64),
+
+    /// The caller withdrew the request while the command ran. The exec
+    /// channel was closed on the way out, so a shared connection is left
+    /// as it was found.
+    #[error("Cancelled")]
+    Cancelled,
 }
 
 /// Why a `ProxyType::Command` proxy could not carry a dial.

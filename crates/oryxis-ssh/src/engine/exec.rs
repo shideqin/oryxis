@@ -3,23 +3,27 @@ use super::*;
 impl SshEngine {
 
     /// Execute a command without PTY (non-interactive) and return the output.
+    /// `timeout` bounds the whole exchange, the channel open and the exec
+    /// request included: a connection that authenticated and then stops
+    /// answering is exactly the one that would otherwise wait forever
+    /// on the open.
     pub async fn exec_command(
         &self,
         handle: SshHandle,
         command: &str,
         timeout: std::time::Duration,
     ) -> Result<ExecResult, SshError> {
-        let channel = handle.0.channel_open_session().await
-            .map_err(|e| SshError::Channel(format!("open session: {}", e)))?;
-
-        channel.exec(true, command).await
-            .map_err(|e| SshError::Channel(format!("exec: {}", e)))?;
-
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let mut exit_code: Option<u32> = None;
 
         let collect = async {
+            let channel = handle.0.channel_open_session().await
+                .map_err(|e| SshError::Channel(format!("open session: {}", e)))?;
+
+            channel.exec(true, command).await
+                .map_err(|e| SshError::Channel(format!("exec: {}", e)))?;
+
             let mut channel = channel;
             // Read until channel close (`None`), not just Eof, some
             // servers send `ExitStatus` after `Eof`, so breaking early
@@ -37,12 +41,14 @@ impl SshEngine {
                     _ => {}
                 }
             }
+            Ok::<(), SshError>(())
         };
 
         match tokio::time::timeout(timeout, collect).await {
-            Ok(()) => {}
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
             Err(_) => {
-                return Err(SshError::Channel("Command timed out".into()));
+                return Err(SshError::ExecTimeout(timeout.as_secs()));
             }
         }
 

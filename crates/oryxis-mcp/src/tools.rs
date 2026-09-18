@@ -49,7 +49,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     },
                     "timeout_secs": {
                         "type": "integer",
-                        "description": "Timeout in seconds (default: 30, max: 300)"
+                        "description": "Timeout in seconds for the command (default: 30, max: 180)"
                     }
                 },
                 "required": ["id", "command"]

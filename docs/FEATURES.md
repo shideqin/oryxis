@@ -515,6 +515,10 @@ panel turns it on, next to the other optional ones). Switching it back off close
 - **5 tools.** `list_hosts`, `get_host`, `ssh_execute`, `list_groups`,
   `list_keys`.
 - **Per-host control.** Toggle MCP exposure per connection.
+- **One login per host.** Calls to the same host share one authenticated
+  connection, closed after five idle minutes; requests run concurrently, a
+  cancelled call stops where it stands, and every request and dial is
+  logged to stderr for the client's own log.
 - **Disabled by default.** Enable in Settings > Security.
 - **Distributed as a plugin.** Downloaded on demand, with a stable launcher
   path for external clients.

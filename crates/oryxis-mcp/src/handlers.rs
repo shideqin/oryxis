@@ -1,8 +1,15 @@
+use std::hash::{Hash, Hasher};
+use std::time::Instant;
+
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use oryxis_core::models::connection::Connection;
 use oryxis_ssh::SshEngine;
 use oryxis_vault::VaultStore;
+
+use crate::pool;
+use crate::server::Server;
 
 /// Host-key verification against the vault's known-host pins, the same
 /// rows the app's accept-and-save flow writes. Mirrors
@@ -149,32 +156,85 @@ pub fn handle_get_host(vault: &VaultStore, params: Option<&Value>) -> Result<Val
     }))
 }
 
-pub async fn handle_ssh_execute(
-    vault: &VaultStore,
-    params: Option<&Value>,
-) -> Result<Value, String> {
-    let id_str = params
-        .and_then(|p| p.get("id"))
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "Missing required parameter: id".to_string())?;
-    let command = params
-        .and_then(|p| p.get("command"))
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "Missing required parameter: command".to_string())?;
-    let timeout_secs = params
-        .and_then(|p| p.get("timeout_secs"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(30)
-        .min(300);
+/// Everything one dial needs, resolved from the vault in one sync pass
+/// and carried into the async half. The vault lock is a `std` mutex
+/// held for this pass only; nothing here borrows it, so the dial and
+/// the command run with the vault free for the next request.
+pub struct DialPlan {
+    pub conn_id: Uuid,
+    pub label: String,
+    /// `host:port`, for the log line.
+    pub endpoint: String,
+    /// The EFFECTIVE connection: group inheritance collapsed, username
+    /// filled, the proxy on `proxy`.
+    pub auth_conn: Connection,
+    pub password: Option<String>,
+    pub private_key: Option<String>,
+    pub certificate: Option<String>,
+    pub engine: SshEngine,
+    /// [`dial_signature`] of `auth_conn`, the pool's reuse key.
+    pub signature: u64,
+}
 
-    let id = Uuid::parse_str(id_str).map_err(|_| "Invalid UUID".to_string())?;
+/// Why a plan could not be resolved. `NotFound` is its own case so the
+/// caller can drop a pooled connection for a host the user just
+/// withdrew from MCP, rather than serving it until idle eviction.
+pub enum PlanError {
+    NotFound,
+    Other(String),
+}
 
-    // Find connection
-    let conns = vault.list_mcp_connections().map_err(|e| e.to_string())?;
+impl From<PlanError> for String {
+    fn from(e: PlanError) -> String {
+        match e {
+            PlanError::NotFound => "Host not found or not MCP-enabled".into(),
+            PlanError::Other(s) => s,
+        }
+    }
+}
+
+/// Hash of the fields that decide WHERE a dial lands and WHO it
+/// authenticates as, on the effective connection. Deliberately not the
+/// whole row: the app stamps `last_used` on every connect and
+/// `detected_os` after it, narrow updates that change the row without
+/// changing the dial, and hashing them would redial every time the user
+/// also opened the host in a tab. A change to any field here means the
+/// pooled connection no longer represents the host as configured, and
+/// the next call dials fresh.
+pub fn dial_signature(conn: &Connection) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    conn.hostname.hash(&mut h);
+    conn.port.hash(&mut h);
+    conn.username.hash(&mut h);
+    format!("{:?}", conn.auth_method).hash(&mut h);
+    conn.key_id.hash(&mut h);
+    conn.identity_id.hash(&mut h);
+    conn.use_disk_key.hash(&mut h);
+    conn.identity_file.hash(&mut h);
+    conn.jump_chain.hash(&mut h);
+    conn.proxy_identity_id.hash(&mut h);
+    serde_json::to_string(&conn.proxy)
+        .unwrap_or_default()
+        .hash(&mut h);
+    format!("{:?}", conn.address_family).hash(&mut h);
+    conn.ciphers.hash(&mut h);
+    conn.kex.hash(&mut h);
+    conn.macs.hash(&mut h);
+    conn.host_key_algorithms.hash(&mut h);
+    h.finish()
+}
+
+/// Resolve the dial for `id`: the effective connection, its
+/// credentials and an engine configured for a headless caller. Sync,
+/// and the only part of `ssh_execute` that reads the vault.
+pub fn resolve_dial_plan(vault: &VaultStore, id: Uuid) -> Result<DialPlan, PlanError> {
+    let conns = vault
+        .list_mcp_connections()
+        .map_err(|e| PlanError::Other(e.to_string()))?;
     let conn = conns
         .iter()
         .find(|c| c.id == id)
-        .ok_or_else(|| "Host not found or not MCP-enabled".to_string())?;
+        .ok_or(PlanError::NotFound)?;
 
     // Group inheritance (D4), the SAME collapse every app dial site
     // applies (`VaultStore::apply_effective`): the effective proxy lands
@@ -255,11 +315,11 @@ pub async fn handle_ssh_execute(
     let mut auth_conn = conn.clone();
     auth_conn.username = Some(username);
 
-    // Build engine and connect. Honor any per-host legacy-algorithm
-    // overrides the user pinned in the app (MCP is headless, so there is
-    // no interactive fallback dialog, only the pinned settings apply).
-    // The stored TOTP secret rides along for the same reason: an
-    // OTP-gated host is unreachable headlessly without the autofill.
+    // Build the engine. Honor any per-host legacy-algorithm overrides
+    // the user pinned in the app (MCP is headless, so there is no
+    // interactive fallback dialog, only the pinned settings apply). The
+    // stored TOTP secret rides along for the same reason: an OTP-gated
+    // host is unreachable headlessly without the autofill.
     let totp_secret = vault
         .get_connection_totp_secret(&conn.id)
         .ok()
@@ -271,9 +331,7 @@ pub async fn handle_ssh_execute(
         .key_id
         .or_else(|| {
             conn.identity_id.and_then(|iid| {
-                vault
-                    .list_identities()
-                    .unwrap_or_default()
+                identities
                     .iter()
                     .find(|i| i.id == iid)
                     .and_then(|i| i.key_id)
@@ -309,34 +367,102 @@ pub async fn handle_ssh_execute(
             auth_conn.kex.clone(),
             auth_conn.macs.clone(),
             auth_conn.host_key_algorithms.clone(),
-        );
-
-    let mut handle = engine
-        .establish_transport(&auth_conn, None)
-        .await
-        .map_err(|e| format!("Connection failed: {}", e))?;
-
-    engine
-        .do_authenticate(
-            &mut handle,
-            &auth_conn,
-            final_password.as_deref(),
-            final_key
-                .as_deref()
-                .map(|pem| oryxis_ssh::KeyMaterial::new(pem, final_cert.as_deref())),
         )
-        .await
-        .map_err(|e| format!("Authentication failed: {}", e))?;
+        // Headless bounds. Nobody is typing a second factor here, so
+        // the auth window is what a key exchange plus an autofilled
+        // OTP need, not sshd's LoginGraceTime; the client waiting on
+        // the other end of the pipe has a budget of its own, and every
+        // second spent on a wedged handshake comes out of it. The
+        // keepalive is what lets a pooled connection notice a link
+        // that died silently (russh closes after three unanswered).
+        .with_connect_timeout(pool::CONNECT_TIMEOUT)
+        .with_auth_timeout(pool::AUTH_TIMEOUT)
+        .with_keepalive(Some(pool::KEEPALIVE_INTERVAL));
+
+    Ok(DialPlan {
+        conn_id: conn.id,
+        label: conn.label.clone(),
+        endpoint: oryxis_core::net::host_port(&conn.hostname, conn.port),
+        signature: dial_signature(&auth_conn),
+        auth_conn,
+        password: final_password,
+        private_key: final_key,
+        certificate: final_cert,
+        engine,
+    })
+}
+
+/// Default and ceiling for `timeout_secs`. The ceiling is what keeps a
+/// first call (connect + auth + command) inside the budget of the
+/// clients this serves; a longer command belongs in a shell.
+pub const DEFAULT_TIMEOUT_SECS: u64 = 30;
+pub const MAX_TIMEOUT_SECS: u64 = 180;
+
+pub async fn handle_ssh_execute(
+    server: &Server,
+    params: Option<&Value>,
+    cancel: tokio::sync::watch::Receiver<bool>,
+) -> Result<Value, String> {
+    let id_str = params
+        .and_then(|p| p.get("id"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter: id".to_string())?;
+    let command = params
+        .and_then(|p| p.get("command"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter: command".to_string())?;
+    let timeout_secs = params
+        .and_then(|p| p.get("timeout_secs"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(DEFAULT_TIMEOUT_SECS)
+        .clamp(1, MAX_TIMEOUT_SECS);
+
+    let id = Uuid::parse_str(id_str).map_err(|_| "Invalid UUID".to_string())?;
+
+    let started = Instant::now();
+    let plan = match resolve_dial_plan(&server.vault(), id) {
+        Ok(plan) => plan,
+        Err(PlanError::NotFound) => {
+            // A host withdrawn from MCP (or deleted) takes its pooled
+            // connection with it now, not at idle eviction.
+            server.pool.forget(id);
+            return Err(PlanError::NotFound.into());
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let resolve_ms = started.elapsed().as_millis();
+    tracing::debug!(host = %plan.label, command, "ssh_execute command");
 
     let timeout = std::time::Duration::from_secs(timeout_secs);
-    let result = engine
-        .exec_command(handle, command, timeout)
-        .await
-        .map_err(|e| format!("Execution failed: {}", e))?;
-
-    Ok(json!({
-        "exit_code": result.exit_code,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-    }))
+    let outcome = server.pool.exec(plan, command, timeout, cancel).await;
+    match outcome {
+        Ok(run) => {
+            tracing::info!(
+                host = %run.label,
+                endpoint = %run.endpoint,
+                reused = run.reused,
+                resolve_ms,
+                dial_ms = run.dial_ms,
+                exec_ms = run.exec_ms,
+                exit_code = run.result.exit_code,
+                "ssh_execute done"
+            );
+            Ok(json!({
+                "exit_code": run.result.exit_code,
+                "stdout": run.result.stdout,
+                "stderr": run.result.stderr,
+            }))
+        }
+        Err(e) => {
+            tracing::info!(
+                host = %e.label,
+                endpoint = %e.endpoint,
+                stage = e.stage,
+                elapsed_ms = started.elapsed().as_millis(),
+                error = %e.error,
+                "ssh_execute failed"
+            );
+            Err(format!("{}: {}", e.stage_title(), e.error))
+        }
+    }
 }

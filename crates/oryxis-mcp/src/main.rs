@@ -1,22 +1,30 @@
 mod handlers;
+mod pool;
 mod protocol;
 mod server;
+mod stdio;
 #[cfg(test)]
 mod tests;
 mod tools;
 
-use std::io::{self, BufRead, Write};
+use std::io;
+use std::sync::Arc;
 
 use oryxis_vault::VaultStore;
 
 #[tokio::main]
 async fn main() {
-    // Logging to stderr (so it doesn't corrupt JSON-RPC on stdout)
+    // Logging to stderr (so it doesn't corrupt JSON-RPC on stdout). The
+    // client that spawned us keeps stderr in its own log, so this is
+    // the record a report comes with: every request and its outcome
+    // here, every dial and auth step from the engine. `RUST_LOG`
+    // widens it (`russh=debug` for the wire).
     tracing_subscriber::fmt()
         .with_writer(io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("oryxis_mcp=info".parse().unwrap()),
+                .add_directive("oryxis_mcp=info".parse().unwrap())
+                .add_directive("oryxis_ssh=info".parse().unwrap()),
         )
         .init();
 
@@ -61,58 +69,24 @@ async fn main() {
         }
     }
 
-    tracing::info!("Oryxis MCP server started");
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "Oryxis MCP server started");
 
-    // JSON-RPC stdio loop
-    let stdin = io::stdin();
-    let stdout = io::stdout();
+    let server = server::Server::new(vault);
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let request: protocol::JsonRpcRequest = match serde_json::from_str(&line) {
-            Ok(r) => r,
-            Err(e) => {
-                let err = protocol::JsonRpcResponse::error(
-                    serde_json::Value::Null,
-                    -32700,
-                    format!("Parse error: {}", e),
-                );
-                let response = serde_json::to_string(&err).unwrap();
-                let mut out = stdout.lock();
-                let _ = writeln!(out, "{}", response);
-                let _ = out.flush();
-                continue;
+    // Idle pooled connections are closed on a timer, so a host does not
+    // keep a login from a conversation that went quiet.
+    let sweeper = {
+        let server = Arc::clone(&server);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(pool::SWEEP_INTERVAL).await;
+                server.pool.sweep_idle();
             }
-        };
+        })
+    };
 
-        // Per JSON-RPC 2.0 a request without an `id` is a notification and
-        // MUST NOT receive a response. MCP also reserves "notifications/*"
-        // method names for notifications. Silently drop both.
-        let is_notification = request.id.is_none() || request.method.starts_with("notifications/");
-        if is_notification {
-            continue;
-        }
+    stdio::serve(Arc::clone(&server), tokio::io::stdin(), tokio::io::stdout()).await;
 
-        let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-        let response = server::handle_request(
-            &request.method,
-            id,
-            request.params.as_ref(),
-            &vault,
-        )
-        .await;
-
-        let json = serde_json::to_string(&response).unwrap();
-        let mut out = stdout.lock();
-        let _ = writeln!(out, "{}", json);
-        let _ = out.flush();
-    }
+    sweeper.abort();
+    tracing::info!("Oryxis MCP server stopped");
 }
