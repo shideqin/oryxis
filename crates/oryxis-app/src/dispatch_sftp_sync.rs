@@ -44,8 +44,6 @@ impl Oryxis {
         if self.sync.sftp.in_progress {
             return Task::none();
         }
-        // Resolved before the guards, so a retry's reserved key is consumed.
-        let mut keys = self.take_or_resolve_keys(trigger);
         // A locked vault has no master key to decrypt with; the
         // manual buttons must not rely on the lock screen hiding them.
         if !self.sync_round_allowed() {
@@ -81,13 +79,12 @@ impl Oryxis {
         let Some(vault) = &self.vault else {
             return Task::none();
         };
-        // One key per attempt; the rest wait for a key failure to retry.
-        if keys.is_empty() {
+        // Group key: the typed buffer for a manual round, else the
+        // stored value.
+        let Some(key) = self.sync_round_passphrase(trigger) else {
             self.sync.sftp.status = Some(Err(t("sftp_sync_no_passphrase").to_string()));
             return Task::none();
-        }
-        let key = keys.remove(0);
-        self.sync.pending_keys = keys;
+        };
 
         // Round-scoped dedicated vault handle: the snapshot fns need an
         // `Arc<Mutex<VaultStore>>` but the app holds a plain handle. Same
