@@ -692,7 +692,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "输入新口令",
         "sync_passphrase_match_hint" => "与已保存的口令一致",
         "sync_passphrase_mismatch_hint" => "与已保存的口令不同",
-        "sync_passphrase_forgot_hint" => "忘记口令了？删除远程快照后重新同步",
+        "sync_passphrase_forgot_hint" => "口令无法打开远程快照。请检查输入的口令；若已丢失，删除远程快照后重新同步",
 
         "welcome" => "欢迎使用 Oryxis",
         "create_vault" => "创建保险库",

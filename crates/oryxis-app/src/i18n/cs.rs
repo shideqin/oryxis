@@ -2029,7 +2029,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Zadejte novou přístupovou frázi",
         "sync_passphrase_match_hint" => "Shoduje se s uloženou přístupovou frází",
         "sync_passphrase_mismatch_hint" => "Liší se od uložené přístupové fráze",
-        "sync_passphrase_forgot_hint" => "Zapomněli jste přístupovou frázi? Smažte vzdálený snapshot a synchronizujte znovu",
+        "sync_passphrase_forgot_hint" => "Přístupová fráze neotevře vzdálený snapshot. Zkontrolujte zadanou; pokud je ztracená, smažte vzdálený snapshot a synchronizujte znovu",
         "host_count_one" => "1 hostitel",
         "host_count_other" => "hostitelů",
         "line_count_one" => "1 řádek",

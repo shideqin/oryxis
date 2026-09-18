@@ -694,7 +694,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Wpisz nowe hasło synchronizacji",
         "sync_passphrase_match_hint" => "Zgadza się z zapisanym hasłem synchronizacji",
         "sync_passphrase_mismatch_hint" => "Różni się od zapisanego hasła synchronizacji",
-        "sync_passphrase_forgot_hint" => "Zapomniałeś hasła synchronizacji? Usuń zdalny snapshot i zsynchronizuj ponownie",
+        "sync_passphrase_forgot_hint" => "Hasło synchronizacji nie otwiera zdalnego snapshotu. Sprawdź wpisane hasło; jeśli zostało utracone, usuń zdalny snapshot i zsynchronizuj ponownie",
 
         // Vault
         "welcome" => "Witaj w Oryxis",

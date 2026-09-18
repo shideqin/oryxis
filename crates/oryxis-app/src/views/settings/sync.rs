@@ -78,8 +78,8 @@ impl Oryxis {
     /// hint; clearing the field abandons the edit (there is no separate
     /// cancel button). The input is also the plain first-time form when
     /// no passphrase is stored yet. The keynav slot covers the whole
-    /// read-only row (activate = change); in edit mode the field is the
-    /// only stop.
+    /// read-only row (activate = change); in edit mode the field and its
+    /// reveal eye are the stops.
     fn sync_passphrase_block(
         &self,
         id: &'static str,
@@ -140,22 +140,50 @@ impl Oryxis {
             // there is no separate cancel button. The same form serves
             // first-time setup. The bounds reporter feeds the blur
             // probe (`PassphraseBlurCheck`) with the field's position.
-            let field = self.settings_nav_slot_labeled(
+            //
+            // The reveal eye is the only way to read back what the field
+            // holds: the mask hides a stray character (a trailing space
+            // a paste brought along, an IME artifact) well enough to make
+            // a correct passphrase look wrong, and the match hint below
+            // can only say THAT it differs, not where. The eye shows the
+            // TYPED buffer only (never the stored value) and lives just
+            // as long as the edit. It is a nav stop, so the field's row
+            // is recorded before the widget is built, like the AI key
+            // field; the input fills its parent, so the card's requested
+            // width moves to the wrapper.
+            let row_idx = self.settings_nav_record_labeled(
                 t("sftp_sync_passphrase"),
                 crate::keynav::RowAction::input(iced::widget::Id::new(id)),
+            );
+            let field = self.settings_nav_ring_at(
+                row_idx,
                 crate::widgets::INPUT_RADIUS,
                 crate::widgets::bounds_reporter(
-                    text_input(
+                    container(crate::widgets::password_input_with_eye_nav(
                         self.sync_passphrase_placeholder(),
                         self.sync.passphrase_input.as_str(),
-                    )
-                    .id(iced::widget::Id::new(id))
-                    .on_input(|v| Message::Sync(SyncMessage::PassphraseChanged(v.into())))
-                    .secure(true)
-                    .padding(10)
-                    .width(width)
-                    .style(crate::widgets::rounded_input_style)
-                    .align_x(dir_align_x()),
+                        |v| Message::Sync(SyncMessage::PassphraseChanged(v.into())),
+                        None,
+                        self.revealed_secrets
+                            .contains(&crate::state::SecretField::SyncPassphrase),
+                        Message::Settings(SettingsMessage::ToggleSecretVisibility(
+                            crate::state::SecretField::SyncPassphrase,
+                        )),
+                        10.0,
+                        Some(iced::widget::Id::new(id)),
+                        |eye| {
+                            self.settings_nav_slot(
+                                crate::keynav::RowAction::activate(Message::Settings(
+                                    SettingsMessage::ToggleSecretVisibility(
+                                        crate::state::SecretField::SyncPassphrase,
+                                    ),
+                                )),
+                                6.0,
+                                eye,
+                            )
+                        },
+                    ))
+                    .width(width),
                     self.sync.passphrase_field_bounds.clone(),
                 ),
             );

@@ -2184,7 +2184,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "عبارت عبور جدید را وارد کنید",
         "sync_passphrase_match_hint" => "با عبارت عبور ذخیره‌شده یکسان است",
         "sync_passphrase_mismatch_hint" => "با عبارت عبور ذخیره‌شده تفاوت دارد",
-        "sync_passphrase_forgot_hint" => "عبارت عبور را فراموش کرده‌اید؟ عکس فوری از راه دور را حذف کرده و دوباره همگام‌سازی کنید",
+        "sync_passphrase_forgot_hint" => "عبارت عبور عکس فوری از راه دور را باز نمی‌کند. عبارت واردشده را بررسی کنید؛ اگر گم شده است، عکس فوری از راه دور را حذف کرده و دوباره همگام‌سازی کنید",
         "host_count_one" => "۱ میزبان",
         "host_count_other" => "میزبان",
         "line_count_one" => "۱ خط",

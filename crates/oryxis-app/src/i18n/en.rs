@@ -2030,7 +2030,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "sync_passphrase_new_placeholder" => "Enter new passphrase",
         "sync_passphrase_match_hint" => "Matches the saved passphrase",
         "sync_passphrase_mismatch_hint" => "Different from the saved passphrase",
-        "sync_passphrase_forgot_hint" => "Forgot the passphrase? Delete the remote snapshot and sync again",
+        "sync_passphrase_forgot_hint" => "The passphrase does not open the remote snapshot. Check the one you entered; if it is lost, delete the remote snapshot and sync again",
         "host_count_one" => "1 host",
         "host_count_other" => "hosts",
         "line_count_one" => "1 line",

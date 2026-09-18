@@ -2029,7 +2029,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "הזינו משפט סיסמה חדש",
         "sync_passphrase_match_hint" => "תואם למשפט הסיסמה השמור",
         "sync_passphrase_mismatch_hint" => "שונה ממשפט הסיסמה השמור",
-        "sync_passphrase_forgot_hint" => "שכחתם את משפט הסיסמה? מחקו את צילום המצב המרוחק וסנכרנו שוב",
+        "sync_passphrase_forgot_hint" => "משפט הסיסמה אינו פותח את צילום המצב המרוחק. בדקו את מה שהקלדתם; אם הוא אבד, מחקו את צילום המצב המרוחק וסנכרנו שוב",
         "host_count_one" => "מארח אחד",
         "host_count_other" => "מארחים",
         "line_count_one" => "שורה אחת",

@@ -362,6 +362,10 @@ pub enum SecretField {
     ImportPassword,
     /// Sync signaling token (Settings > Sync).
     SyncSignalingToken,
+    /// Shared sync group passphrase (Settings > Sync), while the field
+    /// is in edit mode. Reveals the TYPED buffer only: the stored value
+    /// has no reader on any surface.
+    SyncPassphrase,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

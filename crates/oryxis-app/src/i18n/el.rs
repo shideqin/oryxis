@@ -2029,7 +2029,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Εισάγετε τη νέα φράση πρόσβασης",
         "sync_passphrase_match_hint" => "Ταυτίζεται με την αποθηκευμένη φράση πρόσβασης",
         "sync_passphrase_mismatch_hint" => "Διαφέρει από την αποθηκευμένη φράση πρόσβασης",
-        "sync_passphrase_forgot_hint" => "Ξεχάσατε τη φράση πρόσβασης; Διαγράψτε το απομακρυσμένο στιγμιότυπο και συγχρονίστε ξανά",
+        "sync_passphrase_forgot_hint" => "Η φράση πρόσβασης δεν ανοίγει το απομακρυσμένο στιγμιότυπο. Ελέγξτε αυτήν που πληκτρολογήσατε· αν χάθηκε, διαγράψτε το απομακρυσμένο στιγμιότυπο και συγχρονίστε ξανά",
         "host_count_one" => "1 host",
         "host_count_other" => "hosts",
         "line_count_one" => "1 γραμμή",

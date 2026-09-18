@@ -692,7 +692,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Saisissez la nouvelle phrase secrète",
         "sync_passphrase_match_hint" => "Identique à la phrase secrète enregistrée",
         "sync_passphrase_mismatch_hint" => "Différente de la phrase secrète enregistrée",
-        "sync_passphrase_forgot_hint" => "Phrase secrète oubliée ? Supprimez l'instantané distant et resynchronisez",
+        "sync_passphrase_forgot_hint" => "La phrase secrète n'ouvre pas l'instantané distant. Vérifiez celle que vous avez saisie ; si elle est perdue, supprimez l'instantané distant et resynchronisez",
 
         "welcome" => "Bienvenue sur Oryxis",
         "create_vault" => "Créer le Coffre",

@@ -10,8 +10,10 @@ mode: Zen
 # pre-fills it; with a stored passphrase the field is a plain clickable
 # masked box (no pencil, no tooltip; the hover border carries it),
 # typing never writes through, the key only changes when a round
-# SUCCEEDS with the typed value, and a live hint under the field says
-# whether the typed value matches the saved passphrase.
+# SUCCEEDS with the typed value, a live hint under the field says
+# whether the typed value matches the saved passphrase, and a reveal
+# eye on the edit field reads back what was typed (the mask is what
+# hides the stray character a paste or an IME can leave behind).
 expect "Welcome to Oryxis"
 click "Skip"
 click "Continue without password"
@@ -85,9 +87,10 @@ expect "Different from the saved passphrase"
 click "Sync Now"
 settle 800
 expect "Crypto error: Decryption failed (wrong key?)"
-# A passphrase mismatch is a dead end until the remote snapshot is
-# discarded, so the card shows the recovery path under the error.
-expect "Forgot the passphrase? Delete the remote snapshot and sync again"
+# The card says what to do under the error: check the typed value
+# first (the field has a reveal eye for that), and only if the
+# passphrase is lost discard the remote snapshot.
+find "does not open the remote snapshot"
 # Re-entering the SAVED passphrase flips the hint to green and syncs.
 # (The Sync now click left focus on the button, so re-focus the field
 # before the select-all.)
@@ -104,4 +107,4 @@ settle 800
 # vault's shipped presets, so leaving edit mode is the stable signal).
 expect "••••••••"
 absent "Decryption failed"
-absent "Forgot the passphrase"
+absent "does not open the remote snapshot"

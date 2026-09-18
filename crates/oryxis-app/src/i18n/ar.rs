@@ -696,7 +696,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "أدخل عبارة المرور الجديدة",
         "sync_passphrase_match_hint" => "يطابق عبارة المرور المحفوظة",
         "sync_passphrase_mismatch_hint" => "يختلف عن عبارة المرور المحفوظة",
-        "sync_passphrase_forgot_hint" => "هل نسيت عبارة المرور؟ احذف اللقطة عن بُعد وأعد المزامنة",
+        "sync_passphrase_forgot_hint" => "عبارة المرور لا تفتح اللقطة عن بُعد. تحقق مما أدخلته؛ وإن فُقدت، احذف اللقطة عن بُعد وأعد المزامنة",
 
         // Vault
         "welcome" => "مرحبًا بك في Oryxis",

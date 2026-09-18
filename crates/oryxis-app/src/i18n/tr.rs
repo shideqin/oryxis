@@ -2195,7 +2195,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Yeni parolayı girin",
         "sync_passphrase_match_hint" => "Kaydedilen parolayla eşleşiyor",
         "sync_passphrase_mismatch_hint" => "Kaydedilen paroladan farklı",
-        "sync_passphrase_forgot_hint" => "Parolayı mı unuttunuz? Uzak anlık görüntüyü silin ve yeniden eşitleyin",
+        "sync_passphrase_forgot_hint" => "Parola uzak anlık görüntüyü açmıyor. Girdiğiniz parolayı kontrol edin; kaybolduysa uzak anlık görüntüyü silin ve yeniden eşitleyin",
         "host_count_one" => "1 sunucu",
         "host_count_other" => "sunucu",
         "line_count_one" => "1 satır",

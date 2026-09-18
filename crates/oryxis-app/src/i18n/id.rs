@@ -2195,7 +2195,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Masukkan frasa sandi baru",
         "sync_passphrase_match_hint" => "Sama dengan frasa sandi tersimpan",
         "sync_passphrase_mismatch_hint" => "Berbeda dari frasa sandi tersimpan",
-        "sync_passphrase_forgot_hint" => "Lupa frasa sandi? Hapus snapshot jarak jauh lalu sinkronkan lagi",
+        "sync_passphrase_forgot_hint" => "Frasa sandi tidak membuka snapshot jarak jauh. Periksa yang Anda masukkan; jika hilang, hapus snapshot jarak jauh lalu sinkronkan lagi",
         "host_count_one" => "1 host",
         "host_count_other" => "host",
         "line_count_one" => "1 baris",

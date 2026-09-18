@@ -2195,7 +2195,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Введіть нову парольну фразу",
         "sync_passphrase_match_hint" => "Збігається із збереженою парольною фразою",
         "sync_passphrase_mismatch_hint" => "Відрізняється від збереженої парольної фрази",
-        "sync_passphrase_forgot_hint" => "Забули парольну фразу? Видаліть віддалений знімок і синхронізуйтеся знову",
+        "sync_passphrase_forgot_hint" => "Парольна фраза не відкриває віддалений знімок. Перевірте введену; якщо її втрачено, видаліть віддалений знімок і синхронізуйтеся знову",
         "host_count_one" => "1 хост",
         "host_count_other" => "хостів",
         "line_count_one" => "1 рядок",

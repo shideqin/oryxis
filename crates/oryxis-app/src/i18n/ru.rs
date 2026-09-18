@@ -2163,7 +2163,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Введите новую парольную фразу",
         "sync_passphrase_match_hint" => "Совпадает с сохранённой парольной фразой",
         "sync_passphrase_mismatch_hint" => "Отличается от сохранённой парольной фразы",
-        "sync_passphrase_forgot_hint" => "Забыли парольную фразу? Удалите удалённый снимок и синхронизируйтесь заново",
+        "sync_passphrase_forgot_hint" => "Парольная фраза не открывает удалённый снимок. Проверьте введённую; если она утеряна, удалите удалённый снимок и синхронизируйтесь заново",
         "host_count_one" => "1 хост",
         "host_count_other" => "хостов",
         "line_count_one" => "1 строка",

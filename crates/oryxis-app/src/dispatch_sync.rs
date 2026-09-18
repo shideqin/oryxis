@@ -59,7 +59,10 @@ impl Oryxis {
     ///   accidental keystroke can't destroy the stored key.
     ///
     /// The per-keystroke comparison against the stored value powers the
-    /// "matches / differs" hint under the field.
+    /// "matches / differs" hint under the field. The field is masked, so
+    /// the hint is the one thing that says BEFORE a round whether the
+    /// typed value is the saved key; the reveal eye beside the field is
+    /// how a stray character the mask hides is then found.
     fn set_sync_passphrase(&mut self, value: String) {
         self.sync.passphrase_input.set(value);
         self.refresh_passphrase_match();
@@ -73,20 +76,28 @@ impl Oryxis {
         // An empty field says nothing (the user just cleared it, and may
         // keep typing); only a non-empty typed value is compared against
         // the stored passphrase for the live hint.
+        if self.sync.passphrase_input.as_str().is_empty() {
+            self.sync.passphrase_matches = None;
+            return;
+        }
+        // The stored value is read ONCE per edit and kept for the edit's
+        // lifetime (`passphrase_stored`): the comparison runs per
+        // keystroke, and a SELECT plus a decrypt per keystroke is not a
+        // price a hint should cost. The cache is dropped with the edit
+        // and on lock, and refreshed by the round that commits a new key.
+        if self.sync.passphrase_stored.is_none() && self.sync.passphrase_known {
+            self.sync.passphrase_stored = self
+                .vault
+                .as_ref()
+                .and_then(|v| v.get_sync_sftp_passphrase().ok().flatten())
+                .map(Zeroizing::new);
+        }
         let typed = self.sync.passphrase_input.as_str();
-        self.sync.passphrase_matches = if typed.is_empty() {
-            None
-        } else {
-            match &self.vault {
-                Some(vault) if self.sync.passphrase_known => {
-                    match vault.get_sync_sftp_passphrase() {
-                        Ok(Some(stored)) => Some(stored == typed),
-                        _ => None,
-                    }
-                }
-                _ => None,
-            }
-        };
+        self.sync.passphrase_matches = self
+            .sync
+            .passphrase_stored
+            .as_ref()
+            .map(|stored| stored.as_str() == typed);
     }
 
     /// Abandon an open passphrase edit without committing: the typed
@@ -97,8 +108,15 @@ impl Oryxis {
     pub(crate) fn exit_passphrase_edit(&mut self) {
         self.sync.passphrase_input.clear();
         self.sync.passphrase_matches = None;
+        self.sync.passphrase_stored = None;
         self.sync.passphrase_editing = false;
         self.sync.passphrase_field_id = None;
+        // A revealed passphrase lives only as long as the edit that
+        // showed it: the next edit opens masked again. The stored value
+        // is never revealed, so there is nothing else to sweep here (a
+        // locked vault clears the whole set).
+        self.revealed_secrets
+            .remove(&crate::state::SecretField::SyncPassphrase);
     }
 
     /// Hand the round its key and remember what it seals with, so the
@@ -142,6 +160,10 @@ impl Oryxis {
             let _ = vault.set_sync_sftp_passphrase(&sealed);
         }
         self.sync.passphrase_known = !sealed.is_empty();
+        // The hint compares against the cache, so the cache follows the
+        // commit: what was just written is what the field is now judged
+        // against.
+        self.sync.passphrase_stored = Some(sealed.clone());
         if self.sync.passphrase_input.as_str() == sealed.as_str() {
             self.exit_passphrase_edit();
         } else {

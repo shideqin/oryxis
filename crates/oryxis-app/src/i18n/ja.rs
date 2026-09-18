@@ -692,7 +692,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "新しいパスフレーズを入力",
         "sync_passphrase_match_hint" => "保存済みのパスフレーズと一致",
         "sync_passphrase_mismatch_hint" => "保存済みのパスフレーズと異なります",
-        "sync_passphrase_forgot_hint" => "パスフレーズを忘れましたか？リモートのスナップショットを削除して再同期してください",
+        "sync_passphrase_forgot_hint" => "パスフレーズでリモートのスナップショットを開けません。入力したパスフレーズを確認してください。忘れた場合は、リモートのスナップショットを削除して再同期してください",
 
         "welcome" => "Oryxisへようこそ",
         "create_vault" => "ボールトを作成",

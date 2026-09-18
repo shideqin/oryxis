@@ -280,6 +280,7 @@ impl Oryxis {
                     // stored value itself rides the encrypted setting).
                     self.sync.passphrase_input.clear();
                     self.sync.passphrase_matches = None;
+                    self.sync.passphrase_stored = None;
                     self.sync.passphrase_editing = false;
                     self.sync.passphrase_field_id = None;
                     // Same for a round's armed key: a locked vault cannot

@@ -2163,7 +2163,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Neue Passphrase eingeben",
         "sync_passphrase_match_hint" => "Gleich wie die gespeicherte Passphrase",
         "sync_passphrase_mismatch_hint" => "Anders als die gespeicherte Passphrase",
-        "sync_passphrase_forgot_hint" => "Passphrase vergessen? Löschen Sie den entfernten Snapshot und synchronisieren Sie erneut",
+        "sync_passphrase_forgot_hint" => "Die Passphrase öffnet den entfernten Snapshot nicht. Prüfen Sie die eingegebene; falls sie verloren ist, löschen Sie den entfernten Snapshot und synchronisieren Sie erneut",
         "host_count_one" => "1 Host",
         "host_count_other" => "Hosts",
         "line_count_one" => "1 Zeile",

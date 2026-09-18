@@ -2029,7 +2029,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "नया पासफ़्रेज़ दर्ज करें",
         "sync_passphrase_match_hint" => "सहेजे गए पासफ़्रेज़ से मेल खाता है",
         "sync_passphrase_mismatch_hint" => "सहेजे गए पासफ़्रेज़ से अलग",
-        "sync_passphrase_forgot_hint" => "पासफ़्रेज़ भूल गए? दूरस्थ स्नैपशॉट हटाकर फिर से सिंक करें",
+        "sync_passphrase_forgot_hint" => "पासफ़्रेज़ से दूरस्थ स्नैपशॉट नहीं खुलता। दर्ज किया गया पासफ़्रेज़ जाँचें; यदि वह खो गया है, तो दूरस्थ स्नैपशॉट हटाकर फिर से सिंक करें",
         "host_count_one" => "1 होस्ट",
         "host_count_other" => "होस्ट",
         "line_count_one" => "1 पंक्ति",

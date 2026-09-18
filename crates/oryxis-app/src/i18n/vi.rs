@@ -2195,7 +2195,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "Nhập cụm mật khẩu mới",
         "sync_passphrase_match_hint" => "Khớp với cụm mật khẩu đã lưu",
         "sync_passphrase_mismatch_hint" => "Khác với cụm mật khẩu đã lưu",
-        "sync_passphrase_forgot_hint" => "Quên cụm mật khẩu? Xóa ảnh chụp nhanh từ xa và đồng bộ lại",
+        "sync_passphrase_forgot_hint" => "Cụm mật khẩu không mở được ảnh chụp nhanh từ xa. Kiểm tra cụm bạn đã nhập; nếu đã mất, xóa ảnh chụp nhanh từ xa và đồng bộ lại",
         "host_count_one" => "1 máy chủ",
         "host_count_other" => "máy chủ",
         "line_count_one" => "1 dòng",

@@ -124,6 +124,13 @@ pub(crate) struct SyncState {
     /// the existing snapshot undecryptable until it matches again.
     /// `None` while the field is untouched or no passphrase is stored.
     pub(crate) passphrase_matches: Option<bool>,
+    /// The stored passphrase, read once for the hint above and kept for
+    /// the lifetime of one edit, so the per-keystroke comparison costs a
+    /// string compare rather than a vault read and decrypt. Set lazily
+    /// on the first keystroke that needs it, replaced by the key a round
+    /// commits, dropped when the edit closes and on lock (it must not
+    /// sit in RAM behind the lock screen any more than the buffer).
+    pub(crate) passphrase_stored: Option<zeroize::Zeroizing<String>>,
     /// The key an IN-FLIGHT round sealed its snapshot with, armed at the
     /// start of the round and spent when it finishes: success stores it
     /// as the group key, failure drops it. Committing this instead of
@@ -362,6 +369,7 @@ impl Default for SyncState {
             passphrase_field_id: None,
             passphrase_field_bounds: crate::widgets::new_bounds_cell(),
             passphrase_matches: None,
+            passphrase_stored: None,
             passphrase_sealed: None,
             relay_wizard: RelayWizardForm::default(),
             relay_deploy: RelayDeployForm::default(),

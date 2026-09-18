@@ -2195,7 +2195,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "새 암호 구문 입력",
         "sync_passphrase_match_hint" => "저장된 암호 구문과 일치",
         "sync_passphrase_mismatch_hint" => "저장된 암호 구문과 다릅니다",
-        "sync_passphrase_forgot_hint" => "암호 구문을 잊으셨나요? 원격 스냅샷을 삭제하고 다시 동기화하세요",
+        "sync_passphrase_forgot_hint" => "암호 구문으로 원격 스냅샷을 열 수 없습니다. 입력한 암호 구문을 확인하세요. 잊었다면 원격 스냅샷을 삭제하고 다시 동기화하세요",
         "host_count_one" => "호스트 1개",
         "host_count_other" => "호스트",
         "line_count_one" => "1줄",

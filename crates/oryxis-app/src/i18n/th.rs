@@ -2030,7 +2030,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "sync_passphrase_new_placeholder" => "ป้อนวลีรหัสผ่านใหม่",
         "sync_passphrase_match_hint" => "ตรงกับวลีรหัสผ่านที่บันทึกไว้",
         "sync_passphrase_mismatch_hint" => "แตกต่างจากวลีรหัสผ่านที่บันทึกไว้",
-        "sync_passphrase_forgot_hint" => "ลืมวลีรหัสผ่านใช่หรือไม่ ลบสแนปช็อตระยะไกลแล้วซิงค์อีกครั้ง",
+        "sync_passphrase_forgot_hint" => "วลีรหัสผ่านเปิดสแนปช็อตระยะไกลไม่ได้ ตรวจสอบวลีที่ป้อน หากสูญหาย ให้ลบสแนปช็อตระยะไกลแล้วซิงค์อีกครั้ง",
         "host_count_one" => "1 โฮสต์",
         "host_count_other" => "โฮสต์",
         "line_count_one" => "1 บรรทัด",
