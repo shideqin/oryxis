@@ -1806,7 +1806,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "Wysyłki zapisują do nazwy tymczasowej i po zakończeniu są przenoszone na właściwą, więc prawdziwa nazwa pojawia się tylko kompletna. Niektóre serwery zabraniają zmiany nazwy, a obserwator nasłuchujący nazwy końcowej zobaczy plik od razu, zamiast rosnącego. Pobierania robią tak zawsze.",
         "setting_sftp_upload_temp_name_toggle" => "Zmień nazwę po wysłaniu",
         "setting_sftp_ask_download_dir" => "Pytaj, gdzie zapisywać pobrane pliki",
-        "setting_sftp_ask_download_dir_desc" => "Pobrane pliki trafiają do bieżącego folderu drugiego panelu. Włącz, aby za każdym razem wybierać miejsce docelowe. Pozycja \"Pobierz do...\" w menu wiersza pyta zawsze, niezależnie od tego ustawienia.",
+        "setting_sftp_ask_download_dir_desc" => "Pobrane przez SFTP pliki trafiają do bieżącego folderu drugiego panelu, a pobrane przez rz/sz (ZMODEM) do domyślnego folderu poniżej. Włącz, aby za każdym razem wybierać miejsce docelowe, w obu przypadkach. Pozycja \"Pobierz do...\" w menu wiersza pyta zawsze, niezależnie od tego ustawienia. Zdalne sz czeka na odpowiedź około 30 sekund.",
         "setting_sftp_ask_download_dir_toggle" => "Pytaj o miejsce docelowe przy każdym pobieraniu",
         "files_mounting" => "Otwieranie SFTP…",
         "files_empty" => "Pusty folder",

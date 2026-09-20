@@ -1803,7 +1803,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "setting_sftp_upload_temp_name_desc" => "Uploads write to a scratch name and are renamed into place when they finish, so the real name only ever appears complete. Some servers forbid the rename, and a watcher keyed on the final name will see it appear all at once instead of growing. Downloads always do this.",
         "setting_sftp_upload_temp_name_toggle" => "Rename into place after uploading",
         "setting_sftp_ask_download_dir" => "Ask where to save downloads",
-        "setting_sftp_ask_download_dir_desc" => "Downloads land in the other pane's current folder. Turn this on to pick the destination every time. The row menu's \"Download to...\" always asks, whatever this is set to.",
+        "setting_sftp_ask_download_dir_desc" => "SFTP downloads land in the other pane's current folder, and rz/sz (ZMODEM) downloads in the default folder below. Turn this on to pick the destination every time, on both. The row menu's \"Download to...\" always asks, whatever this is set to. The remote sz waits about 30 seconds for the answer.",
         "setting_sftp_ask_download_dir_toggle" => "Ask for the destination on every download",
         "files_mounting" => "Opening SFTP…",
         "files_empty" => "Empty folder",

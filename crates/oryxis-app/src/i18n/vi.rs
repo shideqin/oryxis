@@ -1796,7 +1796,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "Tải lên ghi vào một tên tạm rồi đổi tên về đúng chỗ khi xong, nên tên thật chỉ xuất hiện khi đã hoàn chỉnh. Một số máy chủ cấm đổi tên, và trình theo dõi gắn với tên cuối sẽ thấy tệp xuất hiện một lần thay vì lớn dần. Tải xuống luôn làm như vậy.",
         "setting_sftp_upload_temp_name_toggle" => "Đổi tên về đúng chỗ sau khi tải lên",
         "setting_sftp_ask_download_dir" => "Hỏi nơi lưu tệp tải xuống",
-        "setting_sftp_ask_download_dir_desc" => "Tệp tải xuống được lưu vào thư mục hiện tại của khung bên kia. Bật tùy chọn này để chọn đích mỗi lần. Mục \"Tải xuống vào...\" trong menu hàng luôn hỏi, bất kể thiết lập này.",
+        "setting_sftp_ask_download_dir_desc" => "Tệp tải xuống qua SFTP được lưu vào thư mục hiện tại của khung bên kia, còn tải xuống qua rz/sz (ZMODEM) vào thư mục mặc định bên dưới. Bật tùy chọn này để chọn đích mỗi lần, cho cả hai. Mục \"Tải xuống vào...\" trong menu hàng luôn hỏi, bất kể thiết lập này. sz ở máy từ xa chờ trả lời khoảng 30 giây.",
         "setting_sftp_ask_download_dir_toggle" => "Hỏi đích đến ở mỗi lần tải xuống",
         "files_mounting" => "Đang mở SFTP…",
         "files_empty" => "Thư mục trống",

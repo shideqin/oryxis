@@ -1690,7 +1690,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "Uploads schreiben in einen Zwischennamen und werden am Ende umbenannt, sodass der echte Name nur vollständig erscheint. Manche Server verbieten das Umbenennen, und ein Watcher auf dem Zielnamen sieht ihn auf einmal erscheinen statt wachsen. Downloads tun dies immer.",
         "setting_sftp_upload_temp_name_toggle" => "Nach dem Hochladen umbenennen",
         "setting_sftp_ask_download_dir" => "Nach dem Speicherort für Downloads fragen",
-        "setting_sftp_ask_download_dir_desc" => "Downloads landen im aktuellen Ordner des anderen Bereichs. Aktivieren Sie dies, um das Ziel jedes Mal auszuwählen. Der Eintrag \"Herunterladen nach...\" im Zeilenmenü fragt immer, unabhängig von dieser Einstellung.",
+        "setting_sftp_ask_download_dir_desc" => "SFTP-Downloads landen im aktuellen Ordner des anderen Bereichs, rz/sz-Downloads (ZMODEM) im Standardordner unten. Aktivieren Sie dies, um das Ziel jedes Mal auszuwählen, bei beiden. Der Eintrag \"Herunterladen nach...\" im Zeilenmenü fragt immer, unabhängig von dieser Einstellung. Das entfernte sz wartet etwa 30 Sekunden auf die Antwort.",
         "setting_sftp_ask_download_dir_toggle" => "Bei jedem Download nach dem Ziel fragen",
         "files_mounting" => "SFTP wird geöffnet…",
         "files_empty" => "Leerer Ordner",

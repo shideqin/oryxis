@@ -1796,7 +1796,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "Unggahan menulis ke nama sementara lalu diganti namanya saat selesai, sehingga nama sebenarnya hanya muncul dalam keadaan lengkap. Beberapa server melarang penggantian nama, dan pemantau yang menunggu nama akhir akan melihatnya muncul sekaligus alih-alih bertumbuh. Unduhan selalu melakukan ini.",
         "setting_sftp_upload_temp_name_toggle" => "Ganti nama setelah mengunggah",
         "setting_sftp_ask_download_dir" => "Tanyakan lokasi penyimpanan unduhan",
-        "setting_sftp_ask_download_dir_desc" => "Unduhan masuk ke folder saat ini pada panel satunya. Aktifkan untuk memilih tujuan setiap kali. Menu baris \"Unduh ke...\" selalu bertanya, apa pun pengaturan ini.",
+        "setting_sftp_ask_download_dir_desc" => "Unduhan SFTP masuk ke folder saat ini pada panel satunya, dan unduhan rz/sz (ZMODEM) ke folder bawaan di bawah. Aktifkan untuk memilih tujuan setiap kali, pada keduanya. Menu baris \"Unduh ke...\" selalu bertanya, apa pun pengaturan ini. sz di sisi jauh menunggu jawaban sekitar 30 detik.",
         "setting_sftp_ask_download_dir_toggle" => "Tanyakan tujuan pada setiap unduhan",
         "files_mounting" => "Membuka SFTP…",
         "files_empty" => "Folder kosong",

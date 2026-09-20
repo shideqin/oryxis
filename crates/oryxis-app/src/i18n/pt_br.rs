@@ -1755,7 +1755,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "Os envios escrevem num nome de rascunho e são renomeados no lugar ao terminar, então o nome real só aparece completo. Alguns servidores proíbem o rename, e um watcher preso ao nome final vai vê-lo aparecer de uma vez em vez de crescer. Downloads sempre fazem isso.",
         "setting_sftp_upload_temp_name_toggle" => "Renomear no lugar após enviar",
         "setting_sftp_ask_download_dir" => "Perguntar onde salvar os downloads",
-        "setting_sftp_ask_download_dir_desc" => "Os downloads caem na pasta atual do outro painel. Ative para escolher o destino a cada vez. O \"Baixar para...\" do menu da linha sempre pergunta, independente desta opção.",
+        "setting_sftp_ask_download_dir_desc" => "Os downloads do SFTP caem na pasta atual do outro painel, e os do rz/sz (ZMODEM) na pasta padrão abaixo. Ative para escolher o destino a cada vez, nos dois. O \"Baixar para...\" do menu da linha sempre pergunta, independente desta opção. O sz remoto espera cerca de 30 segundos pela resposta.",
         "setting_sftp_ask_download_dir_toggle" => "Perguntar o destino em todo download",
         "files_mounting" => "Abrindo SFTP…",
         "files_empty" => "Pasta vazia",

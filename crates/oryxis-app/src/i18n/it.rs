@@ -1690,7 +1690,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "I caricamenti scrivono su un nome temporaneo e vengono rinominati al termine, così il nome reale appare solo completo. Alcuni server vietano la rinomina, e un watcher legato al nome finale lo vedrà comparire tutto insieme invece di crescere. I download lo fanno sempre.",
         "setting_sftp_upload_temp_name_toggle" => "Rinominare al termine del caricamento",
         "setting_sftp_ask_download_dir" => "Chiedi dove salvare i download",
-        "setting_sftp_ask_download_dir_desc" => "I download finiscono nella cartella corrente dell'altro riquadro. Attiva questa opzione per scegliere la destinazione ogni volta. La voce \"Scarica in...\" del menu di riga chiede sempre, qualunque sia questa impostazione.",
+        "setting_sftp_ask_download_dir_desc" => "I download SFTP finiscono nella cartella corrente dell'altro riquadro, quelli di rz/sz (ZMODEM) nella cartella predefinita qui sotto. Attiva questa opzione per scegliere la destinazione ogni volta, per entrambi. La voce \"Scarica in...\" del menu di riga chiede sempre, qualunque sia questa impostazione. Lo sz remoto attende la risposta per circa 30 secondi.",
         "setting_sftp_ask_download_dir_toggle" => "Chiedi la destinazione a ogni download",
         "files_mounting" => "Apertura SFTP…",
         "files_empty" => "Cartella vuota",

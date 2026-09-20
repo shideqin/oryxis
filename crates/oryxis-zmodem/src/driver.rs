@@ -1727,4 +1727,119 @@ mod tests {
             let _ = tokio::fs::remove_dir_all(&dir).await;
         });
     }
+
+    /// The app may hold a folder dialog open between detecting an `sz`
+    /// and spawning this driver, and the pane's divert is live for the
+    /// whole wait, so every ZRQINIT the sender retransmits meanwhile is
+    /// queued on `wire_in` ahead of the real conversation. The receiver
+    /// must treat that run of duplicate openers as one opener: answer,
+    /// then carry the transfer to completion on the bytes that follow.
+    #[test]
+    fn a_run_of_queued_openers_does_not_derail_the_download() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let dir = std::env::temp_dir().join(format!("oryxis-zm-dup-{}", std::process::id()));
+            let _ = tokio::fs::create_dir_all(&dir).await;
+            let src = dir.join("payload.bin");
+            let dest_dir = dir.join("incoming");
+            let _ = tokio::fs::create_dir_all(&dest_dir).await;
+            let payload: Vec<u8> = (0..4096u32).map(|i| (i % 253) as u8).collect();
+            tokio::fs::write(&src, &payload).await.unwrap();
+
+            let (up2relay_tx, mut up2relay_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+            let (relay2down_tx, relay2down_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+            let (down2up_tx, down2up_rx) = mpsc::unbounded_channel();
+            let (p_up_tx, mut p_up_rx) = mpsc::unbounded_channel();
+            let (p_down_tx, mut p_down_rx) = mpsc::unbounded_channel();
+            let abort = Arc::new(AtomicBool::new(false));
+
+            let up = tokio::spawn(run(
+                Direction::Upload,
+                TransferSpec::Upload {
+                    sources: vec![src.clone()],
+                    streaming_window: DEFAULT_STREAMING_WINDOW,
+                },
+                Vec::new(),
+                TransferIo {
+                    wire_in: down2up_rx,
+                    wire_out: up2relay_tx,
+                    progress: p_up_tx,
+                    abort: abort.clone(),
+                },
+            ));
+            // The relay replays the sender's opening chunk four extra
+            // times before anything else reaches the receiver: that is
+            // what a dialog held open across several lrzsz retransmit
+            // windows leaves queued on the divert.
+            let relay = tokio::spawn(async move {
+                let mut first = true;
+                while let Some(chunk) = up2relay_rx.recv().await {
+                    if first {
+                        first = false;
+                        for _ in 0..4 {
+                            if relay2down_tx.send(chunk.clone()).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    if relay2down_tx.send(chunk).is_err() {
+                        return;
+                    }
+                }
+            });
+            let down = tokio::spawn(run(
+                Direction::Download,
+                TransferSpec::Download {
+                    budget: None,
+                    dest_dir: dest_dir.clone(),
+                },
+                Vec::new(),
+                TransferIo {
+                    wire_in: relay2down_rx,
+                    wire_out: down2up_tx,
+                    progress: p_down_tx,
+                    abort,
+                },
+            ));
+
+            let all = async {
+                up.await.unwrap();
+                down.await.unwrap();
+                relay.await.unwrap();
+            };
+            tokio::time::timeout(std::time::Duration::from_secs(20), all)
+                .await
+                .expect("transfer deadlocked on the duplicate openers");
+
+            let mut saved: Option<PathBuf> = None;
+            let mut completed = false;
+            while let Ok(p) = p_down_rx.try_recv() {
+                match p {
+                    Progress::Completed { .. } => completed = true,
+                    Progress::FileDone { path, .. } => saved = path,
+                    Progress::Error(e) => panic!("download error: {e}"),
+                    _ => {}
+                }
+            }
+            assert!(completed, "download never completed");
+            let mut up_completed = false;
+            while let Ok(p) = p_up_rx.try_recv() {
+                match p {
+                    Progress::Completed { .. } => up_completed = true,
+                    Progress::Error(e) => panic!("upload error: {e}"),
+                    _ => {}
+                }
+            }
+            assert!(up_completed, "upload never completed");
+            let saved = saved.expect("no saved path reported");
+            let got = tokio::fs::read(&saved).await.unwrap();
+            assert_eq!(got, payload, "round-tripped bytes differ");
+
+            let _ = tokio::fs::remove_dir_all(&dir).await;
+        });
+    }
 }

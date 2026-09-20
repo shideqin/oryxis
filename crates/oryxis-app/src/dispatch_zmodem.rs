@@ -127,6 +127,13 @@ impl Oryxis {
         }
 
         let dest_dir = self.default_download_dir();
+        // "Ask where to save downloads" (Settings > SFTP) governs every
+        // download the app performs, and an `sz` is one: the toggle sits
+        // beside the default-folder row that ZMODEM reads, so a user who
+        // turned it on expects the terminal to stop and ask too (issue
+        // #230). Snapshotted here because the stream outlives `self`.
+        let ask_dest = self.prefs.sftp_ask_download_dir;
+        let cancelled = abort.clone();
         let io = TransferIo {
             wire_in,
             wire_out: wire_out.clone(),
@@ -135,17 +142,65 @@ impl Oryxis {
         };
 
         // The stream owns the driver: for a download it runs straight
-        // away; for an upload it first asks (async, non-blocking) which
-        // file to send, cancelling the remote cleanly if declined.
+        // away (or first asks for the folder, when the setting says so);
+        // for an upload it first asks (async, non-blocking) which file
+        // to send, cancelling the remote cleanly if declined. Both
+        // dialogs run BEFORE the driver spawns, so its own silent-peer
+        // clock has not started: the wait is bounded by the remote
+        // `sz` / `rz` alone, and lrzsz keeps retransmitting its opening
+        // header meanwhile (the divert is already live, so those
+        // retransmits queue on `wire_in` for the receiver to drain).
         let stream = iced::stream::channel::<Message>(
             64,
             move |mut out: iced::futures::channel::mpsc::Sender<Message>| async move {
                 let spec = match direction {
                     Direction::Download => {
+                        let dest_dir = if ask_dest {
+                            match rfd::AsyncFileDialog::new()
+                                .set_title(crate::i18n::t("sftp_download_to"))
+                                .set_directory(&dest_dir)
+                                .pick_folder()
+                                .await
+                            {
+                                Some(handle) => handle.path().to_path_buf(),
+                                None => {
+                                    // Declined: cancel the waiting remote
+                                    // `sz` so it doesn't hang, and end
+                                    // the transfer.
+                                    let _ = wire_out.send(oryxis_zmodem::CANCEL.to_vec());
+                                    let _ = out
+                                        .send(Message::Zmodem(ZmodemMessage::ZmodemProgress(
+                                            pane_id,
+                                            Progress::Aborted,
+                                        )))
+                                        .await;
+                                    return;
+                                }
+                            }
+                        } else {
+                            dest_dir
+                        };
+                        // The user may have hit Cancel on the overlay
+                        // while the dialog was up: the flag is raised but
+                        // no driver was running to honour it, and one
+                        // spawned now would answer a pane the cancel
+                        // already tore down.
+                        if cancelled.load(Ordering::Relaxed) {
+                            let _ = wire_out.send(oryxis_zmodem::CANCEL.to_vec());
+                            let _ = out
+                                .send(Message::Zmodem(ZmodemMessage::ZmodemProgress(
+                                    pane_id,
+                                    Progress::Aborted,
+                                )))
+                                .await;
+                            return;
+                        }
                         // The destination (a configured folder or the
                         // default `~/Downloads` / `~/.oryxis/downloads`)
                         // may not exist yet; the driver's `File::create`
                         // would fail without its parent. Make it first.
+                        // Both this and the budget probe below run on the
+                        // folder actually chosen, never the default.
                         if let Err(e) = tokio::fs::create_dir_all(&dest_dir).await {
                             let _ = out
                                 .send(Message::Zmodem(ZmodemMessage::ZmodemProgress(
@@ -183,13 +238,22 @@ impl Oryxis {
                         // Multi-select: every picked file goes out in
                         // one ZMODEM session, in order.
                         match rfd::AsyncFileDialog::new().pick_files().await {
-                            Some(handles) if !handles.is_empty() => Some(TransferSpec::Upload {
-                                sources: handles
-                                    .iter()
-                                    .map(|h| h.path().to_path_buf())
-                                    .collect(),
-                                streaming_window,
-                            }),
+                            // Same rule as the download ask: a Cancel
+                            // clicked while the picker was up must not
+                            // start a transfer the pane has already
+                            // given up on.
+                            Some(handles)
+                                if !handles.is_empty()
+                                    && !cancelled.load(Ordering::Relaxed) =>
+                            {
+                                Some(TransferSpec::Upload {
+                                    sources: handles
+                                        .iter()
+                                        .map(|h| h.path().to_path_buf())
+                                        .collect(),
+                                    streaming_window,
+                                })
+                            }
                             _ => {
                                 // Declined: cancel the waiting remote `rz`
                                 // so it doesn't hang, and end the transfer.

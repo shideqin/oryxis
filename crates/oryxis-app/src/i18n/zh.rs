@@ -1703,7 +1703,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "上传先写入临时名称，完成后再重命名到位，因此真实名称出现时一定是完整的。部分服务器禁止重命名；监听最终名称的程序会看到文件一次性出现而不是逐渐增长。下载始终采用此方式。",
         "setting_sftp_upload_temp_name_toggle" => "上传完成后重命名到位",
         "setting_sftp_ask_download_dir" => "询问下载保存位置",
-        "setting_sftp_ask_download_dir_desc" => "下载文件会存入另一侧面板的当前文件夹。开启后每次都会让你选择目标位置。行菜单中的\"下载到...\"始终会询问，与此设置无关。",
+        "setting_sftp_ask_download_dir_desc" => "SFTP 下载会存入另一侧面板的当前文件夹，rz/sz（ZMODEM）下载则存入下方的默认文件夹。开启后两者每次都会让你选择目标位置。行菜单中的\"下载到...\"始终会询问，与此设置无关。远端的 sz 大约会等待 30 秒。",
         "setting_sftp_ask_download_dir_toggle" => "每次下载都询问目标位置",
         "files_mounting" => "正在打开 SFTP…",
         "files_empty" => "空文件夹",

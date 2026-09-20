@@ -1703,7 +1703,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "Les envois écrivent dans un nom temporaire puis sont renommés à la fin, si bien que le nom réel n'apparaît que complet. Certains serveurs interdisent le renommage, et un watcher lié au nom final le verra apparaître d'un coup au lieu de grandir. Les téléchargements le font toujours.",
         "setting_sftp_upload_temp_name_toggle" => "Renommer en place après l'envoi",
         "setting_sftp_ask_download_dir" => "Demander où enregistrer les téléchargements",
-        "setting_sftp_ask_download_dir_desc" => "Les téléchargements arrivent dans le dossier courant de l'autre volet. Activez cette option pour choisir la destination à chaque fois. L'entrée \"Télécharger vers...\" du menu de ligne demande toujours, quel que soit ce réglage.",
+        "setting_sftp_ask_download_dir_desc" => "Les téléchargements SFTP arrivent dans le dossier courant de l'autre volet, et ceux de rz/sz (ZMODEM) dans le dossier par défaut ci-dessous. Activez cette option pour choisir la destination à chaque fois, pour les deux. L'entrée \"Télécharger vers...\" du menu de ligne demande toujours, quel que soit ce réglage. Le sz distant attend la réponse pendant environ 30 secondes.",
         "setting_sftp_ask_download_dir_toggle" => "Demander la destination à chaque téléchargement",
         "files_mounting" => "Ouverture du SFTP…",
         "files_empty" => "Dossier vide",

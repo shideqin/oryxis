@@ -1796,7 +1796,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "Yüklemeler geçici bir ada yazar ve bittiğinde yerine taşınır, böylece gerçek ad yalnızca tamamlanmış hâlde görünür. Bazı sunucular yeniden adlandırmayı yasaklar; son adı izleyen bir izleyici dosyayı büyürken değil bir anda belirmiş görür. İndirmeler bunu her zaman yapar.",
         "setting_sftp_upload_temp_name_toggle" => "Yükleme sonrası yerine taşı",
         "setting_sftp_ask_download_dir" => "İndirmelerin nereye kaydedileceğini sor",
-        "setting_sftp_ask_download_dir_desc" => "İndirmeler diğer bölmenin geçerli klasörüne iner. Her seferinde hedefi seçmek için bunu açın. Satır menüsündeki \"Şuraya indir...\" bu ayardan bağımsız olarak her zaman sorar.",
+        "setting_sftp_ask_download_dir_desc" => "SFTP indirmeleri diğer bölmenin geçerli klasörüne, rz/sz (ZMODEM) indirmeleri ise aşağıdaki varsayılan klasöre iner. Her ikisinde de her seferinde hedefi seçmek için bunu açın. Satır menüsündeki \"Şuraya indir...\" bu ayardan bağımsız olarak her zaman sorar. Uzak sz yanıtı yaklaşık 30 saniye bekler.",
         "setting_sftp_ask_download_dir_toggle" => "Her indirmede hedefi sor",
         "files_mounting" => "SFTP açılıyor…",
         "files_empty" => "Boş klasör",

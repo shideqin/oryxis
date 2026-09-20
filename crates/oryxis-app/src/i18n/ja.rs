@@ -1703,7 +1703,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "アップロードは一時的な名前に書き込み、完了時に本来の名前へ変更します。そのため本来の名前は常に完成した状態でのみ現れます。名前変更を禁じるサーバーもあり、最終名を監視する仕組みからはファイルが徐々に育つのではなく一度に現れて見えます。ダウンロードは常にこの方式です。",
         "setting_sftp_upload_temp_name_toggle" => "アップロード後に名前を変更する",
         "setting_sftp_ask_download_dir" => "ダウンロードの保存先を確認する",
-        "setting_sftp_ask_download_dir_desc" => "ダウンロードはもう一方のペインの現在のフォルダーに保存されます。これを有効にすると毎回保存先を選べます。行メニューの\"ダウンロード先...\"はこの設定に関係なく常に確認します。",
+        "setting_sftp_ask_download_dir_desc" => "SFTP のダウンロードはもう一方のペインの現在のフォルダーに、rz/sz（ZMODEM）のダウンロードは下の既定フォルダーに保存されます。これを有効にすると、どちらも毎回保存先を選べます。行メニューの\"ダウンロード先...\"はこの設定に関係なく常に確認します。リモートの sz は応答を約 30 秒待ちます。",
         "setting_sftp_ask_download_dir_toggle" => "ダウンロードのたびに保存先を確認する",
         "files_mounting" => "SFTP を開いています…",
         "files_empty" => "空のフォルダー",

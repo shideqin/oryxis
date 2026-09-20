@@ -1802,7 +1802,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "setting_sftp_upload_temp_name_desc" => "Nahrávání zapisuje do dočasného názvu a po dokončení se přejmenuje na místo, takže skutečný název se objeví jen jako úplný. Některé servery přejmenování zakazují a sledovač napojený na konečný název uvidí soubor objevit se naráz místo aby rostl. Stahování to dělá vždy.",
         "setting_sftp_upload_temp_name_toggle" => "Přejmenovat po nahrání",
         "setting_sftp_ask_download_dir" => "Ptát se, kam ukládat stažené soubory",
-        "setting_sftp_ask_download_dir_desc" => "Stažené soubory míří do aktuální složky druhého panelu. Zapněte, chcete-li cíl volit pokaždé. Položka \"Stáhnout do...\" v nabídce řádku se ptá vždy, bez ohledu na toto nastavení.",
+        "setting_sftp_ask_download_dir_desc" => "Soubory stažené přes SFTP míří do aktuální složky druhého panelu, soubory stažené přes rz/sz (ZMODEM) do výchozí složky níže. Zapněte, chcete-li cíl volit pokaždé, v obou případech. Položka \"Stáhnout do...\" v nabídce řádku se ptá vždy, bez ohledu na toto nastavení. Vzdálené sz čeká na odpověď zhruba 30 sekund.",
         "setting_sftp_ask_download_dir_toggle" => "Ptát se na cíl u každého stahování",
         "files_mounting" => "Otevírání SFTP…",
         "files_empty" => "Prázdná složka",

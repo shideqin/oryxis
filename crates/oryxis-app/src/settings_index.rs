@@ -250,7 +250,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     // ── SFTP ───────────────────────────────────────────────────────
     e(S::Sftp, "setting_sftp_console_layout", "sftp console placement split pane beside below maximized zoom full tab"),
     e(S::Sftp, "setting_default_editor", "sftp default editor external open program"),
-    e(S::Sftp, "setting_sftp_ask_download_dir", "sftp download destination folder ask where save prompt"),
+    e(S::Sftp, "setting_sftp_ask_download_dir", "sftp download destination folder ask where save prompt zmodem rz sz terminal"),
     e(S::Sftp, "default_download_dir", "download folder directory default zmodem transfer rz sz save"),
     e(S::Sftp, "setting_sftp_upload_temp_name", "sftp upload temporary filename part scratch rename atomic partial resume"),
     e(S::Sftp, "setting_edit_autosave_toggle", "sftp autosave auto upload edited files save"),
