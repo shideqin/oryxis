@@ -140,7 +140,7 @@ fn full_roundtrip_every_entity_different_master_password() {
     // Export from "alpha", import into "bravo".
     let data = export_vault(&vault, "export-pw", all_options()).unwrap();
     let mut target = unlocked_vault_with("bravo");
-    let result = import_vault(&target, &data, "export-pw", &ExportSelection::all()).unwrap();
+    let result = import_vault(&target, &data, "export-pw", &ExportSelection::all(), None).unwrap();
     assert_eq!(result.connections_added, 2);
     assert_eq!(result.groups_added, 2);
     assert_eq!(result.keys_added, 1);
@@ -310,7 +310,7 @@ fn export_blob_contains_no_plaintext_secrets() {
 
     // Negative control: the sealed payload DOES carry every marker.
     let target = unlocked_vault_with("bravo");
-    import_vault(&target, &data, "export-pw", &ExportSelection::all()).unwrap();
+    import_vault(&target, &data, "export-pw", &ExportSelection::all(), None).unwrap();
     let conns = target.list_connections().unwrap();
     assert_eq!(
         target
@@ -339,7 +339,7 @@ fn unsupported_format_version_is_clean_error() {
     // Bump the little-endian version field past FORMAT_VERSION.
     data[6] = 0xFF;
     data[7] = 0x00;
-    let err = import_vault(&vault, &data, "pw", &ExportSelection::all());
+    let err = import_vault(&vault, &data, "pw", &ExportSelection::all(), None);
     assert!(err.is_err());
     let msg = format!("{}", err.err().unwrap());
     assert!(msg.contains("Unsupported format version"), "{msg}");
@@ -370,7 +370,7 @@ fn keys_flag_mismatch_is_harmless() {
     assert!(summary.includes_private_keys);
     assert_eq!(summary.keys, 0);
     let target = unlocked_vault_with("bravo");
-    let result = import_vault(&target, &data, "pw", &ExportSelection::all()).unwrap();
+    let result = import_vault(&target, &data, "pw", &ExportSelection::all(), None).unwrap();
     assert_eq!(result.connections_added, 1);
     assert_eq!(result.keys_added, 0);
 }
@@ -394,7 +394,7 @@ fn partial_import_nulls_dangling_proxy_identity() {
     let mut sel = ExportSelection::none();
     sel.connections = true;
     let target = unlocked_vault_with("bravo");
-    let result = import_vault(&target, &data, "pw", &sel).unwrap();
+    let result = import_vault(&target, &data, "pw", &sel, None).unwrap();
     assert_eq!(result.connections_added, 1);
     assert_eq!(result.proxy_identities_added, 0);
     let conns = target.list_connections().unwrap();
@@ -412,7 +412,7 @@ fn custom_theme_import_conflicts() {
     let data = export_vault(&vault, "pw", all_options()).unwrap();
 
     // Same id already present: skipped, not duplicated.
-    let result = import_vault(&vault, &data, "pw", &ExportSelection::all()).unwrap();
+    let result = import_vault(&vault, &data, "pw", &ExportSelection::all(), None).unwrap();
     assert_eq!(result.custom_themes_added, 0);
     assert_eq!(result.custom_themes_skipped, 1);
     assert_eq!(vault.list_custom_terminal_themes().unwrap().len(), 1);
@@ -421,7 +421,7 @@ fn custom_theme_import_conflicts() {
     let target = unlocked_vault_with("bravo");
     let local = CustomTerminalTheme::new_default("Night".into());
     target.save_custom_terminal_theme(&local).unwrap();
-    let result = import_vault(&target, &data, "pw", &ExportSelection::all()).unwrap();
+    let result = import_vault(&target, &data, "pw", &ExportSelection::all(), None).unwrap();
     assert_eq!(result.custom_themes_added, 0);
     assert_eq!(result.custom_themes_skipped, 1);
     let themes = target.list_custom_terminal_themes().unwrap();
@@ -512,7 +512,7 @@ fn assert_fixture_imports(data: &[u8], expect_totp: Option<&str>) {
 
     let vault = unlocked_vault_with("target");
     let result =
-        import_vault(&vault, data, FIXTURE_PASSWORD, &ExportSelection::all()).unwrap();
+        import_vault(&vault, data, FIXTURE_PASSWORD, &ExportSelection::all(), None).unwrap();
     assert_eq!(result.connections_added, 1);
     assert_eq!(result.groups_added, 1);
     assert_eq!(result.snippets_added, 1);
@@ -587,7 +587,7 @@ fn a_command_proxy_approval_never_leaves_the_device() {
 
     let blob = export_vault(&vault, "pack", all_options()).unwrap();
     let target = unlocked_vault_with("beta");
-    import_vault(&target, &blob, "pack", &ExportSelection::all()).unwrap();
+    import_vault(&target, &blob, "pack", &ExportSelection::all(), None).unwrap();
 
     // The route arrived.
     let imported = target
@@ -630,7 +630,7 @@ fn a_telnet_certificate_escape_never_leaves_the_device() {
 
     let blob = export_vault(&vault, "pack", all_options()).unwrap();
     let target = unlocked_vault_with("beta");
-    import_vault(&target, &blob, "pack", &ExportSelection::all()).unwrap();
+    import_vault(&target, &blob, "pack", &ExportSelection::all(), None).unwrap();
 
     let imported = target
         .list_connections()
@@ -676,7 +676,7 @@ fn an_imported_pin_never_replaces_one_this_vault_already_made() {
     let mine = KnownHost::new("bastion.corp", 22, "ssh-ed25519", "SHA256:REAL");
     target.save_known_host(&mine).unwrap();
 
-    let result = import_vault(&target, &blob, "pack", &ExportSelection::all()).unwrap();
+    let result = import_vault(&target, &blob, "pack", &ExportSelection::all(), None).unwrap();
 
     let pins = target.list_known_hosts().unwrap();
     let pin = pins
@@ -705,7 +705,7 @@ fn an_imported_pin_for_an_unpinned_endpoint_still_lands() {
     let blob = export_vault(&vault, "pack", all_options()).unwrap();
 
     let target = unlocked_vault_with("beta");
-    let result = import_vault(&target, &blob, "pack", &ExportSelection::all()).unwrap();
+    let result = import_vault(&target, &blob, "pack", &ExportSelection::all(), None).unwrap();
 
     assert_eq!(result.known_hosts_added, 1);
     let pins = target.list_known_hosts().unwrap();
@@ -733,7 +733,7 @@ fn an_imported_forward_never_arms_itself() {
 
     let blob = export_vault(&vault, "pack", all_options()).unwrap();
     let target = unlocked_vault_with("beta");
-    let result = import_vault(&target, &blob, "pack", &ExportSelection::all()).unwrap();
+    let result = import_vault(&target, &blob, "pack", &ExportSelection::all(), None).unwrap();
 
     let imported = target
         .list_port_forward_rules()
@@ -785,7 +785,7 @@ fn security_settings_never_ride_a_portable_file() {
 
     let blob = export_vault(&vault, "pack", all_options()).unwrap();
     let target = unlocked_vault_with("beta");
-    import_vault(&target, &blob, "pack", &ExportSelection::all()).unwrap();
+    import_vault(&target, &blob, "pack", &ExportSelection::all(), None).unwrap();
 
     for (k, _) in planted {
         assert_eq!(

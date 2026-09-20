@@ -1933,6 +1933,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "Impor situs WinSCP (.ini / .reg)",
         "import_hub_title" => "Impor host",
         "import_hub_desc" => "Pilih file dan formatnya terdeteksi otomatis. Sumber yang didukung:",
+        "import_into_folder" => "Ke folder:",
         "import_hub_choose" => "Pilih file...",
         "import_hub_unrecognized" => "File tidak dikenali. Gunakan salah satu format yang didukung.",
         "import_hub_file_too_large" => "File terlalu besar untuk ekspor sesi.",

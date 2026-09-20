@@ -1827,6 +1827,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "Importa siti WinSCP (.ini / .reg)",
         "import_hub_title" => "Importa host",
         "import_hub_desc" => "Scegli un file e il formato viene rilevato automaticamente. Sorgenti supportate:",
+        "import_into_folder" => "Nella cartella:",
         "import_hub_choose" => "Scegli file...",
         "import_hub_unrecognized" => "File non riconosciuto. Usa uno dei formati supportati.",
         "import_hub_file_too_large" => "File troppo grande per essere un'esportazione di sessioni.",

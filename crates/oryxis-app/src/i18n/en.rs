@@ -1975,6 +1975,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "import_winscp_btn" => "Import WinSCP sites (.ini / .reg)",
         "import_hub_title" => "Import hosts",
         "import_hub_desc" => "Pick a file and the format is detected automatically. Supported sources:",
+        "import_into_folder" => "Into folder:",
         "import_hub_choose" => "Choose file...",
         "import_hub_unrecognized" => "File not recognized. Pick one of the supported formats below.",
         "import_hub_file_too_large" => "File too large to be a sessions export.",

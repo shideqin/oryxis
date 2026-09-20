@@ -1974,6 +1974,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "Importovat weby WinSCP (.ini / .reg)",
         "import_hub_title" => "Importovat hostitele",
         "import_hub_desc" => "Vyberte soubor, formát se rozpozná automaticky. Podporované zdroje:",
+        "import_into_folder" => "Do složky:",
         "import_hub_choose" => "Vybrat soubor...",
         "import_hub_unrecognized" => "Soubor nebyl rozpoznán. Použijte jeden z podporovaných formátů.",
         "import_hub_file_too_large" => "Soubor je příliš velký na export relací.",

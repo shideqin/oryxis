@@ -883,11 +883,26 @@ pub fn inspect_export(data: &[u8], password: &str) -> Result<ExportSummary, Vaul
     })
 }
 
+/// Merge a portable export into `store`.
+///
+/// `target_group` is the folder the import should land in (the one the
+/// user had open when they picked the file, issue #230). It scopes only
+/// what this import ADDS: a new connection with no folder of its own, a
+/// payload folder at the file's root, and a new session group with no
+/// folder all go under it, so a file exported from someone's root does
+/// not spill across this vault's root. A connection the vault already
+/// knows keeps whatever placement the newer copy says, because the
+/// last-writer-wins branch below writes that copy verbatim and a folder
+/// choice made here must not out-rank an edit made elsewhere. The
+/// target is honoured only when it is an existing MANUAL folder: a
+/// dynamic group's contents are derived from its query, and an id the
+/// store does not have would hide every row behind a dangling parent.
 pub fn import_vault(
     store: &VaultStore,
     data: &[u8],
     password: &str,
     selection: &ExportSelection,
+    target_group: Option<uuid::Uuid>,
 ) -> Result<ImportResult, VaultError> {
     // Fail before touching the database: plaintext families (groups,
     // snippets, known hosts, password-less connections) save fine on a
@@ -1037,6 +1052,36 @@ pub fn import_vault(
     for sg in &mut payload.session_groups {
         if sg.group_id.is_some_and(|id| !will_have(&payload_group_ids, &existing_group_ids, &id)) {
             sg.group_id = None;
+        }
+    }
+
+    // The folder the user had open, applied to what arrives without a
+    // placement of its own (see the doc comment for the exact scope).
+    // Runs AFTER the dangling-reference pass so a nulled parent counts
+    // as "no placement" too, and BEFORE any write.
+    let target_group = target_group.filter(|id| {
+        existing_groups
+            .iter()
+            .any(|g| g.id == *id && g.cloud_query.is_none())
+    });
+    if let Some(target) = target_group {
+        for ec in &mut payload.connections {
+            let c = &mut ec.connection;
+            let known = existing_connections.iter().any(|e| e.id == c.id);
+            if c.group_id.is_none() && !known {
+                c.group_id = Some(target);
+            }
+        }
+        for g in &mut payload.groups {
+            if g.parent_id.is_none() && !existing_group_ids.contains(&g.id) {
+                g.parent_id = Some(target);
+            }
+        }
+        for sg in &mut payload.session_groups {
+            let known = existing_session_groups.iter().any(|e| e.id == sg.id);
+            if sg.group_id.is_none() && !known {
+                sg.group_id = Some(target);
+            }
         }
     }
 

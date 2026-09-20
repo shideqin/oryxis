@@ -502,6 +502,24 @@ impl Oryxis {
     /// names every supported source, and the "Choose file" picker's
     /// result is format-detected from its content, so the user never
     /// has to know which button matches their old client.
+    /// "Into folder: Prod / Web" under an import dialog's title when the
+    /// import was started inside a folder (issue #230), so the user
+    /// sees where the rows will land before confirming. An empty
+    /// element at the root: the dialogs read exactly as before there.
+    /// ONE text widget, so a harness `expect` can match the whole line.
+    pub(crate) fn import_target_line(&self) -> Element<'_, Message> {
+        match self.import_target_folder_path() {
+            Some(path) => column![
+                Space::new().height(6),
+                text(format!("{} {}", crate::i18n::t("import_into_folder"), path))
+                    .size(12)
+                    .color(OryxisColors::t().accent),
+            ]
+            .into(),
+            None => Space::new().into(),
+        }
+    }
+
     pub(crate) fn build_import_hub_dialog(&self) -> Element<'_, Message> {
         self.modal_nav_reset();
         // Product names, deliberately untranslated; the sentence
@@ -590,6 +608,7 @@ impl Oryxis {
                 text(crate::i18n::t("import_hub_desc"))
                     .size(12)
                     .color(OryxisColors::t().text_muted),
+                self.import_target_line(),
                 Space::new().height(12),
                 sources,
                 password_row,
@@ -793,6 +812,7 @@ impl Oryxis {
                 ))
                     .size(12)
                     .color(OryxisColors::t().text_muted),
+                self.import_target_line(),
                 skipped_line,
                 Space::new().height(8),
                 row![select_all_btn, Space::new().width(8), deselect_all_btn],

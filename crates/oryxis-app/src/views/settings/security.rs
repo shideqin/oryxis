@@ -1087,6 +1087,9 @@ impl Oryxis {
             export_import_section = export_import_section
                 .push(Space::new().height(12))
                 .push(text(crate::i18n::t("import_password_hint")).size(12).color(OryxisColors::t().text_muted))
+                // The hub's `.oryxis` redirect lands here from inside a
+                // folder; the Security card's own button never does.
+                .push(self.import_target_line())
                 .push(Space::new().height(4))
                 .push(pw_input);
             if let Some(summary) = &self.vault_import.summary {

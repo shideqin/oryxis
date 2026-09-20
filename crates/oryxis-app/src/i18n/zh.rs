@@ -1840,6 +1840,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "导入 WinSCP 站点（.ini / .reg）",
         "import_hub_title" => "导入主机",
         "import_hub_desc" => "选择文件，格式将自动识别。支持的来源：",
+        "import_into_folder" => "导入到分组：",
         "import_hub_choose" => "选择文件...",
         "import_hub_unrecognized" => "无法识别文件。请使用下列支持的格式。",
         "import_hub_file_too_large" => "文件过大，不像是会话导出文件。",

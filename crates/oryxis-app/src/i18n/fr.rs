@@ -1840,6 +1840,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "Importer des sites WinSCP (.ini / .reg)",
         "import_hub_title" => "Importer des hôtes",
         "import_hub_desc" => "Choisissez un fichier, le format est détecté automatiquement. Sources prises en charge :",
+        "import_into_folder" => "Dans le dossier :",
         "import_hub_choose" => "Choisir un fichier...",
         "import_hub_unrecognized" => "Fichier non reconnu. Utilisez l'un des formats pris en charge.",
         "import_hub_file_too_large" => "Fichier trop volumineux pour être un export de sessions.",

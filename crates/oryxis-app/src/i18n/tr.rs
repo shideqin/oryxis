@@ -1933,6 +1933,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "WinSCP sitelerini içe aktar (.ini / .reg)",
         "import_hub_title" => "Ana makineleri içe aktar",
         "import_hub_desc" => "Bir dosya seçin, biçim otomatik algılanır. Desteklenen kaynaklar:",
+        "import_into_folder" => "Klasöre:",
         "import_hub_choose" => "Dosya seç...",
         "import_hub_unrecognized" => "Dosya tanınamadı. Desteklenen biçimlerden birini kullanın.",
         "import_hub_file_too_large" => "Oturum dışa aktarımı olamayacak kadar büyük dosya.",

@@ -1974,6 +1974,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "Εισαγωγή τοποθεσιών WinSCP (.ini / .reg)",
         "import_hub_title" => "Εισαγωγή υπολογιστών",
         "import_hub_desc" => "Επιλέξτε αρχείο και η μορφή αναγνωρίζεται αυτόματα. Υποστηριζόμενες πηγές:",
+        "import_into_folder" => "Στον φάκελο:",
         "import_hub_choose" => "Επιλογή αρχείου...",
         "import_hub_unrecognized" => "Το αρχείο δεν αναγνωρίστηκε. Χρησιμοποιήστε μία από τις υποστηριζόμενες μορφές.",
         "import_hub_file_too_large" => "Το αρχείο είναι πολύ μεγάλο για εξαγωγή συνεδριών.",

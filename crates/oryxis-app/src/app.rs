@@ -1560,6 +1560,18 @@ pub struct Oryxis {
     /// Inline error of the Import hub modal ("couldn't recognize this
     /// file"); cleared on open and on a successful detection.
     pub(crate) import_hub_error: Option<String>,
+    /// The folder the dashboard had open when the Import hub was opened
+    /// from it (issue #230): every host the hub's flows end up saving
+    /// lands there, the way "Export hosts" from the same menu is
+    /// pre-scoped to it. A SNAPSHOT rather than a live read of
+    /// `active_group`, because the confirm can be several messages
+    /// away (the mRemoteNG password round trip, the `.oryxis` redirect
+    /// into Settings > Security) and `active_group` survives a trip
+    /// into Settings, where an import started from the Security cards
+    /// must never inherit it. `None` = the root. Cleared by every
+    /// dismiss and every confirm, and by the Settings-originated import
+    /// entries.
+    pub(crate) import_target_group: Option<Uuid>,
     /// A protected mRemoteNG file held while the hub asks for its
     /// password. Swept with the hub (dismiss / open / success).
     pub(crate) import_hub_pending: Option<Vec<u8>>,

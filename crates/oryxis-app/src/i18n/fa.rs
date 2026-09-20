@@ -1922,6 +1922,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "درون‌ریزی سایت‌های WinSCP ‏(.ini / .reg)",
         "import_hub_title" => "درون‌ریزی میزبان‌ها",
         "import_hub_desc" => "یک فایل انتخاب کنید؛ قالب به‌طور خودکار تشخیص داده می‌شود. منابع پشتیبانی‌شده:",
+        "import_into_folder" => "در پوشه:",
         "import_hub_choose" => "انتخاب فایل...",
         "import_hub_unrecognized" => "فایل شناسایی نشد. از یکی از قالب‌های پشتیبانی‌شده استفاده کنید.",
         "import_hub_file_too_large" => "فایل برای صادرات نشست‌ها بیش از حد بزرگ است.",

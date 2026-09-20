@@ -175,6 +175,9 @@ impl Oryxis {
             ShareMessage::ImportSshConfig => {
                 self.overlay = None;
                 self.ssh_config_import_status = None;
+                // Started from Settings > Security: no folder is open
+                // there, whatever `active_group` still remembers.
+                self.import_target_group = None;
                 return Task::perform(
                     tokio::task::spawn_blocking(|| {
                         let mut dialog = rfd::FileDialog::new()
@@ -202,12 +205,25 @@ impl Oryxis {
                 self.import_hub_error = None;
                 self.import_hub_pending = None;
                 self.import_hub_password = String::new();
+                // The hub only opens from the dashboard (its add menu
+                // and empty state) and from the onboarding, where no
+                // folder exists yet, so `active_group` IS the folder
+                // the user is looking at. Only a manual folder can
+                // take hosts (the same guard the host editor's group
+                // prefill applies): a dynamic group's contents come
+                // from its query.
+                self.import_target_group = self.active_group.filter(|gid| {
+                    self.groups
+                        .iter()
+                        .any(|g| g.id == *gid && g.cloud_query.is_none())
+                });
                 self.panels.import_hub = true;
             }
             ShareMessage::ImportHubDismiss => {
                 self.panels.import_hub = false;
                 self.import_hub_pending = None;
                 self.import_hub_password = String::new();
+                self.import_target_group = None;
             }
             ShareMessage::ImportHubPasswordChanged(v) => {
                 self.import_hub_password = v.into_inner();
@@ -399,6 +415,7 @@ impl Oryxis {
                 self.ssh_import_direct = None;
                 self.ssh_import_selected.clear();
                 self.ssh_import_existing.clear();
+                self.import_target_group = None;
             }
             ShareMessage::SshImportConfirm => {
                 if !self.vault_usable() {
@@ -410,6 +427,16 @@ impl Oryxis {
                 let Some(vault) = &self.vault else {
                     return Task::none();
                 };
+                // Where the batch lands (issue #230): the folder that
+                // was open when the hub was opened, consumed here so it
+                // cannot outlive this import. Stamped just before the
+                // save, and the stamped copy is what joins the in-memory
+                // list, so the dashboard shows the host where the vault
+                // has it. No importer sets a folder of its own
+                // (`~/.ssh/config` has none; mRemoteNG's and the CSV
+                // group column ride `notes`), so there is nothing to
+                // out-rank.
+                let target_group = self.import_target_group.take();
                 // Third-party batch (PuTTY, ...): already Connections,
                 // no alias pass; same transaction shape as below.
                 if let Some(direct) = self.ssh_import_direct.take() {
@@ -426,13 +453,17 @@ impl Oryxis {
                         Vec::new();
                     let mut errors: Vec<String> = Vec::new();
                     for host in &picked {
+                        let mut conn = host.conn.clone();
+                        if conn.group_id.is_none() {
+                            conn.group_id = target_group;
+                        }
                         // A password the source carried (WinSCP's
                         // reversible scheme) goes straight into the
                         // encrypted column; PuTTY never stores one.
                         match vault
-                            .save_connection(&host.conn, host.password.as_deref())
+                            .save_connection(&conn, host.password.as_deref())
                         {
-                            Ok(()) => saved.push(host.conn.clone()),
+                            Ok(()) => saved.push(conn),
                             Err(e) => {
                                 errors.push(format!("{}: {e}", host.conn.label))
                             }
@@ -476,6 +507,11 @@ impl Oryxis {
                 let mut to_save: Vec<oryxis_core::models::connection::Connection> =
                     picked.iter().map(crate::ssh_config::to_connection).collect();
                 crate::ssh_config::link_proxy_jumps(&picked, &mut to_save);
+                for conn in &mut to_save {
+                    if conn.group_id.is_none() {
+                        conn.group_id = target_group;
+                    }
+                }
                 // One transaction for the batch, and patch the in-memory
                 // list with the rows that saved instead of re-reading the
                 // whole vault.
@@ -521,6 +557,9 @@ impl Oryxis {
             ShareMessage::ImportVault => {
                 // Close the "+ Host ▾" add menu when reached from there.
                 self.overlay = None;
+                // Started from Settings > Security: no folder is open
+                // there, whatever `active_group` still remembers.
+                self.import_target_group = None;
                 self.vault_import.status = None;
                 self.vault_import.password = String::new();
                 self.vault_import.file_data = None;
@@ -598,7 +637,12 @@ impl Oryxis {
                     return Task::none();
                 }
                 if let (Some(vault), Some(data)) = (&self.vault, &self.vault_import.file_data) {
-                    match oryxis_vault::import_vault(vault, data, &self.vault_import.password, &self.vault_import.selection) {
+                    // The folder the hub was opened in, when the file
+                    // arrived through it (issue #230); `None` from the
+                    // Security cards. Consumed either way so a later
+                    // import cannot inherit it.
+                    let target_group = self.import_target_group.take();
+                    match oryxis_vault::import_vault(vault, data, &self.vault_import.password, &self.vault_import.selection, target_group) {
                         Ok(result) => {
                             // Fully translated summary, built from the
                             // same category labels the dialog uses. Only
@@ -677,6 +721,7 @@ impl Oryxis {
             ShareMessage::ExportImportDismiss => {
                 self.panels.export_dialog = false;
                 self.panels.import_dialog = false;
+                self.import_target_group = None;
                 self.export_status = None;
                 self.vault_import.status = None;
                 self.vault_import.file_data = None;
@@ -697,6 +742,9 @@ impl Oryxis {
                 // Close the "+ Host ▾" add menu when reached from there,
                 // and reset the import dialog state the loaded blob feeds.
                 self.overlay = None;
+                // Started from Settings > Security: no folder is open
+                // there, whatever `active_group` still remembers.
+                self.import_target_group = None;
                 self.vault_import.status = None;
                 self.vault_import.password = String::new();
                 self.vault_import.file_data = None;
@@ -1022,6 +1070,20 @@ impl Oryxis {
     /// between writing the blob (export) and reading it back (import).
     /// The host defaults to the first connection and the path to a plain
     /// `vault.oryxis` so a one-host user can confirm immediately.
+    /// Breadcrumb path of the folder the current import will land in
+    /// (`import_target_group`), for the preview dialogs to state it.
+    /// `None` at the root, and for a folder that vanished meanwhile
+    /// (deleted on another device between the pick and the confirm):
+    /// the vault side ignores an unknown target too, so the dialog
+    /// must not promise a folder the rows will not reach.
+    pub(crate) fn import_target_folder_path(&self) -> Option<String> {
+        let gid = self.import_target_group?;
+        self.groups
+            .iter()
+            .any(|g| g.id == gid)
+            .then(|| oryxis_core::models::Group::path_of(&self.groups, gid))
+    }
+
     fn open_sftp_backup_picker(&mut self, is_import: bool) {
         self.sftp_backup.is_import = is_import;
         self.sftp_backup.open = true;

@@ -38,7 +38,7 @@ fn export_import_roundtrip() {
 
     // Import into fresh vault
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, export_pw, &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault2, &data, export_pw, &crate::portable::ExportSelection::all(), None).unwrap();
 
     assert_eq!(result.connections_added, 1);
     assert_eq!(result.groups_added, 1);
@@ -116,7 +116,7 @@ fn export_import_protocol_and_serial_round_trip() {
     .unwrap();
 
     let vault2 = unlocked_vault();
-    import_vault(&vault2, &data, "export-pw", &crate::portable::ExportSelection::all()).unwrap();
+    import_vault(&vault2, &data, "export-pw", &crate::portable::ExportSelection::all(), None).unwrap();
 
     let conns = vault2.list_connections().unwrap();
     let t = conns.iter().find(|c| c.label == "router").expect("telnet host");
@@ -186,7 +186,7 @@ fn export_import_mosh_round_trip() {
     .unwrap();
 
     let vault2 = unlocked_vault();
-    import_vault(&vault2, &data, "export-pw", &crate::portable::ExportSelection::all()).unwrap();
+    import_vault(&vault2, &data, "export-pw", &crate::portable::ExportSelection::all(), None).unwrap();
 
     let conns = vault2.list_connections().unwrap();
     let of = |label: &str| {
@@ -256,7 +256,7 @@ fn export_import_proxy_round_trip() {
 
     // Import into a fresh vault
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "export-pw", &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault2, &data, "export-pw", &crate::portable::ExportSelection::all(), None).unwrap();
     assert_eq!(result.connections_added, 2);
     assert_eq!(result.proxy_identities_added, 1);
 
@@ -304,7 +304,7 @@ fn export_wrong_password_fails() {
     vault.save_connection(&conn, None).unwrap();
 
     let data = export_vault(&vault, "correct", ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: crate::portable::ExportSelection::all() }).unwrap();
-    let result = import_vault(&vault, &data, "wrong", &crate::portable::ExportSelection::all());
+    let result = import_vault(&vault, &data, "wrong", &crate::portable::ExportSelection::all(), None);
     assert!(result.is_err());
 }
 
@@ -315,7 +315,7 @@ fn export_invalid_file_rejected() {
 
     let vault = unlocked_vault();
     assert!(!is_valid_export(b"not an oryxis file"));
-    assert!(import_vault(&vault, b"not an oryxis file", "pw", &crate::portable::ExportSelection::all()).is_err());
+    assert!(import_vault(&vault, b"not an oryxis file", "pw", &crate::portable::ExportSelection::all(), None).is_err());
 }
 
 
@@ -330,7 +330,7 @@ fn import_skip_existing() {
     let data = export_vault(&vault, "pass", ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: crate::portable::ExportSelection::all() }).unwrap();
 
     // Import again into same vault, should skip
-    let result = import_vault(&vault, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault, &data, "pass", &crate::portable::ExportSelection::all(), None).unwrap();
     assert_eq!(result.connections_skipped, 1);
     assert_eq!(result.connections_added, 0);
 
@@ -358,7 +358,7 @@ fn import_updates_newer() {
     vault2.save_connection(&old_conn, Some("old_pw")).unwrap();
 
     // Import, should update because export is newer
-    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all(), None).unwrap();
     assert_eq!(result.connections_updated, 1);
     assert_eq!(result.connections_added, 0);
 }
@@ -384,7 +384,7 @@ fn export_with_keys() {
 
     // Import with keys into fresh vault
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data_with, "pass", &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault2, &data_with, "pass", &crate::portable::ExportSelection::all(), None).unwrap();
     assert_eq!(result.keys_added, 1);
 
     let pk = vault2.get_key_private(&generated.key.id).unwrap();
@@ -392,7 +392,7 @@ fn export_with_keys() {
 
     // Import without keys, key added but no private key
     let vault3 = unlocked_vault();
-    let result = import_vault(&vault3, &data_without, "pass", &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault3, &data_without, "pass", &crate::portable::ExportSelection::all(), None).unwrap();
     assert_eq!(result.keys_added, 1);
 
     let pk = vault3.get_key_private(&generated.key.id).unwrap();
@@ -421,7 +421,7 @@ fn share_single_host() {
     }).unwrap();
 
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "share-pass", &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault2, &data, "share-pass", &crate::portable::ExportSelection::all(), None).unwrap();
 
     assert_eq!(result.connections_added, 1);
     let conns = vault2.list_connections().unwrap();
@@ -458,7 +458,7 @@ fn share_group() {
     }).unwrap();
 
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all(), None).unwrap();
 
     assert_eq!(result.connections_added, 2);
     assert_eq!(result.groups_added, 1);
@@ -508,7 +508,7 @@ fn share_includes_dependencies() {
     }).unwrap();
 
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all(), None).unwrap();
 
     // Should have 1 connection, 1 key, 1 identity, 1 group
     assert_eq!(result.connections_added, 1);
@@ -549,7 +549,7 @@ fn share_no_snippets_or_known_hosts() {
     }).unwrap();
 
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all()).unwrap();
+    let result = import_vault(&vault2, &data, "pass", &crate::portable::ExportSelection::all(), None).unwrap();
 
     assert_eq!(result.connections_added, 1);
     assert_eq!(result.snippets_added, 0);
@@ -666,7 +666,7 @@ fn settings_export_import_roundtrip() {
     // vault2's own lock flag, set by `set_master_password`. Importing
     // the source's `has_user_password` must not touch it.
     let lock_flag_before = vault2.get_setting("has_user_password").unwrap();
-    let result = import_vault(&vault2, &data, "pass", &ExportSelection::all()).unwrap();
+    let result = import_vault(&vault2, &data, "pass", &ExportSelection::all(), None).unwrap();
 
     // language, app_theme, terminal_font_size, ai_api_key = 4 portable
     // keys written; the 4 device-local ones were filtered on the way out.
@@ -751,7 +751,7 @@ fn partial_import_nulls_dangling_refs() {
     let mut sel = ExportSelection::none();
     sel.connections = true;
     let vault2 = unlocked_vault();
-    let result = import_vault(&vault2, &data, "pw", &sel).unwrap();
+    let result = import_vault(&vault2, &data, "pw", &sel, None).unwrap();
     assert_eq!(result.connections_added, 1);
     assert_eq!(result.groups_added, 0);
     assert_eq!(result.keys_added, 0);
@@ -789,7 +789,7 @@ fn partial_import_preserves_existing_parent_link() {
     vault2.save_group(&g).unwrap();
     let mut sel = ExportSelection::none();
     sel.connections = true;
-    import_vault(&vault2, &data, "pw", &sel).unwrap();
+    import_vault(&vault2, &data, "pw", &sel, None).unwrap();
 
     let conns = vault2.list_connections().unwrap();
     assert_eq!(conns.len(), 1);
@@ -833,7 +833,7 @@ fn import_breaks_a_parent_cycle_created_by_the_merge() {
     b_local.parent_id = Some(a.id);
     vault2.save_group(&b_local).unwrap();
 
-    import_vault(&vault2, &data, "pw", &ExportSelection::all()).unwrap();
+    import_vault(&vault2, &data, "pw", &ExportSelection::all(), None).unwrap();
 
     let stored = vault2.list_groups().unwrap();
     assert_eq!(stored.len(), 2, "both folders must survive the repair");
@@ -879,7 +879,7 @@ fn import_leaves_a_clean_hierarchy_alone() {
     .unwrap();
 
     let vault2 = unlocked_vault();
-    import_vault(&vault2, &data, "pw", &ExportSelection::all()).unwrap();
+    import_vault(&vault2, &data, "pw", &ExportSelection::all(), None).unwrap();
 
     let stored = vault2.list_groups().unwrap();
     assert_eq!(
@@ -948,7 +948,7 @@ fn export_import_login_script_round_trip() {
         &vault2,
         &data,
         "export-pw",
-        &crate::portable::ExportSelection::all(),
+        &crate::portable::ExportSelection::all(), None,
     )
     .unwrap();
     assert_eq!(result.connections_added, 1);
@@ -979,7 +979,7 @@ fn export_import_login_script_round_trip() {
     let vault3 = unlocked_vault();
     let mut narrowed = crate::portable::ExportSelection::all();
     narrowed.connections = false;
-    let result = import_vault(&vault3, &data, "export-pw", &narrowed).unwrap();
+    let result = import_vault(&vault3, &data, "export-pw", &narrowed, None).unwrap();
     assert_eq!(result.connections_added, 0);
     assert_eq!(result.login_scripts_added, 0);
     assert!(vault3.list_login_scripts().unwrap().is_empty());
@@ -1013,8 +1013,131 @@ fn export_and_import_refuse_a_locked_vault() {
         Err(VaultError::Locked)
     ));
     assert!(matches!(
-        import_vault(&vault, &data, "export-pw", &ExportSelection::all()),
+        import_vault(&vault, &data, "export-pw", &ExportSelection::all(), None),
         Err(VaultError::Locked)
     ));
     assert!(vault.list_connections().unwrap().len() == 1, "locked import must write nothing");
+}
+
+/// The folder the user had open when they picked the file is where the
+/// import lands (issue #230): new hosts with no folder, the file's root
+/// folders and new session groups all go under it.
+#[test]
+fn import_lands_in_the_target_folder() {
+    use crate::portable::{export_vault, import_vault, ExportFilter, ExportOptions, ExportSelection};
+
+    let source = unlocked_vault();
+    let loose = Connection::new("loose", "10.0.0.1");
+    source.save_connection(&loose, None).unwrap();
+    let sub = Group::new("Sub");
+    source.save_group(&sub).unwrap();
+    let mut filed = Connection::new("filed", "10.0.0.2");
+    filed.group_id = Some(sub.id);
+    source.save_connection(&filed, None).unwrap();
+    let data = export_vault(
+        &source,
+        "pw",
+        ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: ExportSelection::all() },
+    )
+    .unwrap();
+
+    let target = unlocked_vault();
+    let prod = Group::new("Prod");
+    target.save_group(&prod).unwrap();
+    let result = import_vault(&target, &data, "pw", &ExportSelection::all(), Some(prod.id)).unwrap();
+    assert_eq!(result.connections_added, 2);
+    assert_eq!(result.groups_added, 1);
+
+    let conns = target.list_connections().unwrap();
+    let by_label = |l: &str| conns.iter().find(|c| c.label == l).unwrap().clone();
+    // A host with no folder of its own lands in the open one.
+    assert_eq!(by_label("loose").group_id, Some(prod.id));
+    // A host filed under one of the file's own folders keeps it...
+    assert_eq!(by_label("filed").group_id, Some(sub.id));
+    // ...and that folder, at the file's root, is parented under the
+    // open one, so the whole tree arrives inside it.
+    let groups = target.list_groups().unwrap();
+    let imported_sub = groups.iter().find(|g| g.id == sub.id).unwrap();
+    assert_eq!(imported_sub.parent_id, Some(prod.id));
+    assert_eq!(groups.iter().find(|g| g.id == prod.id).unwrap().parent_id, None);
+}
+
+/// A host the vault already knows keeps the placement its newer copy
+/// carries: the folder choice scopes what the import adds, never what
+/// last-writer-wins updates.
+#[test]
+fn import_target_folder_does_not_reparent_a_known_host() {
+    use crate::portable::{export_vault, import_vault, ExportFilter, ExportOptions, ExportSelection};
+
+    let target = unlocked_vault();
+    let prod = Group::new("Prod");
+    target.save_group(&prod).unwrap();
+    let elsewhere = Group::new("Elsewhere");
+    target.save_group(&elsewhere).unwrap();
+    let mut old = Connection::new("known", "10.0.0.3");
+    old.group_id = Some(elsewhere.id);
+    old.updated_at = chrono::Utc::now() - chrono::Duration::hours(1);
+    target.save_connection(&old, None).unwrap();
+
+    // The newer copy in the file says "no folder".
+    let source = unlocked_vault();
+    let mut newer = old.clone();
+    newer.group_id = None;
+    newer.updated_at = chrono::Utc::now();
+    source.save_connection(&newer, None).unwrap();
+    let data = export_vault(
+        &source,
+        "pw",
+        ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: ExportSelection::all() },
+    )
+    .unwrap();
+
+    let result = import_vault(&target, &data, "pw", &ExportSelection::all(), Some(prod.id)).unwrap();
+    assert_eq!(result.connections_updated, 1);
+    assert_eq!(result.connections_added, 0);
+    let conns = target.list_connections().unwrap();
+    assert_eq!(conns[0].group_id, None, "the file's own placement wins for a known host");
+}
+
+/// A target the store does not have, or a dynamic group, is ignored:
+/// the rows land at the root rather than behind a parent that would
+/// hide them.
+#[test]
+fn import_target_folder_must_be_an_existing_manual_group() {
+    use crate::portable::{export_vault, import_vault, ExportFilter, ExportOptions, ExportSelection};
+
+    let source = unlocked_vault();
+    source.save_connection(&Connection::new("loose", "10.0.0.1"), None).unwrap();
+    let data = export_vault(
+        &source,
+        "pw",
+        ExportOptions { include_private_keys: false, filter: ExportFilter::All, selection: ExportSelection::all() },
+    )
+    .unwrap();
+
+    let target = unlocked_vault();
+    import_vault(&target, &data, "pw", &ExportSelection::all(), Some(uuid::Uuid::new_v4())).unwrap();
+    assert_eq!(target.list_connections().unwrap()[0].group_id, None);
+
+    let target = unlocked_vault();
+    let mut dynamic = Group::new("EC2");
+    dynamic.cloud_query = Some(oryxis_core::models::cloud::CloudQuery {
+        profile_id: uuid::Uuid::new_v4(),
+        kind: oryxis_core::models::cloud::CloudQueryKind::EcsTasks {
+            cluster: "c".into(),
+            service: "s".into(),
+            container: "api".into(),
+        },
+        template: oryxis_core::models::cloud::ConnectionTemplate {
+            username: None,
+            initial_command: None,
+            transport: oryxis_core::models::cloud::TransportKind::EcsExec,
+            key_id: None,
+            identity_id: None,
+            terminal_theme: None,
+        },
+    });
+    target.save_group(&dynamic).unwrap();
+    import_vault(&target, &data, "pw", &ExportSelection::all(), Some(dynamic.id)).unwrap();
+    assert_eq!(target.list_connections().unwrap()[0].group_id, None);
 }

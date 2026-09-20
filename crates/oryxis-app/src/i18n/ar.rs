@@ -1952,6 +1952,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "استيراد مواقع WinSCP ‏(.ini / .reg)",
         "import_hub_title" => "استيراد المضيفين",
         "import_hub_desc" => "اختر ملفًا وسيتم اكتشاف التنسيق تلقائيًا. المصادر المدعومة:",
+        "import_into_folder" => "في المجلد:",
         "import_hub_choose" => "اختيار ملف...",
         "import_hub_unrecognized" => "تعذر التعرف على الملف. استخدم أحد التنسيقات المدعومة.",
         "import_hub_file_too_large" => "الملف أكبر من أن يكون تصديرًا للجلسات.",

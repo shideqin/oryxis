@@ -1840,6 +1840,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "匯入 WinSCP 站台（.ini / .reg）",
         "import_hub_title" => "匯入主機",
         "import_hub_desc" => "選擇檔案，格式將自動辨識。支援的來源：",
+        "import_into_folder" => "匯入到群組：",
         "import_hub_choose" => "選擇檔案...",
         "import_hub_unrecognized" => "無法辨識檔案。請使用下列支援的格式。",
         "import_hub_file_too_large" => "檔案過大，不像是工作階段匯出檔。",

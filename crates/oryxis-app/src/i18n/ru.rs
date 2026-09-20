@@ -1827,6 +1827,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "import_winscp_btn" => "Импорт сайтов WinSCP (.ini / .reg)",
         "import_hub_title" => "Импорт хостов",
         "import_hub_desc" => "Выберите файл, формат определяется автоматически. Поддерживаемые источники:",
+        "import_into_folder" => "В папку:",
         "import_hub_choose" => "Выбрать файл...",
         "import_hub_unrecognized" => "Файл не распознан. Используйте один из поддерживаемых форматов.",
         "import_hub_file_too_large" => "Файл слишком большой для экспорта сеансов.",
