@@ -8,6 +8,7 @@
 
 mod hybrid;
 mod icon_picker;
+mod launch;
 mod lifecycle;
 mod merge;
 mod ordering;

@@ -216,6 +216,90 @@ impl Oryxis {
         }
         let json = serde_json::to_string(&specs).unwrap_or_else(|_| "[]".into());
         self.persist_setting("open_tabs", &json);
+        // The chip to land on, only while the user asked to land there
+        // (issue #229): the row is cleared when either preference goes
+        // off, so an absent write here is what keeps it cleared.
+        if self.prefs.restore_last_active_tab {
+            let active = self
+                .active_strip_ref()
+                .and_then(|a| serde_json::to_string(&a).ok())
+                .unwrap_or_default();
+            self.persist_setting("open_tabs_active", &active);
+        }
+    }
+
+    /// The chip on screen, named the way `open_tabs_active` names one
+    /// (issue #229): a terminal or SFTP tab that has a spec, keyed and
+    /// counted in strip order. `None` on Hosts and the other vault
+    /// views, and on a tab nothing can restore (a quick connect, an SSM
+    /// session): landing there means landing on Hosts, which is what a
+    /// strip with no active chip already does. A PANEL tab (Settings,
+    /// the network tools) answers with the most recent real chip
+    /// instead: a panel is a chip in the strip that boot never brings
+    /// back, so the user parked on it has not left the strip the way
+    /// Home leaves it, and the tab they came from is the honest answer
+    /// to "where were you".
+    pub(crate) fn active_strip_ref(&self) -> Option<crate::state::ActiveTabRef> {
+        let target = match self.active_view {
+            crate::state::View::Terminal => {
+                crate::state::TabRef::Terminal(self.tabs.get(self.active_tab?)?._id)
+            }
+            crate::state::View::Sftp => {
+                crate::state::TabRef::Sftp(self.sftp_tabs.get(self.active_sftp?)?.id)
+            }
+            view if crate::state::PanelKind::for_view(view).is_some() => *self
+                .tab_mru
+                .iter()
+                .find(|r| !matches!(r, crate::state::TabRef::Panel(_)))?,
+            _ => return None,
+        };
+        let key = self.strip_ref_key(&target)?;
+        let mut nth = 0;
+        for r in &self.tab_order {
+            if *r == target {
+                return Some(crate::state::ActiveTabRef { key, nth });
+            }
+            if self.strip_ref_key(r).as_deref() == Some(key.as_str()) {
+                nth += 1;
+            }
+        }
+        None
+    }
+
+    /// The spec key a strip entry restores under, if it restores at
+    /// all: what `persist_open_tabs` and the pin snapshot write, read
+    /// back off the live tab, so a live tab and its dormant twin count
+    /// the same.
+    fn strip_ref_key(&self, r: &crate::state::TabRef) -> Option<String> {
+        match r {
+            crate::state::TabRef::Terminal(id) => self
+                .tabs
+                .iter()
+                .find(|t| t._id == *id)
+                .and_then(|t| t.pin_spec())
+                .map(|s| s.dedupe_key()),
+            crate::state::TabRef::Sftp(id) => self
+                .sftp_tabs
+                .iter()
+                .position(|t| t.id == *id)
+                .and_then(|i| self.sftp_pin_spec(i))
+                .map(|s| s.dedupe_key()),
+            crate::state::TabRef::Panel(_) => None,
+        }
+    }
+
+    /// The strip entry an `open_tabs_active` row names in the strip as
+    /// restored: the `nth` chip whose spec key matches. `None` once the
+    /// chip it named is gone (its host deleted, its list cleared).
+    fn resolve_strip_ref(
+        &self,
+        active: &crate::state::ActiveTabRef,
+    ) -> Option<crate::state::TabRef> {
+        self.tab_order
+            .iter()
+            .filter(|r| self.strip_ref_key(r).as_deref() == Some(active.key.as_str()))
+            .nth(active.nth)
+            .copied()
     }
 
     /// Take the snapshot again when the strip has actually changed.
@@ -233,7 +317,12 @@ impl Oryxis {
     /// deliberately does NOT cover labels (an auto-titled tab would
     /// write to disk on every prompt) nor which pane of a split has
     /// focus, both of which the snapshot does read. `persist_before_exit`
-    /// takes an unconditional one for exactly that reason.
+    /// takes an unconditional one for exactly that reason. The active
+    /// chip joins it only while the user asked to land there (issue
+    /// #229): a tab switch is a gesture, not a prompt, so a write per
+    /// switch is the right price, and it is what lets a headless test
+    /// see the landing at all (the harness restart skips the exit
+    /// snapshot).
     pub(crate) fn persist_open_tabs_if_changed(&mut self) {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -259,6 +348,9 @@ impl Oryxis {
             };
             pinned.hash(&mut h);
         }
+        if self.prefs.restore_last_active_tab {
+            self.active_strip_ref().hash(&mut h);
+        }
         let signature = h.finish();
         if signature == self.open_tabs_signature {
             return;
@@ -268,14 +360,17 @@ impl Oryxis {
     }
 
     /// Recreate last session's non-pinned tabs as dormant placeholders,
-    /// once per process (issue #206).
+    /// once per process (issue #206), and decide what the launch owes
+    /// them beyond that (issue #229).
     ///
-    /// They come back DORMANT, never dialling, which is the whole reason
-    /// this can exist without an answer to "what happens when eleven
-    /// hosts each want a host-key prompt at launch": a restored chip is
-    /// the same placeholder a pin restores as, and it connects when it
-    /// is selected. It is still opt-in, because a strip that refills
-    /// itself is a change to what launching the app means.
+    /// They come back DORMANT: a restored chip is the same placeholder
+    /// a pin restores as, and by default it connects when it is
+    /// selected. "Connect at launch" is the other answer, and the
+    /// reason it can exist without eleven host-key prompts at once is
+    /// that it does not dial here: it QUEUES, in strip order, for
+    /// `advance_launch_dials` to drain one dial at a time. It is still
+    /// opt-in, because a strip that refills itself is a change to what
+    /// launching the app means.
     pub(crate) fn restore_open_tabs_dormant(&mut self) {
         // Set before the setting is consulted, not after: turning the
         // preference on mid-session must not make the next re-run of
@@ -299,9 +394,20 @@ impl Oryxis {
             .vault
             .as_ref()
             .and_then(|v| v.get_setting("open_tabs").ok().flatten());
-        let Some(json) = json else { return };
-        let specs: Vec<crate::state::PinnedTabSpec> =
-            serde_json::from_str(&json).unwrap_or_default();
+        // Read before the list is walked: the pins are already in the
+        // strip, so a landing on one of them resolves even when the
+        // list itself is empty.
+        let active: Option<crate::state::ActiveTabRef> = self
+            .prefs
+            .restore_last_active_tab
+            .then_some(self.vault.as_ref())
+            .flatten()
+            .and_then(|v| v.get_setting("open_tabs_active").ok().flatten())
+            .and_then(|s| serde_json::from_str(&s).ok());
+        let specs: Vec<crate::state::PinnedTabSpec> = json
+            .as_deref()
+            .map(|j| serde_json::from_str(j).unwrap_or_default())
+            .unwrap_or_default();
         // No deduplication against the pins, on purpose. The writer
         // (`persist_open_tabs`) skips pinned tabs, so an entry here that
         // names the same host as a pin can only be a SECOND, unpinned tab
@@ -317,16 +423,62 @@ impl Oryxis {
                 let tab = crate::state::TerminalTab::new_dormant(
                     label,
                     spec,
-                    "restored_tab_dormant_hint",
+                    if self.launch_dials_wanted() {
+                        "restored_tab_queued_hint"
+                    } else {
+                        "restored_tab_dormant_hint"
+                    },
                 );
                 self.tab_order.push(crate::state::TabRef::Terminal(tab._id));
                 self.tabs.push(tab);
             }
         }
-        // Like the pins above: the chips sit in the strip and the app
-        // still opens on Hosts. Restoring what was open is not the same
-        // promise as resuming where the user left off, and dialling on
-        // arrival is the thing this deliberately does not do.
+        // Like the pins above, the chips sit in the strip and the app
+        // opens on Hosts unless the user asked otherwise: restoring
+        // what was open is not the same promise as resuming where they
+        // left off, so both halves of that (the dial, the landing) are
+        // their own preference (issue #229).
+        //
+        // The queue walks the STRIP, pins included: a pin is a restored
+        // tab too, and a strip that came back half live would read as
+        // half broken. Only what has an in-place dial is queued (a
+        // saved host, a local shell); an SFTP tab re-mounts on focus
+        // and a cloud tab spawns through a plugin into a tab of its
+        // own, so both keep connecting when selected, and the setting's
+        // description says so.
+        if self.launch_dials_wanted() {
+            self.launch_dials = self
+                .tab_order
+                .iter()
+                .filter_map(|r| match r {
+                    crate::state::TabRef::Terminal(id) => Some(*id),
+                    _ => None,
+                })
+                .filter(|id| {
+                    self.tabs.iter().any(|t| {
+                        t._id == *id
+                            && matches!(
+                                t.pending_reopen,
+                                Some(crate::state::PinnedTabSpec::Host { .. })
+                                    | Some(crate::state::PinnedTabSpec::LocalShell { .. })
+                            )
+                    })
+                })
+                .collect();
+        }
+        self.launch_landing = active.as_ref().and_then(|a| self.resolve_strip_ref(a));
+    }
+
+    /// Whether the restore owes its tabs a dial (issue #229): the
+    /// restore is on AND the user picked "at launch". Read at restore
+    /// time only; a pick changed mid-session applies to the next launch,
+    /// like the restore toggle itself.
+    fn launch_dials_wanted(&self) -> bool {
+        self.prefs.restore_tabs_on_launch
+            && self.prefs.restore_tabs_connect == "launch"
+            // A child window restores nothing (see the gate above), so
+            // it queues nothing and its pins keep the plain hint.
+            && crate::app::AUTO_PASSWORD.get().is_none()
     }
 
     /// Recreate pinned tabs as dormant placeholders at boot. They show in the
@@ -377,7 +529,15 @@ impl Oryxis {
                 self.tab_order.push(crate::state::TabRef::Sftp(tab.id));
                 self.sftp_tabs.push(tab);
             } else {
-                let tab = crate::state::TerminalTab::new_dormant_pinned(label, spec);
+                // The queue is seeded once, on the FIRST restore of the
+                // process; a pin recreated by a later re-run is not in
+                // it and connects on select like it always did.
+                let hint = if !self.open_tabs_restored && self.launch_dials_wanted() {
+                    "restored_tab_queued_hint"
+                } else {
+                    "pinned_tab_dormant_hint"
+                };
+                let tab = crate::state::TerminalTab::new_dormant_pinned(label, spec, hint);
                 self.tab_order.push(crate::state::TabRef::Terminal(tab._id));
                 self.tabs.push(tab);
             }

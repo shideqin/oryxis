@@ -416,6 +416,10 @@ pub enum SettingsMessage {
     SettingToggleSideFullHeight,
     /// Bring last session's tabs back at launch (issue #206).
     SettingToggleRestoreTabsOnLaunch,
+    /// When a restored tab connects: `"selected"` or `"launch"` (issue #229).
+    SettingRestoreTabsConnectChanged(String),
+    /// Land on the tab that was active at the last close (issue #229).
+    SettingToggleRestoreLastActiveTab,
     SettingToggleShowTabStatusDot,
     SettingToggleSftpEnabled,
     SettingNavOrientationChanged(String),

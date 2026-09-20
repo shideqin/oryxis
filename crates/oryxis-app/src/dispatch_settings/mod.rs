@@ -252,6 +252,8 @@ impl Oryxis {
             | SettingsMessage::SettingToggleSideHideTopBar
             | SettingsMessage::SettingToggleSideFullHeight
             | SettingsMessage::SettingToggleRestoreTabsOnLaunch
+            | SettingsMessage::SettingRestoreTabsConnectChanged(..)
+            | SettingsMessage::SettingToggleRestoreLastActiveTab
             | SettingsMessage::SettingToggleShowTabStatusDot
             | SettingsMessage::SettingNavOrientationChanged(..)
             | SettingsMessage::ToggleNavRailExpanded

@@ -226,8 +226,34 @@ impl Oryxis {
                 } else {
                     // And drop the list on the way out: a preference the
                     // user turned off must not leave their hosts written
-                    // down beside a vault that can be read locked.
+                    // down beside a vault that can be read locked. The
+                    // landing row goes with it (issue #229): it names a
+                    // chip in a list that no longer exists.
                     self.persist_setting("open_tabs", "[]");
+                    self.persist_setting("open_tabs_active", "");
+                    self.open_tabs_signature = 0;
+                }
+            }
+            SettingsMessage::SettingRestoreTabsConnectChanged(val) => {
+                let normalized = match val.as_str() {
+                    "launch" => "launch",
+                    _ => "selected",
+                };
+                self.prefs.restore_tabs_connect = normalized.into();
+                self.persist_setting("restore_tabs_connect", normalized);
+            }
+            SettingsMessage::SettingToggleRestoreLastActiveTab => {
+                self.prefs.restore_last_active_tab = !self.prefs.restore_last_active_tab;
+                self.persist_setting(
+                    "restore_last_active_tab",
+                    if self.prefs.restore_last_active_tab { "true" } else { "false" },
+                );
+                // Same pair of moves as the restore toggle above: on
+                // writes the chip that is active NOW, off drops the row.
+                if self.prefs.restore_last_active_tab {
+                    self.persist_open_tabs();
+                } else {
+                    self.persist_setting("open_tabs_active", "");
                     self.open_tabs_signature = 0;
                 }
             }

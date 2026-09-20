@@ -7,6 +7,7 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Restored tabs can connect at launch, one after another and in place, and the app can open on the tab that was active, both under "Restore last session's tabs" in Settings > Interface (#229, requested by @nAnderYang).
 - Alibaba Cloud (ECS + ACK) and Tencent Cloud (CVM + TKE) cloud accounts, as on-demand plugins over the `aliyun` and `tccli` CLIs you already configured. ACK and TKE clusters add as Kubernetes accounts; their kubeconfig is stored per cluster under `~/.oryxis/kubeconfig/` and can be refreshed from the same row.
 - Settings > Sync installs the relay for you: pick a host from the vault, Oryxis connects over SSH, installs the signed `oryxis-relay` as a systemd service (TLS via Caddy optional) and adopts the endpoint, after showing every command it will run.
 

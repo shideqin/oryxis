@@ -182,6 +182,15 @@ impl Oryxis {
                             if self.history_search_content {
                                 unlock_tasks.push(self.history_content_debounce());
                             }
+                            // The restored strip's landing (issue #229),
+                            // TAKEN here whatever wins below, so a later
+                            // unlock (a soft lock's) finds nothing to
+                            // land on. Under "connect at launch" taking
+                            // it also dials the landing tab first, which
+                            // is right even when a launch argument
+                            // decides where the app opens: the tab was
+                            // queued either way.
+                            let landing = self.take_launch_landing_task();
                             // After a manual unlock, fire any deferred
                             // `--connect <uuid>` from the launch CLI args.
                             if let Some(connect_id) = self.pending_auto_connect.take()
@@ -203,6 +212,14 @@ impl Oryxis {
                                 // known_hosts are readable.
                                 let route = self.handle_connect_target(&target);
                                 unlock_tasks.push(route);
+                            } else if let Some(landing) = landing {
+                                // Below every launch argument: an
+                                // argument says where to open, the
+                                // landing only says where the user was.
+                                // The "connect at launch" queue needs no
+                                // kick at this site: the funnel runs at
+                                // the end of this update.
+                                unlock_tasks.push(landing);
                             } else {
                                 // Land on Home with the host search focused
                                 // so the user can type / keyboard-navigate

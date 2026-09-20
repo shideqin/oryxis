@@ -401,8 +401,15 @@ impl Oryxis {
                         // side effect.
                         if self.prefs.restore_tabs_on_launch {
                             self.persist_setting("open_tabs", "[]");
+                            self.persist_setting("open_tabs_active", "");
                             self.open_tabs_signature = 0;
                         }
+                        // And what the launch still owed that strip
+                        // (issue #229): dials queued for chips this
+                        // lock is about to tear down, and a landing
+                        // nobody took.
+                        self.launch_dials.clear();
+                        self.launch_landing = None;
                         self.clear_terminal_tab_memory();
                         self.active_view = View::Dashboard;
                         // Mirror the soft-lock UI sweep: the manual lock

@@ -211,6 +211,13 @@ impl Oryxis {
         // refused comes back as `ToastShow`. Same funnel shape as the
         // clipboard above: no caller hands the OS a notification itself.
         extra.extend(self.take_os_notice_tasks());
+        // The next restored tab owed a dial under "connect at launch"
+        // (issue #229), once no dial is in flight anywhere. Here rather
+        // than in the completion arms, so a completion path added later
+        // cannot forget to hand the queue its turn; the queue is empty
+        // for the life of an ordinary session, so this costs a length
+        // check.
+        extra.extend(self.advance_launch_dials());
         // One-shot Privacy Mode hint (issue #78): the first time a
         // redaction bar actually draws, spell out how the reveal works
         // ("hover to peek, click to pin"); getting silently masked with

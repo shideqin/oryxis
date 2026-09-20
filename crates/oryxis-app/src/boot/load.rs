@@ -854,6 +854,14 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("restore_tabs_on_launch") {
                 self.prefs.restore_tabs_on_launch = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("restore_tabs_connect")
+                && (v == "selected" || v == "launch")
+            {
+                self.prefs.restore_tabs_connect = v;
+            }
+            if let Ok(Some(v)) = vault.get_setting("restore_last_active_tab") {
+                self.prefs.restore_last_active_tab = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("show_tab_status_dot") {
                 self.prefs.show_tab_status_dot = v == "true";
             }

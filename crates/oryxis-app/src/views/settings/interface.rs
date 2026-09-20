@@ -266,6 +266,7 @@ impl Oryxis {
             text(crate::i18n::t("restore_tabs_on_launch_desc"))
                 .size(11)
                 .color(OryxisColors::t().text_muted),
+            self.restore_tabs_sub_rows(),
             Space::new().height(8),
             self.nav_pick_row(
                 crate::i18n::t("tab_number_style"),
@@ -967,6 +968,49 @@ impl Oryxis {
         )
     }
 
+
+    /// The two asks a restored strip can make beyond coming back
+    /// (issue #229): when its tabs connect, and whether the app opens on
+    /// the chip that was active. Hidden entirely while the restore is
+    /// off, by the same rule as the uniform-size row below: neither
+    /// means anything without a strip to apply to.
+    fn restore_tabs_sub_rows(&self) -> Element<'_, Message> {
+        if !self.prefs.restore_tabs_on_launch {
+            return Space::new().into();
+        }
+        column![
+            Space::new().height(8),
+            self.nav_pick_row(
+                crate::i18n::t("restore_tabs_connect"),
+                vec!["selected".to_string(), "launch".to_string()],
+                self.prefs.restore_tabs_connect.clone(),
+                |s: &String| {
+                    crate::i18n::t(match s.as_str() {
+                        "launch" => "restore_tabs_connect_launch",
+                        _ => "restore_tabs_connect_selected",
+                    })
+                    .to_string()
+                },
+                180.0,
+                |v| Message::Settings(SettingsMessage::SettingRestoreTabsConnectChanged(v)),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("restore_tabs_connect_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+            Space::new().height(8),
+            self.nav_toggle_row(
+                crate::i18n::t("restore_last_active_tab"),
+                self.prefs.restore_last_active_tab,
+                Message::Settings(SettingsMessage::SettingToggleRestoreLastActiveTab),
+            ),
+            Space::new().height(4),
+            text(crate::i18n::t("restore_last_active_tab_desc"))
+                .size(11)
+                .color(OryxisColors::t().text_muted),
+        ]
+        .into()
+    }
 
     /// Width ceiling for the uniform tab mode. Hidden entirely under the
     /// adaptive mode, following the rule that an inapplicable setting

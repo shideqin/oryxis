@@ -387,11 +387,30 @@ impl SftpTab {
     }
 }
 
+/// Which chip of the restored strip was active when the app last
+/// closed (issue #229), stored as JSON in `open_tabs_active` while the
+/// user asked to land there.
+///
+/// A chip is named by its spec's [`PinnedTabSpec::dedupe_key`] plus
+/// its ordinal among the chips sharing that key in strip order, never
+/// by a tab id (minted fresh every boot) nor by a strip index (pins
+/// and ordinary tabs are two lists that the restore interleaves back).
+/// Two tabs on one host are legitimate, which is what the ordinal is
+/// for. Its own row rather than a field beside the `open_tabs` list:
+/// that list is read as a bare `Vec`, and a shape change there would
+/// make an older build restore nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ActiveTabRef {
+    pub key: String,
+    pub nth: usize,
+}
+
 /// Persisted restore spec for a tab. Stored as JSON in the `pinned_tabs`
 /// setting and, when restore-on-launch is on, in `open_tabs` (issue
-/// #206); on boot each becomes a dormant tab that reopens lazily on
-/// first select. Cloud / ephemeral tabs have no spec and aren't
-/// persisted.
+/// #206); on boot each becomes a dormant tab that reopens on first
+/// select, or in place as the app comes up when the user picked
+/// "connect at launch" (issue #229). Cloud / ephemeral tabs have no
+/// spec and aren't persisted.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PinnedTabSpec {
     /// A saved host, reopened with `ConnectSsh` (id resolved to an index
@@ -569,9 +588,12 @@ impl TerminalTab {
         tab
     }
 
-    /// The pinned half of [`Self::new_dormant`].
-    pub fn new_dormant_pinned(label: String, spec: PinnedTabSpec) -> Self {
-        let mut tab = Self::new_dormant(label, spec, "pinned_tab_dormant_hint");
+    /// The pinned half of [`Self::new_dormant`]. The hint is the
+    /// caller's because a pin restored under "connect at launch" is
+    /// about to dial in place (issue #229), and "select to connect"
+    /// would be the wrong promise for the seconds it waits its turn.
+    pub fn new_dormant_pinned(label: String, spec: PinnedTabSpec, hint_key: &str) -> Self {
+        let mut tab = Self::new_dormant(label, spec, hint_key);
         tab.pinned = true;
         tab
     }

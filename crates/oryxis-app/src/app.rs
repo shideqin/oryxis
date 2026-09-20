@@ -340,6 +340,19 @@ pub struct Oryxis {
     /// legitimate), so this is what stops a re-run from recreating tabs
     /// the user has closed since boot.
     pub(crate) open_tabs_restored: bool,
+    /// Restored tabs still owed a dial under "connect at launch" (issue
+    /// #229), in strip order. Drained ONE AT A TIME by
+    /// `advance_launch_dials` from the update funnel, the next only once
+    /// no dial is in flight anywhere, because the host-key, 2FA and
+    /// command-proxy answers ride single staging slots that several
+    /// first-time dials at once would overwrite. Seeded once per process
+    /// next to the restore; a manual lock drops it with the strip.
+    pub(crate) launch_dials: std::collections::VecDeque<uuid::Uuid>,
+    /// The chip to land on after the restore, when the user asked to
+    /// open on the tab that was active (issue #229). Resolved to a live
+    /// strip entry at restore time and TAKEN by the boot / unlock site
+    /// that lands, so a later unlock (a soft lock) finds nothing.
+    pub(crate) launch_landing: Option<crate::state::TabRef>,
     /// Where the tab a Duplicate is about to spawn should land in the
     /// STRIP (never in `self.tabs`, whose indices half the app holds).
     /// Armed by `handle_duplicate_tab`, consumed by

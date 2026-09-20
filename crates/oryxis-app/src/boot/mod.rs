@@ -341,6 +341,8 @@ impl Oryxis {
                 closed_tabs: Vec::new(),
                 open_tabs_signature: 0,
                 open_tabs_restored: false,
+                launch_dials: std::collections::VecDeque::new(),
+                launch_landing: None,
                 pending_tab_placement: None,
                 pending_pane_split: None,
                 quick_connect_protocol:
@@ -764,6 +766,10 @@ impl Oryxis {
                 action: None,
             });
         }
+        // Whether something with a claim on where the app opens fired
+        // below: the restored-strip landing (issue #229) yields to all
+        // of them, the way it yields at the unlock site.
+        let mut landed = false;
         if app.vault_ui.state == VaultState::Unlocked
             && let Some(connect_id) = app.pending_auto_connect.take()
             && let Some(idx) = app
@@ -772,6 +778,7 @@ impl Oryxis {
                 .position(|c| c.id == connect_id)
         {
             tasks.push(Task::done(Message::Ssh(SshMessage::ConnectSsh(idx))));
+            landed = true;
         }
         // Route a deep link the launch carried. `handle_deep_link`
         // re-stashes it by itself when the vault is still locked, so no
@@ -780,12 +787,28 @@ impl Oryxis {
         if let Some(link) = app.pending_deep_link.take() {
             let route = app.handle_deep_link(link);
             tasks.push(route);
+            landed = true;
         }
         // Same for a CLI target, which `handle_connect_target` likewise
         // re-stashes while the vault is locked.
         if let Some(target) = app.pending_connect_target.take() {
             let route = app.handle_connect_target(&target);
             tasks.push(route);
+            landed = true;
+        }
+        // The restored strip's own two asks, for a vault that is open
+        // at boot (a password vault answers them at `VaultUnlock`): the
+        // landing on the chip that was active, and a first turn of the
+        // funnel so the "connect at launch" queue starts now rather
+        // than on whatever event the window raises first. The landing
+        // is taken either way, so a launch that opened elsewhere does
+        // not park it for a later unlock.
+        if app.vault_ui.state == VaultState::Unlocked {
+            let landing = app.take_launch_landing_task();
+            if !landed {
+                tasks.extend(landing);
+            }
+            tasks.extend(app.launch_dial_kick());
         }
         // Bring the sync engine up if the vault is already open and the
         // user left sync enabled. When the vault is locked we defer to

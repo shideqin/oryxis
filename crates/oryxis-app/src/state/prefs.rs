@@ -296,11 +296,22 @@ pub(crate) struct AppPrefs {
     /// Pinned-tab visual style: "compact" (Chrome-style icon-only chip) or
     /// "full" (a normal tab with a special pinned border, stuck to the left).
     pub(crate) pinned_tab_style: String,
-    /// Bring last session's tabs back at launch, dormant (issue #206).
-    /// Off by default: a strip that refills itself changes what opening
-    /// the app means, and pinning is the answer for the tabs a user
-    /// wants every time. While off, nothing is written to `open_tabs`.
+    /// Bring last session's tabs back at launch (issue #206). Off by
+    /// default: a strip that refills itself changes what opening the
+    /// app means, and pinning is the answer for the tabs a user wants
+    /// every time. While off, nothing is written to `open_tabs`.
     pub(crate) restore_tabs_on_launch: bool,
+    /// When a restored tab connects (issue #229): `"selected"` (the
+    /// dormant chip dials on its first select, the #206 shape) or
+    /// `"launch"` (hosts and local shells dial in strip order as the
+    /// app comes up, one at a time and in place, so the strip is live
+    /// without a click). Only read while the restore itself is on.
+    pub(crate) restore_tabs_connect: String,
+    /// Land on the tab that was active when the app was last closed,
+    /// instead of Hosts (issue #229). Off by default: boot opening on
+    /// Hosts is the #206 promise. Only read while the restore is on,
+    /// and the `open_tabs_active` row is only written while this is.
+    pub(crate) restore_last_active_tab: bool,
     /// Where "Duplicate Tab" puts the copy: `"next"` (default, beside the
     /// original), `"end"` (the pre-#110 append) or `"start"`. Parsed by
     /// [`crate::state::TabPlacement::from_setting`]; ordering only, never
@@ -680,6 +691,8 @@ impl Default for AppPrefs {
             tab_close_button_side: "left".into(),
             pinned_tab_style: "compact".into(),
             restore_tabs_on_launch: false,
+            restore_tabs_connect: "selected".into(),
+            restore_last_active_tab: false,
             duplicate_tab_position: "next".into(),
             tab_slot_includes_home: false,
             tab_number_style: "off".into(),
