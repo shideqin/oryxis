@@ -35,16 +35,17 @@ expect "Terminal Font Weight"
 # clicks below when the cards above it grow: the row drifted 48 px once
 # already, then 1202 -> 1310 when the two link rows (confirm + callback
 # tunnel, each with a description line) joined the behaviour card above
-# it. A miss lands on the card instead of the picker, leaves the
-# dropdown shut, and fails at the assertion rather than at the click
-# that actually went wrong.
-click (300, 1310)
+# it, then 1310 -> 1362 when the Ctrl+wheel zoom row and its hint
+# (#225) joined Appearance. A miss lands on the card instead of the
+# picker, leaves the dropdown shut, and fails at the assertion rather
+# than at the click that actually went wrong.
+click (300, 1362)
 settle 300
 # Dropdown options, top to bottom: Regular / Medium / SemiBold / Bold.
 # It opens UPWARDS over the label, so SemiBold lands above the picker
 # (~82 px up from the picker's centre). They live in an overlay no text
 # selector can see, hence the coordinate.
-click (300, 1228)
+click (300, 1280)
 settle 300
 expect "This font has no face at the selected weight, so the terminal uses the closest one it has."
 # The stroke-widening row lives in the same block, right under the
