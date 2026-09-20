@@ -372,12 +372,17 @@ impl Oryxis {
                 // A stale filter from the last visit would open the
                 // gallery on a mysteriously short grid.
                 self.theme_ui.gallery_filter.clear();
+                self.theme_ui.gallery_tone = None;
             }
             SettingsMessage::CloseTerminalThemeGallery => {
                 self.panels.terminal_theme_gallery = false;
             }
             SettingsMessage::OpenUiThemeGallery => {
                 self.panels.ui_theme_gallery = true;
+                // Same rule as the terminal gallery: every visit starts
+                // showing everything.
+                self.theme_ui.ui_gallery_filter.clear();
+                self.theme_ui.ui_gallery_tone = None;
             }
             SettingsMessage::CloseUiThemeGallery => {
                 self.panels.ui_theme_gallery = false;

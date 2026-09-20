@@ -370,8 +370,10 @@ pub(crate) fn app_theme_card<'a>(
     // Same chassis as the terminal theme card; the dots are the chrome's
     // accent + semantic colors.
     let dots = vec![colors.accent, colors.success, colors.warning, colors.error];
+    let tags = crate::theme_tags::card_tag_line(&crate::theme_tags::ui_theme_traits(colors));
     crate::widgets::theme_preview_card(
         name,
+        &tags,
         colors.bg_primary,
         colors.text_primary,
         dots,

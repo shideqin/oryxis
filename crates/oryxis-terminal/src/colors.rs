@@ -115,6 +115,11 @@ impl TerminalTheme {
         }
     }
 
+    /// The built-in's measured traits (`TerminalPalette::traits`).
+    pub fn traits(&self) -> Vec<ThemeTrait> {
+        self.palette().traits()
+    }
+
     pub fn palette(&self) -> TerminalPalette {
         match self {
             Self::OryxisDark => TerminalPalette::oryxis_dark(),
@@ -159,6 +164,162 @@ pub struct TerminalPalette {
     pub background: Color,
     pub cursor: Color,
     pub ansi: [Color; 16],
+}
+
+/// Light or dark, decided by the background's luminance. The one
+/// property every picker offers as a quick filter, kept apart from the
+/// other traits because it is the one a user asks for by name ("is
+/// there a light theme?", issue #230).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ThemeTone {
+    Dark,
+    Light,
+}
+
+/// A MEASURED property of a palette, never a hand-written tag: a theme
+/// is dark because its background is dark, warm because its base
+/// colours lean red, vivid because its accents are saturated. Measured
+/// so that a custom or imported palette gets exactly the same answers
+/// as a built-in one, and so a built-in whose port drifts fails a test
+/// rather than keeping a label it no longer earns. The thresholds in
+/// `palette_traits` were chosen against the shipped palettes (the
+/// tests pin the well-known cases); re-measure before moving one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ThemeTrait {
+    Dark,
+    Light,
+    /// Foreground over background at 12:1 or better.
+    HighContrast,
+    /// Foreground over background under 6:1 (the readability floor
+    /// every built-in passes is 4:1, so "low" still means readable).
+    LowContrast,
+    /// Base colours (background and foreground) lean red / yellow.
+    Warm,
+    /// Base colours lean blue.
+    Cool,
+    /// Accent swatches average 72% saturation or more.
+    Vivid,
+    /// Accent swatches average 45% saturation or less.
+    Muted,
+}
+
+impl ThemeTrait {
+    /// English keyword, the identifier a filter matches on in ANY UI
+    /// language next to the localized label; also what a custom theme
+    /// exporter may print. Lower-case, stable.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+            Self::HighContrast => "high contrast",
+            Self::LowContrast => "low contrast",
+            Self::Warm => "warm",
+            Self::Cool => "cool",
+            Self::Vivid => "vivid",
+            Self::Muted => "muted",
+        }
+    }
+
+    /// The tone this trait is, when it is one.
+    pub fn tone(self) -> Option<ThemeTone> {
+        match self {
+            Self::Dark => Some(ThemeTone::Dark),
+            Self::Light => Some(ThemeTone::Light),
+            _ => None,
+        }
+    }
+}
+
+/// WCAG 2.x relative luminance for an sRGB colour in `[0, 1]`. The one
+/// copy in this crate: the smart-contrast fallback in the renderer, the
+/// theme traits and the picker-order test all read it, so they cannot
+/// disagree about what "dark" is.
+pub fn relative_luminance(c: Color) -> f32 {
+    fn channel(v: f32) -> f32 {
+        if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b)
+}
+
+/// WCAG contrast ratio between two opaque colours: 1.0 = identical,
+/// 21.0 = white-on-black.
+pub fn contrast_ratio(a: Color, b: Color) -> f32 {
+    let la = relative_luminance(a);
+    let lb = relative_luminance(b);
+    let (lighter, darker) = if la >= lb { (la, lb) } else { (lb, la) };
+    (lighter + 0.05) / (darker + 0.05)
+}
+
+/// Light or dark for a background colour: the 0.5 luminance split the
+/// picker order has always been measured with.
+pub fn tone_of(background: Color) -> ThemeTone {
+    if relative_luminance(background) >= 0.5 {
+        ThemeTone::Light
+    } else {
+        ThemeTone::Dark
+    }
+}
+
+/// HSV saturation in `[0, 1]`: how far a colour sits from grey.
+fn saturation(c: Color) -> f32 {
+    let max = c.r.max(c.g).max(c.b);
+    let min = c.r.min(c.g).min(c.b);
+    if max <= f32::EPSILON { 0.0 } else { (max - min) / max }
+}
+
+/// Traits of a palette described by its background, its foreground and
+/// its accent swatches (the six ANSI colours of a terminal palette; the
+/// accent and the three semantic colours of a chrome theme). One
+/// function for both kinds of theme, so "warm" means the same thing
+/// in both galleries.
+pub fn palette_traits(background: Color, foreground: Color, swatches: &[Color]) -> Vec<ThemeTrait> {
+    let mut traits = Vec::with_capacity(5);
+    traits.push(match tone_of(background) {
+        ThemeTone::Dark => ThemeTrait::Dark,
+        ThemeTone::Light => ThemeTrait::Light,
+    });
+    let contrast = contrast_ratio(foreground, background);
+    if contrast >= 12.0 {
+        traits.push(ThemeTrait::HighContrast);
+    } else if contrast < 6.0 {
+        traits.push(ThemeTrait::LowContrast);
+    }
+    // Temperature: how far the base pair leans from grey toward red
+    // (positive) or blue (negative). A neutral base stays untagged.
+    let lean = |c: Color| c.r - c.b;
+    let temperature = (lean(background) + lean(foreground)) / 2.0;
+    if temperature >= 0.04 {
+        traits.push(ThemeTrait::Warm);
+    } else if temperature <= -0.04 {
+        traits.push(ThemeTrait::Cool);
+    }
+    if !swatches.is_empty() {
+        let mean_saturation =
+            swatches.iter().map(|c| saturation(*c)).sum::<f32>() / swatches.len() as f32;
+        if mean_saturation >= 0.72 {
+            traits.push(ThemeTrait::Vivid);
+        } else if mean_saturation <= 0.45 {
+            traits.push(ThemeTrait::Muted);
+        }
+    }
+    traits
+}
+
+impl TerminalPalette {
+    /// The palette's measured traits; see `ThemeTrait`.
+    pub fn traits(&self) -> Vec<ThemeTrait> {
+        let swatches: Vec<Color> = [1usize, 2, 3, 4, 5, 6].iter().map(|&i| self.ansi[i]).collect();
+        palette_traits(self.background, self.foreground, &swatches)
+    }
+
+    /// Light or dark, by the background.
+    pub fn tone(&self) -> ThemeTone {
+        tone_of(self.background)
+    }
 }
 
 impl Default for TerminalPalette {
@@ -1277,7 +1438,7 @@ mod tests {
     /// the natural mistake) fails here with its name.
     #[test]
     fn list_order_is_dark_then_light_alphabetical() {
-        let is_light = |t: &TerminalTheme| luminance(t.palette().background) >= 0.5;
+        let is_light = |t: &TerminalTheme| t.palette().tone() == ThemeTone::Light;
         let mut seen_light = false;
         let mut prev: Option<(bool, String)> = None;
         for theme in TerminalTheme::ALL {
@@ -1321,5 +1482,68 @@ mod tests {
         // Upstream really does repeat these two in the bright slots.
         assert_eq!(light.ansi[0], light.ansi[8], "ansiBrightBlack repeats ansiBlack upstream");
         assert_eq!(light.ansi[4], light.ansi[12], "ansiBrightBlue repeats ansiBlue upstream");
+    }
+
+    /// Every built-in carries exactly one tone trait, and it is the tone
+    /// the picker order is measured with.
+    #[test]
+    fn every_builtin_has_exactly_one_tone_trait() {
+        for theme in TerminalTheme::ALL {
+            let traits = theme.traits();
+            let tones: Vec<ThemeTone> = traits.iter().filter_map(|t| t.tone()).collect();
+            assert_eq!(tones, vec![theme.palette().tone()], "{}", theme.name());
+        }
+    }
+
+    /// The traits are measured, so the well-known cases are the check on
+    /// the thresholds: a port that drifts, or a threshold moved without
+    /// re-measuring, fails here with the theme's name.
+    #[test]
+    fn well_known_palettes_measure_as_expected() {
+        let has = |theme: TerminalTheme, t: ThemeTrait| {
+            assert!(theme.traits().contains(&t), "{} should be {:?}: {:?}", theme.name(), t, theme.traits());
+        };
+        let lacks = |theme: TerminalTheme, t: ThemeTrait| {
+            assert!(!theme.traits().contains(&t), "{} should not be {:?}: {:?}", theme.name(), t, theme.traits());
+        };
+        has(TerminalTheme::GruvboxDark, ThemeTrait::Warm);
+        has(TerminalTheme::GruvboxLight, ThemeTrait::Warm);
+        has(TerminalTheme::Nord, ThemeTrait::Cool);
+        has(TerminalTheme::Nord, ThemeTrait::Muted);
+        has(TerminalTheme::TokyoNight, ThemeTrait::Cool);
+        has(TerminalTheme::SolarizedDark, ThemeTrait::LowContrast);
+        has(TerminalTheme::SolarizedDark, ThemeTrait::Vivid);
+        has(TerminalTheme::GithubLight, ThemeTrait::HighContrast);
+        has(TerminalTheme::PaperLight, ThemeTrait::HighContrast);
+        has(TerminalTheme::HackerGreen, ThemeTrait::Vivid);
+        has(TerminalTheme::Zenburn, ThemeTrait::Muted);
+        // A neutral base is neither warm nor cool.
+        lacks(TerminalTheme::PaperLight, ThemeTrait::Warm);
+        lacks(TerminalTheme::PaperLight, ThemeTrait::Cool);
+        lacks(TerminalTheme::HackerGreen, ThemeTrait::Warm);
+        lacks(TerminalTheme::HackerGreen, ThemeTrait::Cool);
+    }
+
+    /// Keywords are what a filter matches in any language: lower-case
+    /// ASCII, unique, and never empty.
+    #[test]
+    fn trait_keywords_are_lowercase_and_unique() {
+        let all = [
+            ThemeTrait::Dark,
+            ThemeTrait::Light,
+            ThemeTrait::HighContrast,
+            ThemeTrait::LowContrast,
+            ThemeTrait::Warm,
+            ThemeTrait::Cool,
+            ThemeTrait::Vivid,
+            ThemeTrait::Muted,
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for t in all {
+            let k = t.keyword();
+            assert!(!k.is_empty());
+            assert!(k.chars().all(|c| c.is_ascii_lowercase() || c == ' '), "{k}");
+            assert!(seen.insert(k), "duplicate keyword {k}");
+        }
     }
 }

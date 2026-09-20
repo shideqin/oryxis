@@ -151,6 +151,7 @@ mod tab_cycle;
 mod terminal_appearance;
 mod terminal_link;
 mod theme;
+mod theme_tags;
 mod monitor;
 mod theme_export;
 mod theme_import;

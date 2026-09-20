@@ -20,7 +20,7 @@ pub use highlight_rules::{parse_hex_color, CompiledRule, CompiledRules};
 pub use osc::{PositionedShellMark, Progress, ShellMark};
 pub use prompt_detect::PasswordPrompt;
 pub use trigger::TriggerHit;
-pub use colors::{TerminalPalette, TerminalTheme};
+pub use colors::{palette_traits, TerminalPalette, TerminalTheme, ThemeTone, ThemeTrait};
 pub use widget::{
     ime_caret_rect, ipv4_is_private_or_loopback, ipv6_is_local, looks_like_ipv6, open_url,
     take_privacy_mask_drawn, wrap_paste, Backdrop, BackgroundImage, BgFit, HoveredLink,

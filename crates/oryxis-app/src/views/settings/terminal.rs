@@ -319,20 +319,35 @@ impl Oryxis {
     /// The cards record themselves as keyboard rows in RENDER order, same
     /// as any settings row, so the modal is walkable the moment it opens.
     pub(crate) fn terminal_theme_gallery(&self) -> Element<'_, Message> {
-        // Filter, matched against every card's visible label with no
-        // special cases (the follow sentinel and the action cards
-        // participate too): one rule the user can predict.
+        // Filter: the typed line matches every card's visible label,
+        // its localized tags and their English keywords, and the chip
+        // gates on tone (`theme_tags::theme_matches`, the one rule every
+        // theme list applies). The follow sentinel takes part with the
+        // palette it previews; the action cards only by label.
         let gallery_filter = self.theme_ui.gallery_filter.trim().to_lowercase();
-        let shows = |label: &str| {
-            gallery_filter.is_empty() || label.to_lowercase().contains(&gallery_filter)
+        let gallery_tone = self.theme_ui.gallery_tone;
+        let shows = |label: &str, traits: Option<&[oryxis_terminal::ThemeTrait]>| {
+            crate::theme_tags::theme_matches(&gallery_filter, gallery_tone, label, traits)
         };
         // The filter is the first keyboard row of the modal, so it must
         // RECORD before the cards do (construction order is record
         // order); the widget itself is drawn later, ring applied by
-        // index.
+        // index. The chips record right after it, in the order they
+        // are drawn between the line and the grid.
         let filter_idx = self.settings_nav_record(crate::keynav::RowAction::input(
             iced::widget::Id::new("terminal-theme-gallery-filter"),
         ));
+        let tone_chips: Vec<Element<'_, Message>> = crate::theme_tags::TONE_CHOICES
+            .iter()
+            .map(|(tone, key)| {
+                let msg = Message::Settings(SettingsMessage::ThemeGalleryToneChanged(*tone));
+                self.settings_nav_slot(
+                    crate::keynav::RowAction::activate(msg.clone()),
+                    14.0,
+                    crate::theme_tags::tone_chip(t(key), gallery_tone == *tone, msg),
+                )
+            })
+            .collect();
         let mut theme_cards: Vec<Element<'_, Message>> = Vec::new();
         // The sentinel renders as a real palette card previewing
         // the app-theme-derived palette (every app theme has a
@@ -344,7 +359,8 @@ impl Oryxis {
             .unwrap_or_default();
         let follow_label =
             format!("{} ({})", t("terminal_theme_follow_app"), app_theme_name);
-        if shows(&follow_label) {
+        let follow_traits = follow_palette.traits();
+        if shows(&follow_label, Some(&follow_traits)) {
             theme_cards.push(self.settings_nav_slot(
                 crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::TerminalThemeChanged(String::new()))),
                 10.0,
@@ -357,7 +373,8 @@ impl Oryxis {
             ));
         }
         for (bidx, theme) in oryxis_terminal::TerminalTheme::ALL.iter().enumerate() {
-            if !shows(theme.name()) {
+            let traits = theme.traits();
+            if !shows(theme.name(), Some(&traits)) {
                 continue;
             }
             let is_selected = self
@@ -379,14 +396,15 @@ impl Oryxis {
         // (the card's own click action); edit / delete stay
         // hover-only.
         for (idx, ct) in self.custom_terminal_themes.iter().enumerate() {
-            if !shows(&ct.name) {
+            let palette = self
+                .terminal_palette_for_name(&ct.name)
+                .unwrap_or_default();
+            let traits = palette.traits();
+            if !shows(&ct.name, Some(&traits)) {
                 continue;
             }
             let is_selected =
                 self.terminal_theme_override.as_deref() == Some(ct.name.as_str());
-            let palette = self
-                .terminal_palette_for_name(&ct.name)
-                .unwrap_or_default();
             theme_cards.push(self.settings_nav_slot(
                 crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::TerminalThemeChanged(
                     ct.name.clone(),
@@ -401,7 +419,7 @@ impl Oryxis {
             ));
         }
         // "+ New custom theme" + "Import" cards last.
-        if shows(t("theme_new_custom")) {
+        if shows(t("theme_new_custom"), None) {
             theme_cards.push(self.settings_nav_slot_labeled(
                 t("theme_new_custom"),
                 crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::ThemeEditorNew)),
@@ -409,7 +427,7 @@ impl Oryxis {
                 crate::views::settings_themes::terminal_theme_add_card(),
             ));
         }
-        if shows(t("theme_import")) {
+        if shows(t("theme_import"), None) {
             theme_cards.push(self.settings_nav_slot_labeled(
                 t("theme_import"),
                 crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::ThemeImportOpen)),
@@ -417,7 +435,7 @@ impl Oryxis {
                 crate::views::settings_themes::terminal_theme_import_card(),
             ));
         }
-        if shows(t("theme_community")) {
+        if shows(t("theme_community"), None) {
             theme_cards.push(self.settings_nav_slot_labeled(
                 t("theme_community"),
                 crate::keynav::RowAction::activate(Message::OpenUrl(
@@ -473,6 +491,8 @@ impl Oryxis {
                 text(t("terminal_theme_desc")).size(12).color(OryxisColors::t().text_muted),
                 Space::new().height(12),
                 filter_input,
+                Space::new().height(8),
+                crate::widgets::dir_row(tone_chips).spacing(6),
                 Space::new().height(12),
                 // The scrollbar is drawn INSIDE the viewport, so a grid
                 // that fills the full width gets a bar painted over its

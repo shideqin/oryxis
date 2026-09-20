@@ -48,12 +48,16 @@ impl Oryxis {
                 // A stale filter from the last visit would open the
                 // picker on a mysteriously short list.
                 self.theme_ui.picker_filter.clear();
+                self.theme_ui.picker_tone = None;
             }
             EditorMessage::EditorCloseThemePicker => {
                 self.panels.theme_picker = false;
             }
             EditorMessage::EditorThemePickerFilterChanged(v) => {
                 self.theme_ui.picker_filter = v;
+            }
+            EditorMessage::EditorThemePickerToneChanged(tone) => {
+                self.theme_ui.picker_tone = tone;
             }
             EditorMessage::EditorTerminalThemeChanged(name) => {
                 // Empty string == "inherit the global pick".

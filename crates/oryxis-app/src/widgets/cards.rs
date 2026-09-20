@@ -282,6 +282,7 @@ pub(crate) fn empty_state<'a>(
 /// Selected gets a 2px accent border; hover lightens the fill.
 pub(crate) fn theme_preview_card<'a>(
     name: &str,
+    tags: &str,
     bg: Color,
     fg: Color,
     dots: Vec<Color>,
@@ -301,8 +302,22 @@ pub(crate) fn theme_preview_card<'a>(
         })
         .collect();
 
+    // The measured tags ride beside the name in the palette's own
+    // foreground, faded: legible without competing with the name, and
+    // visible on every surface that draws the card (issue #230).
+    let mut leading: Vec<Element<'a, Message>> =
+        vec![text(name.to_owned()).size(13).color(fg).into()];
+    if !tags.is_empty() {
+        leading.push(Space::new().width(8).into());
+        leading.push(
+            text(tags.to_owned())
+                .size(10)
+                .color(Color { a: fg.a * 0.6, ..fg })
+                .into(),
+        );
+    }
     let body = dir_row(vec![
-        text(name.to_owned()).size(13).color(fg).into(),
+        dir_row(leading).align_y(iced::Alignment::Center).into(),
         Space::new().width(Length::Fill).into(),
         Row::with_children(dot_els).spacing(4).into(),
     ])
@@ -393,5 +408,6 @@ pub(crate) fn terminal_theme_card<'a>(
 ) -> Element<'a, Message> {
     // ANSI red → cyan (skip black/white, they barely read against the bg).
     let dots: Vec<Color> = [1usize, 2, 3, 4, 5, 6].iter().map(|&i| palette.ansi[i]).collect();
-    theme_preview_card(name, palette.background, palette.foreground, dots, selected, on_press)
+    let tags = crate::theme_tags::card_tag_line(&palette.traits());
+    theme_preview_card(name, &tags, palette.background, palette.foreground, dots, selected, on_press)
 }

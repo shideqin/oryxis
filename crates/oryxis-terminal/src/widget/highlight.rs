@@ -813,31 +813,13 @@ pub(crate) fn detect_highlights(
     highlights
 }
 
-/// WCAG 2.x relative luminance for an sRGB colour in `[0, 1]`. Used by
-/// the smart-contrast fallback to decide whether a too-close cell
-/// should flip its foreground to white or near-black.
-pub(crate) fn relative_luminance(c: Color) -> f32 {
-    fn channel(v: f32) -> f32 {
-        if v <= 0.03928 {
-            v / 12.92
-        } else {
-            ((v + 0.055) / 1.055).powf(2.4)
-        }
-    }
-    0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b)
-}
-
-/// WCAG contrast ratio between two opaque colours: 1.0 = identical,
-/// 21.0 = white-on-black. We trip the smart-contrast fallback below
-/// `2.5`, well under the AA-body threshold of `4.5` so we only act
-/// on visually disappearing pairs and leave merely-low-contrast
+/// WCAG relative luminance and contrast ratio, re-exported from
+/// `colors` (the crate's one copy, shared with the theme traits and
+/// the picker-order test). The smart-contrast fallback trips below
+/// `2.5`, well under the AA-body threshold of `4.5`, so it only acts
+/// on visually disappearing pairs and leaves merely-low-contrast
 /// styling alone.
-pub(crate) fn contrast_ratio(a: Color, b: Color) -> f32 {
-    let la = relative_luminance(a);
-    let lb = relative_luminance(b);
-    let (lighter, darker) = if la >= lb { (la, lb) } else { (lb, la) };
-    (lighter + 0.05) / (darker + 0.05)
-}
+pub(crate) use crate::colors::{contrast_ratio, relative_luminance};
 
 #[inline]
 fn is_word_byte(b: u8) -> bool {

@@ -24,6 +24,8 @@ pub enum EditorMessage {
     /// Filter line typed in the per-host theme picker (matches card
     /// labels, case-insensitive).
     EditorThemePickerFilterChanged(String),
+    /// All / Dark / Light chip of the per-host theme picker.
+    EditorThemePickerToneChanged(Option<oryxis_terminal::ThemeTone>),
     /// Empty string == "inherit the global theme".
     EditorTerminalThemeChanged(String),
     /// Cloud transport pick (only meaningful when editing a cloud-imported host).

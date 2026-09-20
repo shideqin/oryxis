@@ -763,9 +763,35 @@ impl Oryxis {
         // recorded here so the Theme group follows the Tabs group in
         // the keyboard order, exactly as rendered.
         let active_name = self.active_app_theme_name.as_str();
+        // Filter and chips, the terminal gallery's rule
+        // (`theme_tags::theme_matches`) over the chrome themes' measured
+        // traits. Recorded before the cards, in draw order.
+        let gallery_filter = self.theme_ui.ui_gallery_filter.trim().to_lowercase();
+        let gallery_tone = self.theme_ui.ui_gallery_tone;
+        let shows = |label: &str, traits: Option<&[oryxis_terminal::ThemeTrait]>| {
+            crate::theme_tags::theme_matches(&gallery_filter, gallery_tone, label, traits)
+        };
+        let filter_idx = self.settings_nav_record(crate::keynav::RowAction::input(
+            iced::widget::Id::new("ui-theme-gallery-filter"),
+        ));
+        let tone_chips: Vec<Element<'_, Message>> = crate::theme_tags::TONE_CHOICES
+            .iter()
+            .map(|(tone, key)| {
+                let msg = Message::Settings(SettingsMessage::UiThemeGalleryToneChanged(*tone));
+                self.settings_nav_slot(
+                    crate::keynav::RowAction::activate(msg.clone()),
+                    14.0,
+                    crate::theme_tags::tone_chip(t(key), gallery_tone == *tone, msg),
+                )
+            })
+            .collect();
         let mut cards: Vec<Element<'_, Message>> = Vec::new();
         for (bidx, theme) in crate::theme::AppTheme::ALL.iter().enumerate() {
             let name = theme.name();
+            let traits = crate::theme_tags::ui_theme_traits(theme.colors_ref());
+            if !shows(name, Some(&traits)) {
+                continue;
+            }
             cards.push(self.settings_nav_slot(
                 crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::AppThemeChanged(name.to_string()))),
                 10.0,
@@ -787,6 +813,10 @@ impl Oryxis {
             .map(|t| crate::theme::theme_colors_from_hex(&t.colors))
             .collect();
         for (idx, theme) in self.custom_ui_themes.iter().enumerate() {
+            let traits = crate::theme_tags::ui_theme_traits(&custom_colors[idx]);
+            if !shows(&theme.name, Some(&traits)) {
+                continue;
+            }
             cards.push(self.settings_nav_slot(
                 crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::AppThemeChanged(
                     theme.name.clone(),
@@ -800,26 +830,32 @@ impl Oryxis {
                 ),
             ));
         }
-        cards.push(self.settings_nav_slot_labeled(
-            t("theme_new_custom"),
-            crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::UiThemeEditorNew)),
-            10.0,
-            crate::views::settings_ui_themes::ui_theme_add_card(),
-        ));
-        cards.push(self.settings_nav_slot_labeled(
-            t("theme_import"),
-            crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::UiThemeImportOpen)),
-            10.0,
-            crate::views::settings_ui_themes::ui_theme_import_card(),
-        ));
-        cards.push(self.settings_nav_slot_labeled(
-            crate::i18n::t("theme_community"),
-            crate::keynav::RowAction::activate(Message::OpenUrl(
-                "https://oryxis.app/themes".to_string(),
-            )),
-            10.0,
-            crate::views::settings_ui_themes::ui_theme_community_card(),
-        ));
+        if shows(t("theme_new_custom"), None) {
+            cards.push(self.settings_nav_slot_labeled(
+                t("theme_new_custom"),
+                crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::UiThemeEditorNew)),
+                10.0,
+                crate::views::settings_ui_themes::ui_theme_add_card(),
+            ));
+        }
+        if shows(t("theme_import"), None) {
+            cards.push(self.settings_nav_slot_labeled(
+                t("theme_import"),
+                crate::keynav::RowAction::activate(Message::Settings(SettingsMessage::UiThemeImportOpen)),
+                10.0,
+                crate::views::settings_ui_themes::ui_theme_import_card(),
+            ));
+        }
+        if shows(t("theme_community"), None) {
+            cards.push(self.settings_nav_slot_labeled(
+                crate::i18n::t("theme_community"),
+                crate::keynav::RowAction::activate(Message::OpenUrl(
+                    "https://oryxis.app/themes".to_string(),
+                )),
+                10.0,
+                crate::views::settings_ui_themes::ui_theme_community_card(),
+            ));
+        }
 
         // Chunk the cards into rows of two (Elements aren't Clone, so
         // drain pairs instead of `chunks`).
@@ -846,6 +882,17 @@ impl Oryxis {
         for row_el in grid_rows {
             grid = grid.push(row_el).push(Space::new().height(8));
         }
+        let filter_input = self.settings_nav_ring_at(
+            filter_idx,
+            10.0,
+            iced::widget::text_input(t("filter_placeholder"), &self.theme_ui.ui_gallery_filter)
+                .id(iced::widget::Id::new("ui-theme-gallery-filter"))
+                .on_input(|v| Message::Settings(SettingsMessage::UiThemeGalleryFilterChanged(v)))
+                .padding(10)
+                .size(13)
+                .style(crate::widgets::rounded_input_style)
+                .into(),
+        );
         let card = container(
             iced::widget::column![
                 text(crate::i18n::t("interface_group_theme"))
@@ -855,7 +902,11 @@ impl Oryxis {
                 text(crate::i18n::t("app_theme_desc"))
                     .size(12)
                     .color(OryxisColors::t().text_muted),
-                Space::new().height(16),
+                Space::new().height(12),
+                filter_input,
+                Space::new().height(8),
+                dir_row(tone_chips).spacing(6),
+                Space::new().height(12),
                 // Right padding is the scrollbar's own gutter: it is drawn
                 // INSIDE the viewport, so a full-width grid gets a bar
                 // painted over its right-hand cards.

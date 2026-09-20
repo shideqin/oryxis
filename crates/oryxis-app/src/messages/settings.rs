@@ -76,8 +76,14 @@ pub enum SettingsMessage {
     /// Pick a scheme file from disk and load it into the import modal.
     ThemeImportBrowse,
     /// Filter line typed in the terminal-theme gallery (matches card
-    /// labels, case-insensitive).
+    /// labels, localized tags and English keywords, case-insensitive).
     ThemeGalleryFilterChanged(String),
+    /// All / Dark / Light chip of the terminal-theme gallery.
+    ThemeGalleryToneChanged(Option<oryxis_terminal::ThemeTone>),
+    /// Filter line typed in the app-theme gallery, same rule.
+    UiThemeGalleryFilterChanged(String),
+    /// All / Dark / Light chip of the app-theme gallery.
+    UiThemeGalleryToneChanged(Option<oryxis_terminal::ThemeTone>),
     /// File contents arrived from the browse dialog (or an error;
     /// "cancelled" is silent).
     ThemeImportFileLoaded(Result<String, String>),

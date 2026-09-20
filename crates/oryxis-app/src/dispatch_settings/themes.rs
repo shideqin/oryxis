@@ -809,6 +809,15 @@ impl Oryxis {
             SettingsMessage::ThemeGalleryFilterChanged(v) => {
                 self.theme_ui.gallery_filter = v;
             }
+            SettingsMessage::ThemeGalleryToneChanged(tone) => {
+                self.theme_ui.gallery_tone = tone;
+            }
+            SettingsMessage::UiThemeGalleryFilterChanged(v) => {
+                self.theme_ui.ui_gallery_filter = v;
+            }
+            SettingsMessage::UiThemeGalleryToneChanged(tone) => {
+                self.theme_ui.ui_gallery_tone = tone;
+            }
             SettingsMessage::ThemeImportBrowse => {
                 // Feed a scheme file into the paste modal; the existing
                 // Apply path parses it (h3 roadmap: file-picker import).

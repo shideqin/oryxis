@@ -22,4 +22,13 @@ pub(crate) struct ThemeEditorUi {
     pub(crate) gallery_filter: String,
     /// Filter line of the per-host theme picker, same contract.
     pub(crate) picker_filter: String,
+    /// Dark / Light chip of the Settings terminal-theme gallery
+    /// (`None` = all), cleared on open like the line.
+    pub(crate) gallery_tone: Option<oryxis_terminal::ThemeTone>,
+    /// Same chip on the per-host picker.
+    pub(crate) picker_tone: Option<oryxis_terminal::ThemeTone>,
+    /// Filter line and chip of the Settings app-theme gallery, which
+    /// had no filter before the terminal one grew tags (issue #230).
+    pub(crate) ui_gallery_filter: String,
+    pub(crate) ui_gallery_tone: Option<oryxis_terminal::ThemeTone>,
 }

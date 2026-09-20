@@ -1121,6 +1121,7 @@ impl Oryxis {
                 | EditorMessage::EditorOpenThemePicker
                 | EditorMessage::EditorCloseThemePicker
                 | EditorMessage::EditorThemePickerFilterChanged(..)
+                | EditorMessage::EditorThemePickerToneChanged(..)
                 | EditorMessage::EditorTerminalThemeChanged(..)
                 | EditorMessage::EditorEncodingChanged(..)
                 | EditorMessage::EditorAmbiguousWidthChanged(..)

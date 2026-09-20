@@ -175,6 +175,9 @@ impl Oryxis {
             | SettingsMessage::ThemeExportFinished(..)
             | SettingsMessage::ThemeImportBrowse
             | SettingsMessage::ThemeGalleryFilterChanged(..)
+            | SettingsMessage::ThemeGalleryToneChanged(..)
+            | SettingsMessage::UiThemeGalleryFilterChanged(..)
+            | SettingsMessage::UiThemeGalleryToneChanged(..)
             | SettingsMessage::ThemeImportFileLoaded(..)
             | SettingsMessage::ThemeBuiltinCardHovered(..)
             | SettingsMessage::ThemeBuiltinCardUnhovered(..)
