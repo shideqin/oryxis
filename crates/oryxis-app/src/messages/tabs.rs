@@ -295,6 +295,23 @@ pub enum TabsMessage {
     CardUnhovered(usize),
     FolderCardHovered(Uuid),
     FolderCardUnhovered(uuid::Uuid),
+    /// The folder header's back arrow, a drop target for a card drag.
+    FolderBackHovered,
+    FolderBackUnhovered,
+    /// A host card's own click (issue #230): Ctrl toggles the card in the
+    /// selection, Shift ranges from the anchor, a plain click connects.
+    /// The modifiers are read from app state because `button` publishes
+    /// none.
+    CardPressed(usize),
+    /// The hover check on a host card: toggle it in the selection.
+    CardSelectToggle(Uuid),
+    /// Selection bar: drop the selection.
+    SelectionClear,
+    /// Selection bar: select every host the dashboard is showing.
+    SelectionSelectAll,
+    /// Open the group picker to move these hosts (a card's kebab, the
+    /// selection bar). The picker's pick performs the move.
+    MoveHostsPick(Vec<Uuid>),
     KeyCardHovered(usize),
     KeyCardUnhovered(usize),
     IdentityCardHovered(usize),

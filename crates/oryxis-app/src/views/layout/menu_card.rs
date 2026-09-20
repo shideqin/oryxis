@@ -164,6 +164,7 @@ impl Oryxis {
             rows += 1.0; // Stop remote desktop
         }
         if dashboard {
+            rows += 1.0; // Move to group
             if conn.and_then(|c| c.cloud_ref.as_ref()).is_some() {
                 rows += 1.0; // Filter by cloud profile
             }
@@ -252,6 +253,27 @@ impl Oryxis {
                 crate::i18n::t("stop_remote_desktop"),
                 Message::RemoteDesktop(RemoteDesktopMessage::StopRemoteDesktop(cid)),
                 OryxisColors::t().error,
+            ));
+        }
+        // Move to group (issue #230): the whole selection when this
+        // host is part of one, so the kebab of any selected card acts
+        // on all of them, the way file managers do; else this host.
+        if dashboard {
+            let ids: Vec<uuid::Uuid> = if self.dash_selection.contains(id) {
+                self.dash_selection.ids.clone()
+            } else {
+                vec![id]
+            };
+            let label = if ids.len() > 1 {
+                crate::i18n::t("move_n_to_group").replace("{n}", &ids.len().to_string())
+            } else {
+                crate::i18n::t("move_to_group").to_string()
+            };
+            items = items.push(self.menu_item_owned(
+                iced_fonts::lucide::folder_input(),
+                label,
+                Message::Tabs(TabsMessage::MoveHostsPick(ids)),
+                OryxisColors::t().text_secondary,
             ));
         }
         if dashboard && let Some(pid) = cloud_profile_id {

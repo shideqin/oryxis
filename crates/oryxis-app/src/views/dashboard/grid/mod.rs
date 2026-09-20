@@ -505,6 +505,65 @@ impl Oryxis {
         host_order
     }
 
+    /// The bar over the grid while host cards are selected: the count,
+    /// "Move to group" for the selection, select every visible host,
+    /// clear. Its buttons are toolbar items on the keyboard ring,
+    /// recorded here in visual order after the toolbar proper.
+    fn dashboard_selection_bar(&self) -> Element<'_, Message> {
+        let n = self.dash_selection.len();
+        let count = text(t("selection_count").replace("{n}", &n.to_string()))
+            .size(13)
+            .color(OryxisColors::t().accent);
+        let move_btn = self.keynav_toolbar_slot(
+            crate::keynav::ToolbarItem::SelectionMove,
+            crate::widgets::styled_button_owned(
+                t("move_to_group").to_string(),
+                Some(Message::Tabs(TabsMessage::MoveHostsPick(self.dash_selection.ids.clone()))),
+                OryxisColors::t().accent,
+            ),
+        );
+        let all_btn = self.keynav_toolbar_slot(
+            crate::keynav::ToolbarItem::SelectionAll,
+            crate::widgets::styled_button(
+                t("select_all"),
+                Message::Tabs(TabsMessage::SelectionSelectAll),
+                OryxisColors::t().bg_hover,
+            ),
+        );
+        let clear_btn = self.keynav_toolbar_slot(
+            crate::keynav::ToolbarItem::SelectionClear,
+            crate::widgets::styled_button(
+                t("deselect_all"),
+                Message::Tabs(TabsMessage::SelectionClear),
+                OryxisColors::t().bg_hover,
+            ),
+        );
+        container(
+            dir_row(vec![
+                count.into(),
+                Space::new().width(Length::Fill).into(),
+                move_btn,
+                Space::new().width(8).into(),
+                all_btn,
+                Space::new().width(8).into(),
+                clear_btn,
+            ])
+            .align_y(iced::Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
+        .style(|_| container::Style {
+            background: Some(Background::Color(OryxisColors::t().bg_surface)),
+            border: Border {
+                radius: Radius::from(10.0),
+                color: OryxisColors::t().accent,
+                width: 1.0,
+            },
+            ..Default::default()
+        })
+        .into()
+    }
+
     /// True on a first-run vault: nothing saved anywhere, so the
     /// dashboard renders `dashboard_empty_state` (no toolbar, no
     /// search field). Read outside the view too, by
@@ -697,6 +756,12 @@ impl Oryxis {
             && let Some(conn) = self.dashboard_quick_connect_target(&self.host_search)
         {
             content_rows.push(self.quick_connect_card(conn));
+        }
+        // Selection bar (issue #230): count, move, select all, clear.
+        // Above the sections in every view mode, so the action on a
+        // selection is where the eye lands when the cards light up.
+        if !self.dash_selection.is_empty() {
+            content_rows.push(self.dashboard_selection_bar());
         }
         if tree_mode {
             let washed =

@@ -4,10 +4,10 @@
 
 use iced::border::Radius;
 use iced::widget::button::Status as BtnStatus;
-use iced::widget::{button, container, text, Space};
+use iced::widget::{button, container, text, MouseArea, Space};
 use iced::{Background, Border, Color, Element, Length, Padding};
 
-use crate::app::{EditorMessage, CloudMessage, NavigationMessage, Message, Oryxis};
+use crate::app::{EditorMessage, CloudMessage, NavigationMessage, Message, Oryxis, TabsMessage};
 use crate::i18n::t;
 use crate::theme::OryxisColors;
 use crate::widgets::dir_row;
@@ -44,6 +44,11 @@ impl Oryxis {
             } else {
                 iced_fonts::lucide::arrow_left()
             };
+            // The arrow is also where a dragged host goes to leave
+            // this folder (issue #230): dropping on it moves the host
+            // one level up, the only door out of a folder by drag.
+            let back_drop = self.card_drag.as_ref().is_some_and(|d| d.active)
+                && self.hover.folder_back;
             let back_btn = button(
                 container(back_glyph.size(16).color(OryxisColors::t().text_primary))
                     .center_x(Length::Fixed(28.0))
@@ -51,18 +56,27 @@ impl Oryxis {
             )
             .on_press(back_msg)
             .padding(0)
-            .style(|_, status| {
+            .style(move |_, status| {
                 let bg = match status {
+                    _ if back_drop => OryxisColors::t().bg_selected,
                     BtnStatus::Hovered => OryxisColors::t().bg_hover,
                     BtnStatus::Pressed => OryxisColors::t().bg_selected,
                     _ => Color::TRANSPARENT,
                 };
+                let border = if back_drop {
+                    Border { radius: Radius::from(6.0), color: OryxisColors::t().accent, width: 2.0 }
+                } else {
+                    Border { radius: Radius::from(6.0), ..Default::default() }
+                };
                 button::Style {
                     background: Some(Background::Color(bg)),
-                    border: Border { radius: Radius::from(6.0), ..Default::default() },
+                    border,
                     ..Default::default()
                 }
             });
+            let back_btn = MouseArea::new(back_btn)
+                .on_enter(Message::Tabs(TabsMessage::FolderBackHovered))
+                .on_exit(Message::Tabs(TabsMessage::FolderBackUnhovered));
             dir_row(vec![
                 crate::views::terminal::icon_tooltip(back_btn.into(), t("back")),
                 Space::new().width(8).into(),

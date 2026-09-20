@@ -169,7 +169,7 @@ impl Oryxis {
             // Space is delivered as a named key by winit (see
             // `util.rs` PTY routing); same rule as the Character
             // guard above.
-            Named::Space if self.keynav.focus.is_some() => self.keynav_activate(),
+            Named::Space if self.keynav.focus.is_some() => self.keynav_space(),
             Named::Escape => {
                 // An open sync passphrase edit is cancelled by Esc like
                 // any other cancel: back to the read-only mask.
@@ -772,7 +772,27 @@ impl Oryxis {
     /// Esc: clear the zone focus back to idle (first press); when
     /// already idle it is not consumed, so the hotkey table keeps
     /// its close-topmost-modal behavior.
+    /// Space on a ringed host card toggles it in the selection (issue
+    /// #230), the keyboard's equivalent of the hover check; everywhere
+    /// else Space activates like Enter.
+    fn keynav_space(&mut self) -> Option<Task<Message>> {
+        if self.active_view == crate::state::View::Dashboard
+            && let Some((FocusZone::Content, NavItem::Dash(DashNavItem::Host(i)))) = self.keynav.focus
+            && let Some(id) = self.connections.get(i).map(|c| c.id)
+        {
+            self.dash_selection.toggle(id);
+            return Some(Task::none());
+        }
+        self.keynav_activate()
+    }
+
     fn keynav_escape(&mut self) -> Option<Task<Message>> {
+        // A host-card selection is the outermost thing Esc undoes on the
+        // dashboard: one press clears it, the next idles the ring.
+        if self.active_view == crate::state::View::Dashboard && !self.dash_selection.is_empty() {
+            self.dash_selection.clear();
+            return Some(Task::none());
+        }
         if self.keynav.focus.is_some() {
             self.keynav.focus = None;
             self.panels.subnav_overflow = false;
@@ -884,6 +904,11 @@ impl Oryxis {
             (View::Dashboard, ToolbarItem::Primary) => Message::Editor(EditorMessage::ShowNewConnection),
             (View::Dashboard, ToolbarItem::PrimaryChevron) => Message::Cloud(CloudMessage::ShowCloudProviderPicker),
             (View::Dashboard, ToolbarItem::CloudDiscover(pid)) => Message::Cloud(CloudMessage::ShowCloudDiscover(pid)),
+            (View::Dashboard, ToolbarItem::SelectionMove) => {
+                Message::Tabs(TabsMessage::MoveHostsPick(self.dash_selection.ids.clone()))
+            }
+            (View::Dashboard, ToolbarItem::SelectionAll) => Message::Tabs(TabsMessage::SelectionSelectAll),
+            (View::Dashboard, ToolbarItem::SelectionClear) => Message::Tabs(TabsMessage::SelectionClear),
             (View::Keys, ToolbarItem::Sort) => Message::Navigation(NavigationMessage::ToggleSortMenu(SortMenuKind::Keys)),
             (View::Keys, ToolbarItem::Primary) => Message::Keys(KeysMessage::ToggleKeychainAddMenu),
             (View::Snippets, ToolbarItem::Sort) => Message::Navigation(NavigationMessage::ToggleSortMenu(SortMenuKind::Snippets)),

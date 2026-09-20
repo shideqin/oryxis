@@ -859,6 +859,20 @@ impl Oryxis {
         {
             return self.layer_drag_ghost(base, resize_overlay, &arm.label);
         }
+        // A host card (or the selection) on its way to a folder (issue
+        // #230): same pill, a server glyph. Non-interactive, so the
+        // folder cards underneath keep receiving the hover that names
+        // the drop target.
+        if let Some(drag) = &self.card_drag
+            && drag.active
+        {
+            return self.layer_drag_ghost_with_icon(
+                base,
+                resize_overlay,
+                iced_fonts::lucide::server(),
+                &drag.label,
+            );
+        }
 
         // A tab dragged off the strip and over the content area: the
         // split anchor it proposes, plus its ghost chip (issue #112).

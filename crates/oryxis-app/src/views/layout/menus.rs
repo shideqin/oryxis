@@ -87,6 +87,9 @@ impl Oryxis {
                     crate::state::GroupPickerTarget::GroupEditParent => {
                         self.group_edit_parent_combo_bounds.get()
                     }
+                    // No combo to track: anchored at a kebab or the
+                    // cursor, wide enough for a nested path on one line.
+                    crate::state::GroupPickerTarget::MoveHosts => iced::Rectangle::default(),
                 };
                 if b.width > 0.0 { b.width } else { 308.0 }
             }
@@ -197,6 +200,11 @@ impl Oryxis {
                 // Copy (only with a selection) + Copy All.
                 if sel.is_some() { 2.0 } else { 1.0 }
             }
+            // Search field plus the 220 px list: the combo-anchored
+            // pickers always opened near the top, the kebab-anchored
+            // "Move to group" one opens wherever the card is, and the
+            // flat default let its rows hang past the bottom edge.
+            OverlayContent::GroupPicker(_) | OverlayContent::CloudDiscoverGroupPicker => 9.0,
             _ => 2.5,
         };
         items * ITEM_H + 10.0

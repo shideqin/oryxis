@@ -33,13 +33,25 @@ impl Oryxis {
             || self.sftp_chrome.col_resize.is_some()
             || self.sftp_chrome.col_drag.is_some()
             || self.sftp.drag.is_some()
-            || self.tab_drag.is_some();
+            || self.tab_drag.is_some()
+            || self.card_drag.is_some();
         // Promote an armed tab drag to active once the cursor moves
         // past a small threshold, so a plain click never reorders.
+        const TAB_DRAG_THRESHOLD: f32 = 6.0;
         if let Some(drag) = self.tab_drag.as_mut()
             && !drag.active
         {
-            const TAB_DRAG_THRESHOLD: f32 = 6.0;
+            let dx = pos.x - drag.start.x;
+            let dy = pos.y - drag.start.y;
+            if (dx * dx + dy * dy).sqrt() > TAB_DRAG_THRESHOLD {
+                drag.active = true;
+            }
+        }
+        // Same threshold for a host card drag (issue #230): under it the
+        // press is a click the card's own button answers on release.
+        if let Some(drag) = self.card_drag.as_mut()
+            && !drag.active
+        {
             let dx = pos.x - drag.start.x;
             let dy = pos.y - drag.start.y;
             if (dx * dx + dy * dy).sqrt() > TAB_DRAG_THRESHOLD {
@@ -317,6 +329,7 @@ impl Oryxis {
             // drag state. The live-slide reorder already applied, so
             // cancelling loses nothing but the ghost.
             self.tab_drag = None;
+            self.card_drag = None;
             self.sftp.drag = None;
             self.sftp_chrome.col_drag = None;
             // A drawer-resize release outside the window never reaches

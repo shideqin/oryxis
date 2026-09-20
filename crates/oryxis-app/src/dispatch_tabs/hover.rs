@@ -55,6 +55,12 @@ impl Oryxis {
             TabsMessage::FolderCardUnhovered(gid) => {
                 self.hover.leave_folder_card(gid);
             }
+            TabsMessage::FolderBackHovered => {
+                self.hover.folder_back = true;
+            }
+            TabsMessage::FolderBackUnhovered => {
+                self.hover.folder_back = false;
+            }
             TabsMessage::KeyCardHovered(idx) => {
                 self.hover.key_card = Some(idx);
             }

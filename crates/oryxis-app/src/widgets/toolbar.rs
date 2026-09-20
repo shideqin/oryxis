@@ -405,3 +405,40 @@ pub(crate) fn tag_filter_toolbar_button(
     })
     .into()
 }
+
+/// The hover check on a host card (issue #230): an 18 px circle on the
+/// card's leading corner, filled with the accent and a check glyph
+/// while the card is selected, outlined otherwise. Its press is its
+/// own (it sits in a `Stack` layer above the card's button), so
+/// clicking it toggles the selection without dialling the host.
+pub(crate) fn card_select_check<'a>(selected: bool, msg: Message) -> Element<'a, Message> {
+    let palette = OryxisColors::t();
+    let glyph: Element<'a, Message> = if selected {
+        iced_fonts::lucide::check().size(11).color(palette.button_text).into()
+    } else {
+        Space::new().into()
+    };
+    button(
+        container(glyph)
+            .center_x(Length::Fixed(18.0))
+            .center_y(Length::Fixed(18.0)),
+    )
+    .on_press(msg)
+    .padding(0)
+    .style(move |_, status| {
+        let palette = OryxisColors::t();
+        let (bg, border_color) = match (selected, status) {
+            (true, BtnStatus::Hovered) => (palette.accent_hover, palette.accent_hover),
+            (true, _) => (palette.accent, palette.accent),
+            (false, BtnStatus::Hovered) => (palette.bg_hover, palette.accent),
+            (false, BtnStatus::Pressed) => (palette.bg_selected, palette.accent),
+            (false, _) => (palette.bg_surface, palette.text_muted),
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(9.0), color: border_color, width: 1.5 },
+            ..Default::default()
+        }
+    })
+    .into()
+}

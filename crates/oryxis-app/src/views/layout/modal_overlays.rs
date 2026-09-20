@@ -631,7 +631,18 @@ impl Oryxis {
         resize_overlay: Option<Element<'a, Message>>,
         label: &str,
     ) -> Element<'a, Message> {
-        let ghost = crate::views::sftp::drag_ghost(label);
+        self.layer_drag_ghost_with_icon(base, resize_overlay, iced_fonts::lucide::file(), label)
+    }
+
+    /// [`layer_drag_ghost`] with the pill's glyph chosen by the caller.
+    pub(crate) fn layer_drag_ghost_with_icon<'a>(
+        &'a self,
+        base: Element<'a, Message>,
+        resize_overlay: Option<Element<'a, Message>>,
+        icon: iced::widget::Text<'a>,
+        label: &str,
+    ) -> Element<'a, Message> {
+        let ghost = crate::views::sftp::drag_ghost_with_icon(icon, label);
         // Offset slightly off the cursor, matches OS drag previews
         // and keeps the label out from under the pointer. Direction
         // mirrors under RTL so the ghost trails the cursor on the

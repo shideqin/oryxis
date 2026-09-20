@@ -199,6 +199,11 @@ pub(crate) enum GroupPickerTarget {
     /// Parent combo in the manual group editor side panel. The list
     /// excludes the edited group's own subtree (no cycles).
     GroupEditParent,
+    /// "Move to group" from a host card's kebab or the selection bar
+    /// (issue #230). Anchored at the menu / cursor rather than a combo,
+    /// carries a "Top level" row, and the pick MOVES
+    /// `Oryxis::move_hosts_pending` instead of filling a form field.
+    MoveHosts,
 }
 
 /// Host editor's startup-command source. `None` runs nothing; `Snippet`

@@ -340,6 +340,10 @@ impl Oryxis {
                 // value left behind by a bailed-out press would otherwise
                 // be mistaken for the next press's hit.
                 let pressed_row = self.sftp.row_press.borrow_mut().take();
+                // Same contract for a host card (issue #230): the card's
+                // `press_hit_reporter` named it, take it before any
+                // early return below.
+                let pressed_card = self.card_press.borrow_mut().take();
                 // Any physical click leaves keyboard-selection mode: the
                 // mouse took over, a lingering ring would just be noise.
                 // Also drops the modal-layer selection so a menu closed
@@ -365,6 +369,9 @@ impl Oryxis {
                 // actual dock: a hard-coded top `y <= BAR_HEIGHT` guard
                 // silently disabled reorder on every non-top dock (issue
                 // #87, "can't move tabs on the left side").
+                if let Some(id) = pressed_card {
+                    self.arm_card_drag(id);
+                }
                 let in_tab_strip = self.cursor_in_tab_strip();
                 if !in_tab_strip {
                     self.hover.tab = None;

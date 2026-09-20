@@ -214,6 +214,15 @@ impl Oryxis {
                 // proposed unless the cursor sits on a split anchor, so
                 // an ordinary reorder release falls straight through.
                 self.merge_dragged_tab_if_proposed();
+                // A host card released over a folder moves there (issue
+                // #230). Taken whether or not it went active, so an
+                // armed click never lingers as a phantom drag; only an
+                // active one drops.
+                if let Some(drag) = self.card_drag.take()
+                    && drag.active
+                {
+                    return self.drop_dragged_cards(drag);
+                }
                 // Ends a tab reorder drag. The live-slide already moved
                 // the tab into place during the drag (see TabHovered); on
                 // drop we just persist the new pinned order (if the dragged

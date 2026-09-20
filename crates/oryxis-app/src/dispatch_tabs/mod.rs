@@ -11,6 +11,7 @@ mod icon_picker;
 mod lifecycle;
 mod merge;
 mod ordering;
+mod selection;
 mod window;
 
 use iced::Task;
@@ -85,6 +86,8 @@ impl Oryxis {
                 | TabsMessage::CardUnhovered(..)
                 | TabsMessage::FolderCardHovered(..)
                 | TabsMessage::FolderCardUnhovered(..)
+                | TabsMessage::FolderBackHovered
+                | TabsMessage::FolderBackUnhovered
                 | TabsMessage::KeyCardHovered(..)
                 | TabsMessage::KeyCardUnhovered(..)
                 | TabsMessage::IdentityCardHovered(..)
@@ -158,6 +161,13 @@ impl Oryxis {
                 | TabsMessage::IconPickerSave
                 | TabsMessage::IconPickerResetAuto
             ) => self.handle_tabs_pickers(m),
+            m @ (
+                TabsMessage::CardPressed(..)
+                | TabsMessage::CardSelectToggle(..)
+                | TabsMessage::SelectionClear
+                | TabsMessage::SelectionSelectAll
+                | TabsMessage::MoveHostsPick(..)
+            ) => self.handle_tabs_selection(m),
             m @ (
                 TabsMessage::ToggleBurgerMenu
                 | TabsMessage::ToggleSubnavOverflow

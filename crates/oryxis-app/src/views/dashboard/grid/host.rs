@@ -122,6 +122,20 @@ impl Oryxis {
         let show_dots = self.hover.card == Some(idx)
             || (self.card_context_menu.is_some()
                 && self.card_context_menu == self.connections.get(idx).map(|c| c.id));
+        // Multi-selection (issue #230): the card wears the selected
+        // fill, and its hover check is shown on hover or while ANY card
+        // is selected, so a selection in progress reads as one across
+        // the grid. A card in an active drag loses its press: the fork's
+        // `button` publishes on a release only while `on_press` is set
+        // in that frame, so a drag abandoned back over its own card
+        // cannot dial the host (the guard is the tree, not the timing
+        // between the global release and the button).
+        let selected = self.dash_selection.contains(conn.id);
+        let selecting = !self.dash_selection.is_empty();
+        let dragging_this = self
+            .card_drag
+            .as_ref()
+            .is_some_and(|d| d.active && d.ids.contains(&conn.id));
         let rtl = crate::i18n::is_rtl_layout();
         let pad_trailing = 24.0_f32;
         let card_padding = if rtl {
@@ -250,10 +264,13 @@ impl Oryxis {
             )
             .padding(card_padding),
         )
-        .on_press(Message::Ssh(SshMessage::ConnectSsh(idx)))
+        .on_press_maybe(
+            (!dragging_this).then_some(Message::Tabs(TabsMessage::CardPressed(idx))),
+        )
         .width(Length::Fill)
         .style(move |_, status| {
             let bg = match status {
+                _ if selected => OryxisColors::t().bg_selected,
                 BtnStatus::Hovered => OryxisColors::t().bg_hover,
                 BtnStatus::Pressed => OryxisColors::t().bg_selected,
                 _ => OryxisColors::t().bg_surface,
@@ -265,6 +282,7 @@ impl Oryxis {
             // keyboard-selection highlight is drawn as an outer ring in
             // the assembly, not here.
             let (bc, bw) = match status {
+                _ if selected => (OryxisColors::t().accent, 1.5),
                 BtnStatus::Hovered => (OryxisColors::t().accent, 1.5),
                 BtnStatus::Pressed => (OryxisColors::t().accent, 2.0),
                 _ => (OryxisColors::t().border, 1.0),
@@ -288,6 +306,36 @@ impl Oryxis {
         );
         let card_element =
             crate::widgets::card_trailing_overlay(card_btn.into(), dots_btn.into());
+        // The hover check, on the leading corner over the icon (the
+        // Photos / Drive placement), in its own overlay layer so it
+        // captures its press before the card's button does.
+        let mut stack = iced::widget::Stack::new().push(card_element);
+        if show_dots || selecting {
+            let check = crate::widgets::card_select_check(
+                selected,
+                Message::Tabs(TabsMessage::CardSelectToggle(conn.id)),
+            );
+            let leading = if rtl {
+                iced::alignment::Horizontal::Right
+            } else {
+                iced::alignment::Horizontal::Left
+            };
+            stack = stack.push(
+                container(check)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_x(leading)
+                    .align_y(iced::alignment::Vertical::Top)
+                    .padding(3),
+            );
+        }
+        // Which card a press lands on, for the global press handler to
+        // arm a drag from: the button captures the press, and a
+        // scrolled grid makes draw-time rects wrong by the scroll
+        // offset, so the answer is recorded where iced translates the
+        // cursor (the SFTP rows' lesson, issue #127).
+        let card_element =
+            crate::widgets::press_hit_reporter(stack, self.card_press.clone(), conn.id);
 
         // Wrap in MouseArea for hover tracking and right-click
         let wrapped = MouseArea::new(card_element)

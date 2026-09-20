@@ -626,6 +626,11 @@ impl Oryxis {
         // cards at a glance, issue #38 polish).
         let folder_rtl = crate::i18n::is_rtl_layout();
         let folder_show_dots = self.hover.folder_card == Some(gid);
+        // A host card dragged over this folder: the same inputs the
+        // release reads (`card_drop_target`), so the fill promises
+        // exactly the drop that will happen.
+        let drop_target = self.card_drag.as_ref().is_some_and(|d| d.active)
+            && self.card_drop_target() == Some(Some(gid));
         let folder_pad_trailing = 24.0_f32;
         let folder_padding = if folder_rtl {
             Padding { top: 8.0, right: 2.0, bottom: 8.0, left: folder_pad_trailing }
@@ -659,8 +664,9 @@ impl Oryxis {
         )
         .on_press(Message::Navigation(NavigationMessage::OpenGroup(gid)))
         .width(Length::Fill)
-        .style(|_, status| {
+        .style(move |_, status| {
             let (bg, bc, bw) = match status {
+                _ if drop_target => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
                 BtnStatus::Hovered => (OryxisColors::t().bg_hover, OryxisColors::t().accent, 1.5),
                 BtnStatus::Pressed => (OryxisColors::t().bg_selected, OryxisColors::t().accent, 2.0),
                 _ => (OryxisColors::t().bg_surface, OryxisColors::t().border, 1.0),

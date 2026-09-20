@@ -157,6 +157,13 @@ impl Oryxis {
         // tabs after every message: new tabs appended, closed ones dropped,
         // drag-reordered order preserved.
         self.reconcile_tab_order();
+        // A selected host card that was deleted, or replaced by a sync
+        // apply, leaves the selection; same funnel as the strip order.
+        if !self.dash_selection.is_empty() {
+            let alive: std::collections::HashSet<uuid::Uuid> =
+                self.connections.iter().map(|c| c.id).collect();
+            self.dash_selection.prune(|id| alive.contains(&id));
+        }
         // A tab context menu is keyed by tab id; drop the popover when
         // that tab left in this update, so the menu never outlives what
         // it acts on.
@@ -333,6 +340,7 @@ impl Oryxis {
             || self.sftp_chrome.col_drag.is_some()
             || self.sftp.drag.is_some()
             || self.tab_drag.is_some()
+            || self.card_drag.is_some()
             || self.drag_out_arm.is_some()
             || self.window_fullscreen
             || self.sftp.suppress_hover

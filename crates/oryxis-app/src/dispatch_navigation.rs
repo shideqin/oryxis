@@ -353,6 +353,9 @@ impl Oryxis {
                         GroupPickerTarget::GroupEditParent => {
                             self.group_edit_parent_combo_bounds.get()
                         }
+                        // Opened by `MoveHostsPick`, never toggled from
+                        // a combo; an empty rect falls back to the cursor.
+                        GroupPickerTarget::MoveHosts => iced::Rectangle::default(),
                     };
                     self.group_picker_search.clear();
                     // 6 px gap below the combo. Falls back to mouse
@@ -387,6 +390,28 @@ impl Oryxis {
                     }
                     GroupPickerTarget::GroupEditParent => {
                         self.group_edit.parent_label = label;
+                    }
+                    GroupPickerTarget::MoveHosts => {
+                        // The picker sends the breadcrumb path it showed,
+                        // an empty one for its "Top level" row. Resolved
+                        // only, never created: a typo in the search box
+                        // must not mint a folder.
+                        let target = if label.trim().is_empty() {
+                            Some(None)
+                        } else {
+                            oryxis_core::models::Group::resolve_path_or_label(
+                                &self.groups,
+                                &label,
+                                &std::collections::HashSet::new(),
+                            )
+                            .map(Some)
+                        };
+                        self.overlay = None;
+                        let ids = std::mem::take(&mut self.move_hosts_pending);
+                        return match target {
+                            Some(target) => self.move_hosts_to_group(&ids, target),
+                            None => Task::none(),
+                        };
                     }
                 }
                 if matches!(

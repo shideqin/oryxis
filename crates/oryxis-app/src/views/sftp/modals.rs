@@ -319,10 +319,15 @@ pub(crate) fn edit_reopen_modal<'a>(
 /// dragged across panes. Solid pill with the dragged item's label or
 /// "N items"; non-interactive so the eventual mouse-release still hits
 /// the underlying drop target.
-pub(crate) fn drag_ghost<'a>(label: &str) -> Element<'a, Message> {
+/// The glyph is the caller's: a file for the SFTP drags, a server for
+/// a host card on its way to a folder (issue #230).
+pub(crate) fn drag_ghost_with_icon<'a>(
+    icon: iced::widget::Text<'a>,
+    label: &str,
+) -> Element<'a, Message> {
     container(
         row![
-            iced_fonts::lucide::file().size(12).color(Color::WHITE),
+            icon.size(12).color(Color::WHITE),
             Space::new().width(8),
             text(label.to_string())
                 .size(12)

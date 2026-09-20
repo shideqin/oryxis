@@ -587,6 +587,21 @@ pub struct Oryxis {
     /// `card_context_menu` for hosts.
     pub(crate) snippet_context_menu: Option<usize>,
     pub(crate) card_context_menu: Option<uuid::Uuid>,
+    /// Multi-selected host cards (issue #230): Ctrl / Shift + click, the
+    /// hover check on a card, Space on a ringed card. Session-only.
+    pub(crate) dash_selection: crate::state::DashSelection,
+    /// A host card drag in flight (onto a folder card, a tree folder
+    /// row or the folder header's back arrow). Registered with
+    /// `mouse_interest`, the `MouseMoved` promote, the focus-loss cancel
+    /// and the global release, like every other drag.
+    pub(crate) card_drag: Option<crate::state::CardDrag>,
+    /// Which host card the last left press landed on, written by the
+    /// card's `press_hit_reporter` and consumed once per press: the
+    /// card is a `button`, which captures the press, so this is the only
+    /// account of it the global press handler can get.
+    pub(crate) card_press: crate::widgets::PressHitCell<uuid::Uuid>,
+    /// The hosts the open "Move to group" picker will move.
+    pub(crate) move_hosts_pending: Vec<uuid::Uuid>,
 
     // Floating overlay menu
     pub(crate) overlay: Option<OverlayState>,

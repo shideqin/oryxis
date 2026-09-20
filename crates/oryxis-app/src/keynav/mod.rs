@@ -90,6 +90,11 @@ pub(crate) enum ToolbarItem {
     /// "+ DISCOVER" for the linked cloud profile. Carries the profile
     /// id so activation needs no re-derivation of the folder link.
     CloudDiscover(uuid::Uuid),
+    /// The dashboard's selection bar (issue #230), shown while host
+    /// cards are selected: move them, select all, clear.
+    SelectionMove,
+    SelectionAll,
+    SelectionClear,
 }
 
 /// A keyboard-selectable item, recorded by the views during render.

@@ -877,6 +877,15 @@ impl Oryxis {
             .collect();
         all_groups.sort_by_key(|s| s.to_lowercase());
         all_groups.dedup();
+        // Moving hosts can also mean moving them OUT of every folder,
+        // which the form-filling targets never offer (an empty combo
+        // already means root there). First row, so it is one Down away.
+        if target == crate::state::GroupPickerTarget::MoveHosts {
+            let root = crate::i18n::t("group_picker_root");
+            if needle.is_empty() || root.to_lowercase().contains(&needle) {
+                all_groups.insert(0, root.to_string());
+            }
+        }
         let search_input = iced::widget::text_input(
             crate::i18n::t("search_groups"),
             &self.group_picker_search,
@@ -924,6 +933,16 @@ impl Oryxis {
             let mut items = column![].spacing(2);
             for label in all_groups {
                 let display = label.clone();
+                // The move target's "Top level" row is the one label
+                // that is not a path: it travels as an empty string, the
+                // same value an empty combo means everywhere else.
+                let label = if target == crate::state::GroupPickerTarget::MoveHosts
+                    && label == crate::i18n::t("group_picker_root")
+                {
+                    String::new()
+                } else {
+                    label
+                };
                 let row = iced::widget::button(
                     container(
                         text(display)

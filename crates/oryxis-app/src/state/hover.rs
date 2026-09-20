@@ -88,6 +88,12 @@ pub(crate) struct HoverState {
     pub(crate) files_row: Option<usize>,
     /// tmux sidebar session row (issue #116).
     pub(crate) tmux_row: Option<usize>,
+    /// The folder header's back arrow: the drop target that moves a
+    /// dragged host one level UP (issue #230), the only way to drag a
+    /// host out of the folder it is shown in. A bool, not a key: there
+    /// is exactly one such arrow, so the crossing hazard the keyed
+    /// `leave_*` helpers guard against cannot arise.
+    pub(crate) folder_back: bool,
 }
 
 impl HoverState {

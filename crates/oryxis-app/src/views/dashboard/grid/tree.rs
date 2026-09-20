@@ -386,6 +386,9 @@ impl Oryxis {
             Message::Tabs(TabsMessage::ShowFolderActions(gid)),
             Message::Tabs(TabsMessage::FolderCardHovered(gid)),
             Message::Tabs(TabsMessage::FolderCardUnhovered(gid)),
+            // A host dragged over the row: the fill promises the drop.
+            self.card_drag.as_ref().is_some_and(|d| d.active)
+                && self.card_drop_target() == Some(Some(gid)),
         );
         (el, folder_bg)
     }
@@ -551,12 +554,16 @@ impl Oryxis {
             icon_box,
             label_el,
             Some(subtitle_el),
-            Message::Ssh(SshMessage::ConnectSsh(idx)),
+            Message::Tabs(TabsMessage::CardPressed(idx)),
             hovered,
             Message::Tabs(TabsMessage::ShowCardMenu(idx)),
             Message::Tabs(TabsMessage::CardHovered(idx)),
             Message::Tabs(TabsMessage::CardUnhovered(idx)),
+            self.dash_selection.contains(conn.id),
         );
+        // Same press account as the card (issue #230): a tree row can
+        // start a drag onto a folder row too.
+        let el = crate::widgets::press_hit_reporter(el, self.card_press.clone(), conn.id);
         (el, badge_color)
     }
 
@@ -609,6 +616,7 @@ impl Oryxis {
             Message::SessionGroup(SessionGroupMessage::ShowSessionGroupMenu(idx)),
             Message::SessionGroup(SessionGroupMessage::SessionGroupCardHovered(idx)),
             Message::SessionGroup(SessionGroupMessage::SessionGroupCardUnhovered(idx)),
+            false,
         );
         (el, bg_color)
     }
@@ -667,6 +675,7 @@ impl Oryxis {
             Message::Cloud(CloudMessage::ShowDynamicGroupCardMenu(gid)),
             Message::Cloud(CloudMessage::DynamicGroupCardHovered(gid)),
             Message::Cloud(CloudMessage::DynamicGroupCardUnhovered(gid)),
+            false,
         );
         (el, folder_bg)
     }
@@ -707,6 +716,9 @@ impl Oryxis {
         kebab_msg: Message,
         on_enter: Message,
         on_exit: Message,
+        // Selected host, or a folder under a dragged host: the accent
+        // fill either way, the two never apply to the same row.
+        highlighted: bool,
     ) -> Element<'a, Message> {
         let rtl = crate::i18n::is_rtl_layout();
 
@@ -779,12 +791,13 @@ impl Oryxis {
         .on_press(on_press)
         .width(Length::Fill)
         .padding(row_padding)
-        .style(|_, status| {
+        .style(move |_, status| {
             // No idle chrome: a border per row at this density is
             // noise, and the transparent ground is what makes the
             // guides + indentation carry the structure. Hover / press
             // fill the full row instead.
             let bg = match status {
+                _ if highlighted => Some(OryxisColors::t().bg_selected),
                 BtnStatus::Hovered => Some(OryxisColors::t().bg_hover),
                 BtnStatus::Pressed => Some(OryxisColors::t().bg_selected),
                 _ => None,
