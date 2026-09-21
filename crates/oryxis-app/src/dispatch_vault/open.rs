@@ -191,6 +191,9 @@ impl Oryxis {
                             // decides where the app opens: the tab was
                             // queued either way.
                             let landing = self.take_launch_landing_task();
+                            // The ZMODEM staging sweep, once, now that the
+                            // download folder setting is known.
+                            unlock_tasks.extend(self.zmodem_sweep_task());
                             // After a manual unlock, fire any deferred
                             // `--connect <uuid>` from the launch CLI args.
                             if let Some(connect_id) = self.pending_auto_connect.take()

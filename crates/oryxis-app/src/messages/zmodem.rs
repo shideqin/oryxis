@@ -23,4 +23,19 @@ pub enum ZmodemMessage {
     ZmodemDownloadDirPicked(Option<String>),
     /// Reset the ZMODEM download folder to the OS default.
     ClearZmodemDownloadDir,
+    /// The folder was picked after the download had already completed,
+    /// and its files were just moved there (`zmodem_delivery`): the
+    /// completion toast fired with no location, so this one names it.
+    ZmodemDelivered { dir: std::path::PathBuf, files: Vec<String> },
+    /// A finished download could not be moved into the picked folder
+    /// and is still at `staying`.
+    ZmodemMoveFailed {
+        name: String,
+        dir: std::path::PathBuf,
+        staying: std::path::PathBuf,
+        err: String,
+    },
+    /// The boot sweep delivered files a previous process left finished
+    /// in the staging folder to the default download folder.
+    ZmodemRecovered { dir: std::path::PathBuf, files: Vec<std::path::PathBuf> },
 }

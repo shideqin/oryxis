@@ -88,8 +88,11 @@ impl Oryxis {
         };
 
         let (wire_tx, wire_in) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<Progress>();
+        let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel::<Progress>();
         let abort = Arc::new(AtomicBool::new(false));
+        // The relay's own handle on the divert: a declined folder dialog
+        // wakes the driver through it (`zmodem_delivery`).
+        let wake_tx = wire_tx.clone();
 
         // An OS drop staged its sources and typed `rz -y` (drop.rs): the
         // detection firing IS the proof the receiver started, so consume
@@ -141,73 +144,53 @@ impl Oryxis {
             abort,
         };
 
-        // The stream owns the driver: for a download it runs straight
-        // away (or first asks for the folder, when the setting says so);
-        // for an upload it first asks (async, non-blocking) which file
-        // to send, cancelling the remote cleanly if declined. Both
-        // dialogs run BEFORE the driver spawns, so its own silent-peer
-        // clock has not started: the wait is bounded by the remote
-        // `sz` / `rz` alone, and lrzsz keeps retransmitting its opening
-        // header meanwhile (the divert is already live, so those
-        // retransmits queue on `wire_in` for the receiver to drain).
+        // The stream owns the driver. A download starts receiving AT
+        // ONCE: when the setting says to ask, it receives into the
+        // staging folder while the dialog is up, and `zmodem_delivery`
+        // moves each finished file once the answer is in, so the wait
+        // is the user's, never the remote's (stock lrzsz `sz` gives up
+        // after ~30 s of silence, which is what the dialog used to
+        // race). An upload still asks first, because there is nothing
+        // to send before a file is picked; lrzsz keeps retransmitting
+        // its opening header meanwhile (the divert is already live, so
+        // those retransmits queue on `wire_in` for the driver to drain).
         let stream = iced::stream::channel::<Message>(
             64,
             move |mut out: iced::futures::channel::mpsc::Sender<Message>| async move {
                 let spec = match direction {
                     Direction::Download => {
-                        let dest_dir = if ask_dest {
-                            match rfd::AsyncFileDialog::new()
-                                .set_title(crate::i18n::t("sftp_download_to"))
-                                .set_directory(&dest_dir)
-                                .pick_folder()
-                                .await
-                            {
-                                Some(handle) => handle.path().to_path_buf(),
-                                None => {
-                                    // Declined: cancel the waiting remote
-                                    // `sz` so it doesn't hang, and end
-                                    // the transfer.
-                                    let _ = wire_out.send(oryxis_zmodem::CANCEL.to_vec());
-                                    let _ = out
-                                        .send(Message::Zmodem(ZmodemMessage::ZmodemProgress(
-                                            pane_id,
-                                            Progress::Aborted,
-                                        )))
-                                        .await;
-                                    return;
-                                }
-                            }
+                        let (driver_dir, placement) = if ask_dest {
+                            let staging = crate::zmodem_delivery::staging_dir();
+                            let start_in = dest_dir.clone();
+                            let answer: crate::zmodem_delivery::DestinationAnswer =
+                                Box::pin(async move {
+                                    rfd::AsyncFileDialog::new()
+                                        .set_title(crate::i18n::t("sftp_download_to"))
+                                        .set_directory(&start_in)
+                                        .pick_folder()
+                                        .await
+                                        .map(|handle| handle.path().to_path_buf())
+                                });
+                            (
+                                staging.clone(),
+                                crate::zmodem_delivery::Placement::Staged { staging, answer },
+                            )
                         } else {
-                            dest_dir
+                            (dest_dir.clone(), crate::zmodem_delivery::Placement::Direct)
                         };
-                        // The user may have hit Cancel on the overlay
-                        // while the dialog was up: the flag is raised but
-                        // no driver was running to honour it, and one
-                        // spawned now would answer a pane the cancel
-                        // already tore down.
-                        if cancelled.load(Ordering::Relaxed) {
-                            let _ = wire_out.send(oryxis_zmodem::CANCEL.to_vec());
-                            let _ = out
-                                .send(Message::Zmodem(ZmodemMessage::ZmodemProgress(
-                                    pane_id,
-                                    Progress::Aborted,
-                                )))
-                                .await;
-                            return;
-                        }
-                        // The destination (a configured folder or the
-                        // default `~/Downloads` / `~/.oryxis/downloads`)
-                        // may not exist yet; the driver's `File::create`
-                        // would fail without its parent. Make it first.
-                        // Both this and the budget probe below run on the
-                        // folder actually chosen, never the default.
-                        if let Err(e) = tokio::fs::create_dir_all(&dest_dir).await {
+                        // The folder the driver writes into (the staging
+                        // folder, or the configured / default one) may
+                        // not exist yet; its `File::create` would fail
+                        // without the parent. The budget probe below
+                        // reads the same volume, which is the one the
+                        // bytes land on first.
+                        if let Err(e) = tokio::fs::create_dir_all(&driver_dir).await {
                             let _ = out
                                 .send(Message::Zmodem(ZmodemMessage::ZmodemProgress(
                                     pane_id,
                                     Progress::Error(format!(
                                         "download folder {}: {e}",
-                                        dest_dir.display()
+                                        driver_dir.display()
                                     )),
                                 )))
                                 .await;
@@ -220,39 +203,53 @@ impl Oryxis {
                         // standing between a hostile peer and a full
                         // disk is a number computed here. Measured after
                         // `create_dir_all` so the probe sees the real
-                        // destination volume.
-                        let budget = oryxis_core::disk::available_space(&dest_dir)
+                        // volume. It is a guard, not a promise about the
+                        // folder picked later: a move into a fuller
+                        // volume reports itself as a failed move.
+                        let budget = oryxis_core::disk::available_space(&driver_dir)
                             .map(|free| free.saturating_sub(ZMODEM_DISK_HEADROOM));
-                        Some(TransferSpec::Download { dest_dir, budget })
+                        Some((
+                            TransferSpec::Download {
+                                dest_dir: driver_dir,
+                                budget,
+                            },
+                            placement,
+                        ))
                     }
                     Direction::Upload if preset_sources.is_some() => {
                         // OS drop: the sources were chosen by the drop
                         // gesture itself, no picker. `is_some` checked in
                         // the guard, so the expect can never fire.
-                        Some(TransferSpec::Upload {
-                            sources: preset_sources.expect("guarded by the match arm"),
-                            streaming_window,
-                        })
+                        Some((
+                            TransferSpec::Upload {
+                                sources: preset_sources.expect("guarded by the match arm"),
+                                streaming_window,
+                            },
+                            crate::zmodem_delivery::Placement::Direct,
+                        ))
                     }
                     Direction::Upload => {
                         // Multi-select: every picked file goes out in
                         // one ZMODEM session, in order.
                         match rfd::AsyncFileDialog::new().pick_files().await {
-                            // Same rule as the download ask: a Cancel
-                            // clicked while the picker was up must not
-                            // start a transfer the pane has already
-                            // given up on.
+                            // A Cancel clicked on the overlay while the
+                            // picker was up raised the flag with no
+                            // driver to honour it; one spawned now would
+                            // answer a pane the cancel already tore down.
                             Some(handles)
                                 if !handles.is_empty()
                                     && !cancelled.load(Ordering::Relaxed) =>
                             {
-                                Some(TransferSpec::Upload {
-                                    sources: handles
-                                        .iter()
-                                        .map(|h| h.path().to_path_buf())
-                                        .collect(),
-                                    streaming_window,
-                                })
+                                Some((
+                                    TransferSpec::Upload {
+                                        sources: handles
+                                            .iter()
+                                            .map(|h| h.path().to_path_buf())
+                                            .collect(),
+                                        streaming_window,
+                                    },
+                                    crate::zmodem_delivery::Placement::Direct,
+                                ))
                             }
                             _ => {
                                 // Declined: cancel the waiting remote `rz`
@@ -264,12 +261,41 @@ impl Oryxis {
                     }
                 };
                 match spec {
-                    Some(spec) => {
+                    Some((spec, placement)) => {
                         // Run the driver; it drops `progress` (via `io`)
-                        // when done, closing `progress_rx` below.
+                        // when done, which is what ends the relay's
+                        // driver half. The relay closes `events` when
+                        // the answer has been consumed too.
                         tokio::spawn(oryxis_zmodem::run(direction, spec, Vec::new(), io));
-                        while let Some(p) = progress_rx.recv().await {
-                            if out.send(Message::Zmodem(ZmodemMessage::ZmodemProgress(pane_id, p))).await.is_err() {
+                        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+                        tokio::spawn(crate::zmodem_delivery::relay(
+                            progress_rx,
+                            placement,
+                            cancelled,
+                            wake_tx,
+                            events_tx,
+                        ));
+                        while let Some(ev) = events_rx.recv().await {
+                            let msg = match ev {
+                                crate::zmodem_delivery::DeliveryEvent::Progress(p) => {
+                                    ZmodemMessage::ZmodemProgress(pane_id, p)
+                                }
+                                crate::zmodem_delivery::DeliveryEvent::Delivered { dir, files } => {
+                                    ZmodemMessage::ZmodemDelivered { dir, files }
+                                }
+                                crate::zmodem_delivery::DeliveryEvent::MoveFailed {
+                                    name,
+                                    dir,
+                                    staying,
+                                    err,
+                                } => ZmodemMessage::ZmodemMoveFailed {
+                                    name,
+                                    dir,
+                                    staying,
+                                    err,
+                                },
+                            };
+                            if out.send(Message::Zmodem(msg)).await.is_err() {
                                 break;
                             }
                         }
@@ -282,6 +308,31 @@ impl Oryxis {
         );
 
         Task::stream(stream)
+    }
+
+    /// Deliver what a previous process left finished in the ZMODEM
+    /// staging folder to the default download folder, once per process
+    /// (`zmodem_delivery::sweep_orphans`). Called where the download
+    /// folder setting is first known: boot for an open vault, the unlock
+    /// otherwise. Once, because a later unlock (a soft lock's) can find
+    /// a transfer mid-dialog whose parked files this must not touch.
+    /// A child window (`--inherit-vault`) leaves it to the window that
+    /// spawned it, which may be in exactly that state.
+    pub(crate) fn zmodem_sweep_task(&mut self) -> Option<Task<Message>> {
+        if std::mem::replace(&mut self.zmodem_swept, true)
+            || crate::app::AUTO_PASSWORD.get().is_some()
+        {
+            return None;
+        }
+        let staging = crate::zmodem_delivery::staging_dir();
+        let dir = self.default_download_dir();
+        Some(Task::perform(
+            async move {
+                let files = crate::zmodem_delivery::sweep_orphans(&staging, &dir).await;
+                (dir, files)
+            },
+            |(dir, files)| Message::Zmodem(ZmodemMessage::ZmodemRecovered { dir, files }),
+        ))
     }
 
     /// Handle a streamed transfer event: update the overlay state and,
@@ -418,6 +469,39 @@ impl Oryxis {
                 self.persist_setting("zmodem_download_dir", "");
                 self.prefs.zmodem_download_dir = String::new();
                 Task::none()
+            }
+            ZmodemMessage::ZmodemDelivered { dir, files } => {
+                // The completion toast already said "done" with no
+                // location, because none was known; this is the moment
+                // the user learns where the files went.
+                let text = match files.as_slice() {
+                    [one] => crate::i18n::t("zmodem_saved_one")
+                        .replacen("{name}", one, 1)
+                        .replacen("{dir}", &dir.display().to_string(), 1),
+                    many => crate::i18n::t("zmodem_saved_many")
+                        .replacen("{n}", &many.len().to_string(), 1)
+                        .replacen("{dir}", &dir.display().to_string(), 1),
+                };
+                self.show_toast_secs(text, 6)
+            }
+            ZmodemMessage::ZmodemMoveFailed { name, dir, staying, err } => {
+                let text = crate::i18n::t("zmodem_move_failed")
+                    .replacen("{name}", &name, 1)
+                    .replacen("{dir}", &dir.display().to_string(), 1)
+                    .replacen("{err}", &err, 1)
+                    .replacen("{staying}", &staying.display().to_string(), 1);
+                self.show_toast_secs(text, 8)
+            }
+            ZmodemMessage::ZmodemRecovered { dir, files } => {
+                if files.is_empty() {
+                    return Task::none();
+                }
+                for f in &files {
+                    tracing::info!("delivered {} from the ZMODEM staging folder", f.display());
+                }
+                let text = crate::i18n::t("zmodem_recovered")
+                    .replacen("{dir}", &dir.display().to_string(), 1);
+                self.show_toast_secs(text, 6)
             }
             ZmodemMessage::ZmodemCancel(pane_id) => {
                 if let Some(pane) = self.pane_by_id_mut(pane_id)

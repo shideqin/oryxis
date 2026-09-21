@@ -42,7 +42,7 @@ pub mod driver;
 pub use detector::{Direction, Scan, ZmodemDetector};
 pub use driver::{
     DEFAULT_STREAMING_WINDOW, PART_SUFFIX, Progress, SERIAL_STREAMING_WINDOW, TransferIo,
-    TransferSpec, run,
+    TransferSpec, place_file, run,
 };
 
 /// The canonical ZMODEM cancel sequence: eight `CAN` (ZDLE) bytes then

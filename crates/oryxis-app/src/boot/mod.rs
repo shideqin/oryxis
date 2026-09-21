@@ -343,6 +343,7 @@ impl Oryxis {
                 open_tabs_restored: false,
                 launch_dials: std::collections::VecDeque::new(),
                 launch_landing: None,
+                zmodem_swept: false,
                 pending_tab_placement: None,
                 pending_pane_split: None,
                 quick_connect_protocol:
@@ -809,6 +810,10 @@ impl Oryxis {
                 tasks.extend(landing);
             }
             tasks.extend(app.launch_dial_kick());
+            // Finished downloads a previous process left in the ZMODEM
+            // staging folder go to the default download folder, which
+            // is a setting and therefore only known from here on.
+            tasks.extend(app.zmodem_sweep_task());
         }
         // Bring the sync engine up if the vault is already open and the
         // user left sync enabled. When the vault is locked we defer to

@@ -353,6 +353,9 @@ pub struct Oryxis {
     /// strip entry at restore time and TAKEN by the boot / unlock site
     /// that lands, so a later unlock (a soft lock) finds nothing.
     pub(crate) launch_landing: Option<crate::state::TabRef>,
+    /// Whether the ZMODEM staging sweep (`zmodem_sweep_task`) has run
+    /// in this process.
+    pub(crate) zmodem_swept: bool,
     /// Where the tab a Duplicate is about to spawn should land in the
     /// STRIP (never in `self.tabs`, whose indices half the app holds).
     /// Armed by `handle_duplicate_tab`, consumed by

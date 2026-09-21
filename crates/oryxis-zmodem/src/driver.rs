@@ -513,7 +513,7 @@ async fn run_download(
                 // The finished part surfaces under its real name only
                 // now; a collision gets the browser-style " (N)".
                 let final_path = match dest_path.take() {
-                    Some(part) => Some(finalize_download(&part, &dest_dir, &name).await?),
+                    Some(part) => Some(place_file(&part, &dest_dir, &name).await?),
                     None => None,
                 };
                 if let Some(path) = final_path.as_ref()
@@ -948,15 +948,24 @@ async fn run_upload(
     }
 }
 
-/// Move a completed part file to its final name without clobbering
-/// anything already on disk: try the advertised name first, then
-/// browser-style `name (N).ext` candidates. Each candidate is reserved
-/// with `create_new` (an empty marker, so the existence check and the
-/// claim are one atomic step) and the finished download atomically
-/// replaces its own marker via rename, so a remote-controlled name can
-/// never truncate an existing local file.
-async fn finalize_download(
-    part: &std::path::Path,
+/// Move a completed file into `dest_dir` under `name` without
+/// clobbering anything already on disk: try the advertised name first,
+/// then browser-style `name (N).ext` candidates. Each candidate is
+/// reserved with `create_new` (an empty marker, so the existence check
+/// and the claim are one atomic step) and the file atomically replaces
+/// its own marker via rename, so a remote-controlled name can never
+/// truncate an existing local file.
+///
+/// Two callers: the driver finalizing its own part file at `FileDone`,
+/// and the app moving a finished download out of its staging folder
+/// once the user has picked where it goes (receive first, ask
+/// meanwhile). The second may cross a volume, where `rename` cannot
+/// follow: the file is then copied beside its reserved name under a
+/// part suffix and renamed over the marker, so the final name only
+/// ever holds a complete file, and the source goes only once the
+/// copy is in place.
+pub async fn place_file(
+    src: &std::path::Path,
     dest_dir: &std::path::Path,
     name: &str,
 ) -> Result<PathBuf, String> {
@@ -968,7 +977,7 @@ async fn finalize_download(
         } else {
             numbered_name(name, attempt)
         };
-        let path = dest_dir.join(candidate);
+        let path = dest_dir.join(&candidate);
         match tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -976,9 +985,13 @@ async fn finalize_download(
             .await
         {
             Ok(_) => {
-                tokio::fs::rename(part, &path)
-                    .await
-                    .map_err(|e| format!("rename {}: {e}", path.display()))?;
+                if let Err(e) = move_over_marker(src, &path, dest_dir, &candidate).await {
+                    // The reservation must not outlive the failure: an
+                    // empty file under the real name would read as the
+                    // download, and block the next attempt's claim.
+                    let _ = tokio::fs::remove_file(&path).await;
+                    return Err(e);
+                }
                 return Ok(path);
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -989,6 +1002,59 @@ async fn finalize_download(
         "finalize {}: too many name collisions",
         dest_dir.join(name).display()
     ))
+}
+
+/// Replace the reserved marker at `path` with `src`: a rename when the
+/// two share a volume, a copy-then-rename when they do not.
+async fn move_over_marker(
+    src: &std::path::Path,
+    path: &std::path::Path,
+    dest_dir: &std::path::Path,
+    candidate: &str,
+) -> Result<(), String> {
+    match tokio::fs::rename(src, path).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+            // The copy lands under a part name of its own, claimed
+            // with `create_new` like everything else here, so a
+            // half-copied file is never mistaken for a finished one.
+            let tmp = dest_dir.join(format!(
+                "{candidate}.{}{PART_SUFFIX}",
+                std::process::id()
+            ));
+            let copied = async {
+                let mut from = tokio::fs::File::open(src)
+                    .await
+                    .map_err(|e| format!("open {}: {e}", src.display()))?;
+                let mut to = tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&tmp)
+                    .await
+                    .map_err(|e| format!("create {}: {e}", tmp.display()))?;
+                tokio::io::copy(&mut from, &mut to)
+                    .await
+                    .map_err(|e| format!("copy {}: {e}", tmp.display()))?;
+                to.flush().await.map_err(|e| format!("flush {}: {e}", tmp.display()))?;
+                Ok::<(), String>(())
+            }
+            .await;
+            if let Err(e) = copied {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                return Err(e);
+            }
+            tokio::fs::rename(&tmp, path)
+                .await
+                .map_err(|e| format!("rename {}: {e}", path.display()))?;
+            // The copy is in place under the final name; only now may
+            // the original go. A failure here leaves a duplicate, which
+            // is the safe side of this error.
+            tokio::fs::remove_file(src)
+                .await
+                .map_err(|e| format!("remove {}: {e}", src.display()))
+        }
+        Err(e) => Err(format!("rename {}: {e}", path.display())),
+    }
 }
 
 /// `report.pdf` + 2 -> `report (2).pdf`; an extensionless name gets the
@@ -1158,14 +1224,14 @@ mod tests {
 
             let part1 = dir.join(format!("report.pdf{PART_SUFFIX}"));
             tokio::fs::write(&part1, b"fresh download").await.unwrap();
-            let p1 = finalize_download(&part1, &dir, "report.pdf").await.unwrap();
+            let p1 = place_file(&part1, &dir, "report.pdf").await.unwrap();
             assert_eq!(p1.file_name().unwrap().to_str().unwrap(), "report (1).pdf");
             assert_eq!(tokio::fs::read(&p1).await.unwrap(), b"fresh download");
             assert!(!tokio::fs::try_exists(&part1).await.unwrap(), "part left behind");
             // A second same-name download finalizes into its own file.
             let part2 = dir.join(format!("report.pdf{PART_SUFFIX}"));
             tokio::fs::write(&part2, b"second").await.unwrap();
-            let p2 = finalize_download(&part2, &dir, "report.pdf").await.unwrap();
+            let p2 = place_file(&part2, &dir, "report.pdf").await.unwrap();
             assert_eq!(p2.file_name().unwrap().to_str().unwrap(), "report (2).pdf");
             // The pre-existing file was not truncated.
             let orig = tokio::fs::read(dir.join("report.pdf")).await.unwrap();
@@ -1174,10 +1240,69 @@ mod tests {
             // A fresh name takes the advertised name directly.
             let part3 = dir.join(format!("clean.txt{PART_SUFFIX}"));
             tokio::fs::write(&part3, b"clean").await.unwrap();
-            let p3 = finalize_download(&part3, &dir, "clean.txt").await.unwrap();
+            let p3 = place_file(&part3, &dir, "clean.txt").await.unwrap();
             assert_eq!(p3.file_name().unwrap().to_str().unwrap(), "clean.txt");
 
             let _ = tokio::fs::remove_dir_all(&dir).await;
+        });
+    }
+
+    /// Placing a file across volumes cannot rename, so it copies beside
+    /// the reserved name and renames over it: the final name only ever
+    /// holds a complete file, the source is gone afterwards, and an
+    /// existing file under that name is still not clobbered. Needs two
+    /// filesystems to mean anything (`/dev/shm` against the temp dir on
+    /// a typical Linux box); elsewhere it proves nothing and says so.
+    #[test]
+    fn place_file_crosses_volumes_by_copying() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let shm = std::path::Path::new("/dev/shm");
+            if !shm.is_dir() {
+                eprintln!("no /dev/shm here: cross-volume placement not exercised");
+                return;
+            }
+            let src_dir = shm.join(format!("oryxis-zm-xdev-{}", std::process::id()));
+            let dest = std::env::temp_dir().join(format!("oryxis-zm-xdev-dest-{}", std::process::id()));
+            let _ = tokio::fs::remove_dir_all(&src_dir).await;
+            let _ = tokio::fs::remove_dir_all(&dest).await;
+            tokio::fs::create_dir_all(&src_dir).await.unwrap();
+            tokio::fs::create_dir_all(&dest).await.unwrap();
+            let probe_src = src_dir.join("probe");
+            tokio::fs::write(&probe_src, b"p").await.unwrap();
+            match tokio::fs::rename(&probe_src, dest.join("probe")).await {
+                Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {}
+                _ => {
+                    eprintln!("/dev/shm and the temp dir share a volume: not exercised");
+                    let _ = tokio::fs::remove_dir_all(&src_dir).await;
+                    let _ = tokio::fs::remove_dir_all(&dest).await;
+                    return;
+                }
+            }
+            let src = src_dir.join("payload.bin");
+            let body: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+            tokio::fs::write(&src, &body).await.unwrap();
+            tokio::fs::write(dest.join("payload.bin"), b"original").await.unwrap();
+
+            let landed = place_file(&src, &dest, "payload.bin").await.unwrap();
+            assert_eq!(landed, dest.join("payload (1).bin"));
+            assert_eq!(tokio::fs::read(&landed).await.unwrap(), body);
+            assert_eq!(tokio::fs::read(dest.join("payload.bin")).await.unwrap(), b"original");
+            assert!(!tokio::fs::try_exists(&src).await.unwrap(), "source left behind");
+            // No copy scratch left beside the result.
+            let mut entries = tokio::fs::read_dir(&dest).await.unwrap();
+            let mut names = Vec::new();
+            while let Some(e) = entries.next_entry().await.unwrap() {
+                names.push(e.file_name().to_string_lossy().into_owned());
+            }
+            names.sort();
+            assert_eq!(names, vec!["payload (1).bin".to_string(), "payload.bin".to_string()]);
+
+            let _ = tokio::fs::remove_dir_all(&src_dir).await;
+            let _ = tokio::fs::remove_dir_all(&dest).await;
         });
     }
 

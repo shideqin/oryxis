@@ -163,6 +163,7 @@ mod util;
 mod views;
 mod widgets;
 mod wol;
+mod zmodem_delivery;
 
 use iced::{window, Size};
 use tracing_subscriber::layer::SubscriberExt;
