@@ -97,7 +97,7 @@ impl Oryxis {
         let paused = self.monitor_dash.paused;
         let pause_btn = self.keynav_toolbar_ring(
             crate::keynav::ToolbarItem::MonitorPause,
-            dash_toolbar_icon(
+            crate::widgets::toolbar_toggle_icon(
                 if paused {
                     iced_fonts::lucide::play()
                 } else {
@@ -114,7 +114,7 @@ impl Oryxis {
         );
         let refresh_btn = self.keynav_toolbar_ring(
             crate::keynav::ToolbarItem::MonitorRefresh,
-            dash_toolbar_icon(
+            crate::widgets::toolbar_toggle_icon(
                 iced_fonts::lucide::refresh_cw(),
                 Message::Monitor(MonitorMessage::DashRefreshNow),
                 t("monitor_dash_refresh"),
@@ -756,41 +756,6 @@ impl Oryxis {
         }
         table.into()
     }
-}
-
-/// Icon button for the monitor dashboard toolbar, in the same family
-/// as the grid/list toggle. `active` tints it like a pressed state, so
-/// a paused board says so without a second label.
-fn dash_toolbar_icon(
-    glyph: iced::widget::Text<'static, iced::Theme, iced::Renderer>,
-    message: Message,
-    tip: &'static str,
-    active: bool,
-) -> Element<'static, Message> {
-    let btn = button(
-        container(glyph.size(15).color(if active {
-            OryxisColors::t().accent
-        } else {
-            OryxisColors::t().button_text
-        }))
-        .center_y(Length::Fixed(24.0))
-        .center_x(Length::Fixed(24.0)),
-    )
-    .on_press(message)
-    .style(move |_, status| {
-        let c = OryxisColors::t();
-        let bg = match status {
-            BtnStatus::Hovered | BtnStatus::Pressed => c.button_bg_hover,
-            _ if active => Color { a: 0.18, ..c.accent },
-            _ => c.button_bg,
-        };
-        button::Style {
-            background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(6.0), ..Default::default() },
-            ..Default::default()
-        }
-    });
-    crate::views::terminal::icon_tooltip(btn.into(), tip)
 }
 
 /// Grid/List toggle for the monitor dashboard toolbar, mirroring the
