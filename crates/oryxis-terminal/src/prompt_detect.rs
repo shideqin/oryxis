@@ -95,6 +95,39 @@ pub fn looks_like_password_prompt(line: &str) -> bool {
         || tokens.windows(2).any(|w| w == ["pass", "phrase"])
 }
 
+/// The prompts programs actually print, for the alternate screen.
+///
+/// Case-sensitive and anchored at both ends on purpose. The alternate
+/// screen belongs to whoever drew it, and besides a multiplexer that is
+/// an editor: vim in insert mode, cursor after a YAML `password:` key,
+/// passes the loose rules. What tells the two apart is the shape of the
+/// whole segment: su says `Password:`, never an indented lower-case key.
+///
+/// Sources, one per alternative: sudo, sudo-rs (Ubuntu's default since
+/// 25.10), doas, su / login / PAM modules that name themselves (`LDAP
+/// Password:`), MySQL, ssh (password and keyboard-interactive), git's
+/// credential prompt and psql's, ssh and ssh-add passphrases, OpenSSL.
+static MULTIPLEXED_SHAPES: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(
+        r"^(?:\[sudo\] password for \S+:|\[sudo: authenticate\] Password:|doas \(\S+\) password:|(?:[A-Z][A-Za-z]* )?Password:|Enter password:|\S+'s password:|\(\S+\) Password:|Password for (?:user )?\S+:|Enter passphrase for (?:key )?\S+:|Enter PEM pass phrase:)$",
+    )
+    .expect("static pattern")
+});
+
+/// [`looks_like_password_prompt`] for a segment read off the ALTERNATE
+/// screen, where a prompt only counts when it is the whole segment and
+/// one of [`MULTIPLEXED_SHAPES`] (issue #232). The loose rules still run
+/// after the shape, so their exclusions hold here too: `New Password:`
+/// fits the shape and is still refused.
+///
+/// Leading whitespace fails the anchor, and that is deliberate: a
+/// multiplexer's pane starts right after its divider, while an editor's
+/// line numbers and indentation do not.
+pub fn looks_like_multiplexed_password_prompt(segment: &str) -> bool {
+    let trimmed = segment.trim_end();
+    MULTIPLEXED_SHAPES.is_match(trimmed) && looks_like_password_prompt(trimmed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,5 +231,49 @@ mod tests {
         assert!(looks_like_password_prompt("PASSWORD:"));
         assert!(looks_like_password_prompt("[SUDO] PASSWORD FOR WILSON:"));
         assert!(!looks_like_password_prompt("NEW PASSWORD:"));
+    }
+
+    #[test]
+    fn multiplexed_prompts_match_by_shape() {
+        for line in [
+            "[sudo] password for wilson: ",
+            "[sudo: authenticate] Password: ",
+            "doas (wilson@host) password: ",
+            "Password: ",
+            "LDAP Password:",
+            "Enter password: ",
+            "wilson@10.0.0.5's password: ",
+            "(wilson@host) Password: ",
+            "Password for 'https://wilson@github.com': ",
+            "Password for user postgres: ",
+            "Enter passphrase for key '/home/wilson/.ssh/id_ed25519': ",
+            "Enter passphrase for /home/wilson/.ssh/id_ed25519: ",
+            "Enter PEM pass phrase:",
+        ] {
+            assert!(looks_like_multiplexed_password_prompt(line), "should match: {line:?}");
+        }
+    }
+
+    #[test]
+    fn multiplexed_segments_that_only_look_like_prompts_do_not_match() {
+        for line in [
+            // vim editing YAML, cursor after the key.
+            "password:",
+            "  password:",
+            "    Password:",
+            // vim with line numbers.
+            "  3 Password:",
+            // less / vim searching.
+            "/Password:",
+            // Prose that the loose rules accept.
+            "the password policy is:",
+            "Please enter your password:",
+            // The shape fits, the exclusions still refuse.
+            "New Password:",
+            "Current Password:",
+            "Retype new password:",
+        ] {
+            assert!(!looks_like_multiplexed_password_prompt(line), "should not match: {line:?}");
+        }
     }
 }

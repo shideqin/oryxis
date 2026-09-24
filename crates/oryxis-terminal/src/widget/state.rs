@@ -472,6 +472,13 @@ impl TerminalState {
         self.backend.password_prompt_at_cursor()
     }
 
+    /// A full-screen repaint cut mid-way, which says nothing about the
+    /// prompt (issue #232). See
+    /// [`crate::backend::TerminalBackend::alt_screen_redraw_in_progress`].
+    pub fn alt_screen_redraw_in_progress(&self) -> bool {
+        self.backend.alt_screen_redraw_in_progress()
+    }
+
     /// Text of the logical (wrap-joined) line the cursor sits on, from
     /// column 0 of its first physical row (prompt included). Used by the
     /// command-history capture's heuristic path on hosts without OSC 133.

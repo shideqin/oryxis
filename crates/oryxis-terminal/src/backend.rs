@@ -417,18 +417,35 @@ impl TerminalBackend {
     /// because "what is printed before the cursor" is the definition of
     /// a prompt and anything past it belongs to a previous frame.
     ///
-    /// `None` on the alternate screen (a full-screen app draws its own
-    /// prompts and owns its keys) and whenever the line does not match
-    /// [`crate::prompt_detect::looks_like_password_prompt`].
+    /// On the alternate screen (issue #232) the read changes shape,
+    /// because that is where a terminal multiplexer lives: `sudo` inside
+    /// tmux or screen prints its prompt there. Two things differ:
+    ///
+    /// - The row is shared. A vertical split puts another pane and a
+    ///   divider to the left of the cursor, so the text is cut after the
+    ///   last divider cell before it (tmux draws a box-drawing vertical,
+    ///   screen a reverse-video blank). Cutting is also what keeps the
+    ///   neighbour out of the signature: a `tail -f` in the other pane
+    ///   must not turn a dismissed prompt into a new one.
+    /// - The screen belongs to SOMEONE: a multiplexer, or vim editing a
+    ///   file with a `password:` key in it. The loose rules would offer a
+    ///   credential there, so the segment has to be one of the prompts
+    ///   programs actually print
+    ///   ([`crate::prompt_detect::looks_like_multiplexed_password_prompt`]).
+    ///
+    /// Soft wraps are not joined there: a multiplexer positions every row
+    /// itself and never leaves a wrap flag behind, so a prompt longer
+    /// than its pane is simply not detected.
+    ///
+    /// `None` whenever the text does not match. Callers that read on the
+    /// alternate screen should also ask
+    /// [`Self::alt_screen_redraw_in_progress`] first.
     pub fn password_prompt_at_cursor(&self) -> Option<crate::prompt_detect::PasswordPrompt> {
         use alacritty_terminal::grid::Dimensions;
         use alacritty_terminal::index::{Column, Line};
         use alacritty_terminal::term::cell::Flags as CellFlags;
         use alacritty_terminal::term::TermMode;
 
-        if self.term.mode().contains(TermMode::ALT_SCREEN) {
-            return None;
-        }
         let grid = self.term.grid();
         let cols = grid.columns();
         if cols == 0 {
@@ -437,6 +454,34 @@ impl TerminalBackend {
         let point = grid.cursor.point;
         let cursor_line = point.line.0;
         let cursor_col = point.column.0.min(cols);
+
+        if self.term.mode().contains(TermMode::ALT_SCREEN) {
+            let row = &grid[Line(cursor_line)];
+            // The pane starts after the last divider left of the cursor.
+            // Cutting too eagerly only shortens the segment, and a short
+            // segment fails the strict match: the safe direction.
+            let start = (0..cursor_col)
+                .rev()
+                .find(|&c| is_pane_divider(&row[Column(c)]))
+                .map_or(0, |c| c + 1);
+            let mut text = String::new();
+            for c in start..cursor_col {
+                let cell = &row[Column(c)];
+                if cell.c != '\0' && !cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                    text.push(cell.c);
+                }
+            }
+            if !crate::prompt_detect::looks_like_multiplexed_password_prompt(&text) {
+                return None;
+            }
+            return Some(crate::prompt_detect::PasswordPrompt {
+                text: text.trim_end().to_string(),
+                // The alternate grid keeps no history, so this is the
+                // visible row, which is all the edge trigger needs.
+                abs_line: grid.history_size() as i64 + i64::from(cursor_line),
+            });
+        }
+
         let topmost = grid.topmost_line().0;
 
         // Walk up the soft-wrap chain to the row the logical line
@@ -471,6 +516,23 @@ impl TerminalBackend {
             text: text.trim_end().to_string(),
             abs_line: grid.history_size() as i64 + i64::from(first),
         })
+    }
+
+    /// True while a full-screen program is visibly mid-repaint: the
+    /// alternate screen with the cursor hidden.
+    ///
+    /// tmux wraps every redraw (a status-line clock tick, output in
+    /// another pane) in `?25l` .. `?25h` and parks the cursor on the
+    /// status line in between. A PTY read that ends inside one says
+    /// nothing about the prompt, and reading it as "the prompt is gone"
+    /// would drop a dismissed popup's signature and raise it again on
+    /// the next batch. The primary screen is left out on purpose: a
+    /// program that hides the cursor there is not repainting a screen
+    /// it owns.
+    pub fn alt_screen_redraw_in_progress(&self) -> bool {
+        use alacritty_terminal::term::TermMode;
+        let mode = self.term.mode();
+        mode.contains(TermMode::ALT_SCREEN) && !mode.contains(TermMode::SHOW_CURSOR)
     }
 
     /// Deadline at which an open synchronized update (DEC `?2026`) must be
@@ -514,6 +576,17 @@ impl TerminalBackend {
     pub fn rows(&self) -> u16 {
         self.rows
     }
+}
+
+/// Whether `cell` is the divider a terminal multiplexer draws between two
+/// side-by-side panes. Measured, not remembered: tmux 3.4 draws U+2502 in
+/// its default style (its `heavy` and `double` styles use U+2503 / U+2551,
+/// `simple` a plain `|`, and a DEC line-drawing `x` lands here as U+2502
+/// too), while GNU screen 4.9 draws a BLANK in reverse video, one per row.
+fn is_pane_divider(cell: &alacritty_terminal::term::cell::Cell) -> bool {
+    use alacritty_terminal::term::cell::Flags;
+    matches!(cell.c, '\u{2502}' | '\u{2503}' | '\u{2551}' | '|')
+        || (cell.c == ' ' && cell.flags.contains(Flags::INVERSE))
 }
 
 struct TermSize {
@@ -883,15 +956,98 @@ mod tests {
         assert!(backend.password_prompt_at_cursor().is_none());
     }
 
+    /// tmux 3.4 with the window split left / right at column 51 (1-based),
+    /// abridged from a capture: every repaint is bracketed by `?25l` ..
+    /// `?25h`, the divider is U+2502 on every row, and the cursor is
+    /// parked back after the prompt last.
+    fn tmux_split_with_prompt_on_the_right(left: &str) -> Vec<u8> {
+        let mut out = b"\x1b[?1049h\x1b[1;24r\x1b[?25l".to_vec();
+        for row in 1..=23 {
+            out.extend_from_slice(format!("\x1b[{row};51H\u{2502}").as_bytes());
+        }
+        out.extend_from_slice(format!("\x1b[1;1H{left}").as_bytes());
+        out.extend_from_slice(b"\x1b[1;52H[sudo] password for wilson: \x1b[K");
+        out.extend_from_slice(b"\x1b[30m\x1b[42m\x1b[24;1H[0] 0:bash*\x1b(B\x1b[m");
+        out.extend_from_slice(b"\x1b[?12l\x1b[?25h\x1b[1;80H");
+        out
+    }
+
     #[test]
-    fn the_alternate_screen_is_never_offered_a_password() {
+    fn a_prompt_in_a_tmux_pane_is_read_from_its_own_divider() {
+        let mut backend = TerminalBackend::new(100, 24);
+        backend.process(&tmux_split_with_prompt_on_the_right("left pane password new"));
+        assert!(!backend.alt_screen_redraw_in_progress());
+        let hit = backend.password_prompt_at_cursor().expect("prompt detected");
+        // The neighbour's "new" would exclude the prompt, and its
+        // "password" would be read as part of it, if the row were read
+        // from column 0.
+        assert_eq!(hit.text, "[sudo] password for wilson:");
+        assert_eq!(hit.abs_line, 0);
+    }
+
+    #[test]
+    fn output_in_the_neighbouring_pane_keeps_the_same_signature() {
+        // A `tail -f` on the left must not turn the prompt on the right
+        // into a new one (which would re-raise a dismissed popup).
+        let mut backend = TerminalBackend::new(100, 24);
+        backend.process(&tmux_split_with_prompt_on_the_right("first"));
+        let before = backend.password_prompt_at_cursor().expect("prompt detected");
+        backend.process(&tmux_split_with_prompt_on_the_right("something else entirely"));
+        let after = backend.password_prompt_at_cursor().expect("prompt detected");
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn a_tmux_repaint_cut_mid_way_reads_as_no_information() {
+        let mut backend = TerminalBackend::new(100, 24);
+        backend.process(&tmux_split_with_prompt_on_the_right("left"));
+        // The status-line clock ticks: cursor hidden, parked elsewhere.
+        backend.process(b"\x1b[?25l\x1b[24;90H01:47");
+        assert!(backend.alt_screen_redraw_in_progress(), "the batch knows nothing");
+        backend.process(b"\x1b[?25h\x1b[1;80H");
+        assert!(!backend.alt_screen_redraw_in_progress());
+        assert!(backend.password_prompt_at_cursor().is_some());
+    }
+
+    #[test]
+    fn a_prompt_in_a_screen_region_is_read_from_its_reverse_video_divider() {
+        // GNU screen 4.9, `split -v`, abridged from a capture: the
+        // divider is a reverse-video blank at column 50 (1-based).
+        let mut backend = TerminalBackend::new(100, 24);
+        backend.process(b"\x1b[?1049h\x1b[H\x1b[2J\x1b[49C\x1b[7m \x08\n \x08\n \x08\n \x1b[27m");
+        backend.process(b"\x1b[1;1Hleft password new");
+        backend.process(b"\x1b[1;51H[sudo] password for wilson: \r\nbash-5.2$ \x1b[1;79H");
+        let hit = backend.password_prompt_at_cursor().expect("prompt detected");
+        assert_eq!(hit.text, "[sudo] password for wilson:");
+    }
+
+    #[test]
+    fn a_whole_screen_multiplexer_pane_is_read_from_column_zero() {
         let mut backend = TerminalBackend::new(80, 5);
-        backend.process(b"\x1b[?1049h");
-        backend.process(b"Password: ");
-        assert!(
-            backend.password_prompt_at_cursor().is_none(),
-            "a full-screen app owns its own prompts"
-        );
+        backend.process(b"\x1b[?1049h\x1b[H[sudo: authenticate] Password: ");
+        let hit = backend.password_prompt_at_cursor().expect("prompt detected");
+        assert_eq!(hit.text, "[sudo: authenticate] Password:");
+    }
+
+    #[test]
+    fn a_loose_match_on_the_alternate_screen_is_not_a_prompt() {
+        // Editors and pagers own the alternate screen too. Each of these
+        // passes the primary screen's rules.
+        for line in [
+            &b"password: "[..],
+            b"  password:",
+            b"/Password:",
+            b"Please enter your password:",
+        ] {
+            let mut backend = TerminalBackend::new(80, 5);
+            backend.process(b"\x1b[?1049h\x1b[H");
+            backend.process(line);
+            assert!(
+                backend.password_prompt_at_cursor().is_none(),
+                "should not match: {:?}",
+                String::from_utf8_lossy(line)
+            );
+        }
     }
 
     #[test]

@@ -924,7 +924,7 @@ impl Oryxis {
                     // whose feed FINISHED the run (the grid still shows
                     // the prompt the script just answered), the live
                     // check covers every batch in between.
-                    let autofill_read = (autofill_pane == Some(pane_id)
+                    let mut autofill_read = (autofill_pane == Some(pane_id)
                         || suggest_open_on == Some(pane_id))
                         && !had_login_script
                         && pane.login_script.is_none();
@@ -1061,6 +1061,13 @@ impl Oryxis {
                         // Password autofill (issue #117): read the grid
                         // AFTER `process`, so what is in front of the
                         // cursor is what this batch just painted.
+                        // A tmux repaint cut by the PTY read (cursor
+                        // hidden, parked on the status line) knows
+                        // nothing about the prompt, so the batch counts
+                        // as gated (issue #232).
+                        if autofill_read && state.alt_screen_redraw_in_progress() {
+                            autofill_read = false;
+                        }
                         if autofill_read {
                             prompt_now = state.password_prompt_at_cursor();
                         }
@@ -1089,7 +1096,8 @@ impl Oryxis {
                             );
                         // The popup follows its prompt: when the thing it
                         // was raised for is no longer waiting (answered,
-                        // cancelled with Ctrl+C, redrawn, alt screen),
+                        // cancelled with Ctrl+C, redrawn, a full-screen
+                        // app taking over),
                         // the suggestion is stale and a pick would type a
                         // password into whatever replaced it.
                         dismiss_stale_suggest =

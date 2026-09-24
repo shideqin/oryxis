@@ -56,9 +56,9 @@ pub(crate) fn observe_password_prompt(
             *sig = Some(next);
             true
         }
-        // The prompt is gone (answered, redrawn, or the pane moved to
-        // the alternate screen): forget it, so the same text at the same
-        // row later reads as a new prompt.
+        // The prompt is gone (answered, redrawn, or a full-screen app
+        // took the pane): forget it, so the same text at the same row
+        // later reads as a new prompt.
         None => {
             *sig = None;
             false
