@@ -606,6 +606,12 @@ pub struct Oryxis {
     /// Multi-selected host cards (issue #230): Ctrl / Shift + click, the
     /// hover check on a card, Space on a ringed card. Session-only.
     pub(crate) dash_selection: crate::state::DashSelection,
+    /// The dashboard's multi-select mode (issue #230): while on, a click
+    /// on a host card selects it instead of connecting, so a batch is
+    /// built by pointing at cards rather than by holding Ctrl. A mode,
+    /// not a modifier - toggled from the toolbar, left by Esc, and reset
+    /// whenever the dashboard leaves the screen.
+    pub(crate) dash_multi_select: bool,
     /// A host card drag in flight (onto a folder card, a tree folder
     /// row or the folder header's back arrow). Registered with
     /// `mouse_interest`, the `MouseMoved` promote, the focus-loss cancel

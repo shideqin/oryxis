@@ -309,6 +309,20 @@ pub enum TabsMessage {
     SelectionClear,
     /// Selection bar: select every host the dashboard is showing.
     SelectionSelectAll,
+    /// Selection bar: connect every selected host, each in its own tab
+    /// (batch connect).
+    SelectionConnect,
+    /// Toolbar: flip the dashboard's multi-select mode (issue #230).
+    /// While on, a click on a host card toggles it in the selection
+    /// instead of dialling it, so a batch is built by pointing at
+    /// cards rather than by holding Ctrl.
+    ToggleMultiSelect,
+    /// Selection bar: ask to delete every selected host (confirm-gated,
+    /// like every other destructive removal). The ids are resolved at the
+    /// ask, so the dialog names what the user actually picked.
+    SelectionDelete,
+    /// Selection bar: the confirmed batch delete.
+    SelectionDeleteConfirmed(Vec<Uuid>),
     /// Open the group picker to move these hosts (a card's kebab, the
     /// selection bar). The picker's pick performs the move.
     MoveHostsPick(Vec<Uuid>),

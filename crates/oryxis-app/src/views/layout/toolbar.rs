@@ -57,6 +57,15 @@ impl Oryxis {
                     12.0,
                 );
                 let toggle = if cols > 1 { Self::TB_ICON + 6.0 } else { 0.0 };
+                // Multi-select mode toggle (issue #230): an icon square
+                // like the view cycler and the sort trigger, plus the 6px
+                // gap before it. Zero inside a dynamic cloud group, where
+                // it isn't rendered at all.
+                let multi_select = if self.active_group_is_dynamic() {
+                    0.0
+                } else {
+                    Self::TB_ICON + 6.0
+                };
                 // Tag-filter icon, present once any host is tagged.
                 let tag_filter = if self.host_tag_filter_available() {
                     Self::TB_ICON + 6.0
@@ -66,22 +75,13 @@ impl Oryxis {
                 // Action button: none inside a dynamic group, "Discover"
                 // inside a cloud-linked folder, else the "+ Host" split.
                 let action = match self.active_group {
-                    Some(gid) => {
-                        let dynamic = self
-                            .groups
-                            .iter()
-                            .find(|g| g.id == gid)
-                            .and_then(|g| g.cloud_query.as_ref())
-                            .is_some();
-                        if dynamic {
-                            0.0
-                        } else {
-                            115.0
-                        }
-                    }
+                    Some(_) if self.active_group_is_dynamic() => 0.0,
+                    Some(_) => 115.0,
                     None => 113.0,
                 };
-                toggle + tag_filter + Self::TB_ICON + 8.0 + action
+                // Listed in the order the row renders them: the icon
+                // squares, then the primary action past its 8px gap.
+                toggle + tag_filter + Self::TB_ICON + multi_select + 8.0 + action
             }
             // sort(44) + gap(8) + the "+ Add" split(~113).
             View::Keys => Self::TB_ICON + 8.0 + 113.0,

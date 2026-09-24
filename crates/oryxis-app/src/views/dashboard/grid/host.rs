@@ -123,15 +123,17 @@ impl Oryxis {
             || (self.card_context_menu.is_some()
                 && self.card_context_menu == self.connections.get(idx).map(|c| c.id));
         // Multi-selection (issue #230): the card wears the selected
-        // fill, and its hover check is shown on hover or while ANY card
-        // is selected, so a selection in progress reads as one across
-        // the grid. A card in an active drag loses its press: the fork's
-        // `button` publishes on a release only while `on_press` is set
-        // in that frame, so a drag abandoned back over its own card
-        // cannot dial the host (the guard is the tree, not the timing
-        // between the global release and the button).
+        // fill and accent border whenever it is in the selection, and its
+        // leading check appears ONLY while the multi-select mode is on.
+        // The check is the mode's chrome, not a rule of the grid: outside
+        // the mode the selection already reads through the card's own
+        // fill, and a box on every host of a list nobody put into
+        // selection mode is noise. It is deliberately not tied to hover
+        // either: the check and the gaps around it take 34 px of row
+        // width, so a hover-driven one would slide every label sideways
+        // under a moving cursor.
         let selected = self.dash_selection.contains(conn.id);
-        let selecting = !self.dash_selection.is_empty();
+        let checking = self.dash_multi_select;
         let dragging_this = self
             .card_drag
             .as_ref()
@@ -246,23 +248,45 @@ impl Oryxis {
                 .into(),
         };
 
+        // The row's leading cells. The selection check lives IN the row,
+        // in front of the icon badge (issue #230): it never covers the
+        // host's own icon, it lines up with the icon the way a list
+        // control's checkbox does, and the inset keeps it clear of the
+        // card's rounded corner. Its press is its own button - iced hands
+        // an event to the innermost widget first and `Button::update`
+        // forwards to its content before reacting, so the card never sees
+        // a press that landed on the check.
+        let mut row_cells: Vec<Element<'_, Message>> = Vec::new();
+        if checking {
+            row_cells.push(Space::new().width(6).into());
+            row_cells.push(crate::widgets::card_select_check(
+                selected,
+                Message::Tabs(TabsMessage::CardSelectToggle(conn.id)),
+            ));
+            row_cells.push(Space::new().width(10).into());
+        }
+        row_cells.push(icon_box);
+        row_cells.push(Space::new().width(8).into());
+        row_cells.push(
+            iced::widget::Column::with_children(vec![
+                label_el,
+                Space::new().height(2).into(),
+                subtitle_el,
+            ])
+            .width(Length::Fill)
+            .align_x(crate::widgets::dir_align_x())
+            .clip(true)
+            .into(),
+        );
+
+        // A card in an active drag loses its press: the fork's `button`
+        // publishes on a release only while `on_press` is set in that
+        // frame, so a drag abandoned back over its own card cannot dial
+        // the host (the guard is the tree, not the timing between the
+        // global release and the button).
         let card_btn = button(
-            container(
-                dir_row(vec![
-                    icon_box,
-                    Space::new().width(8).into(),
-                    iced::widget::Column::with_children(vec![
-                        label_el,
-                        Space::new().height(2).into(),
-                        subtitle_el,
-                    ])
-                    .width(Length::Fill)
-                    .align_x(crate::widgets::dir_align_x())
-                    .clip(true)
-                    .into(),
-                ]).align_y(iced::Alignment::Center),
-            )
-            .padding(card_padding),
+            container(dir_row(row_cells).align_y(iced::Alignment::Center))
+                .padding(card_padding),
         )
         .on_press_maybe(
             (!dragging_this).then_some(Message::Tabs(TabsMessage::CardPressed(idx))),
@@ -306,36 +330,13 @@ impl Oryxis {
         );
         let card_element =
             crate::widgets::card_trailing_overlay(card_btn.into(), dots_btn.into());
-        // The hover check, on the leading corner over the icon (the
-        // Photos / Drive placement), in its own overlay layer so it
-        // captures its press before the card's button does.
-        let mut stack = iced::widget::Stack::new().push(card_element);
-        if show_dots || selecting {
-            let check = crate::widgets::card_select_check(
-                selected,
-                Message::Tabs(TabsMessage::CardSelectToggle(conn.id)),
-            );
-            let leading = if rtl {
-                iced::alignment::Horizontal::Right
-            } else {
-                iced::alignment::Horizontal::Left
-            };
-            stack = stack.push(
-                container(check)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .align_x(leading)
-                    .align_y(iced::alignment::Vertical::Top)
-                    .padding(3),
-            );
-        }
         // Which card a press lands on, for the global press handler to
         // arm a drag from: the button captures the press, and a
         // scrolled grid makes draw-time rects wrong by the scroll
         // offset, so the answer is recorded where iced translates the
         // cursor (the SFTP rows' lesson, issue #127).
         let card_element =
-            crate::widgets::press_hit_reporter(stack, self.card_press.clone(), conn.id);
+            crate::widgets::press_hit_reporter(card_element, self.card_press.clone(), conn.id);
 
         // Wrap in MouseArea for hover tracking and right-click
         let wrapped = MouseArea::new(card_element)

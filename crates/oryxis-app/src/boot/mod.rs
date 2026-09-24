@@ -401,6 +401,7 @@ impl Oryxis {
                 snippet_context_menu: None,
                 card_context_menu: None,
                 dash_selection: crate::state::DashSelection::default(),
+                dash_multi_select: false,
                 card_drag: None,
                 card_press: crate::widgets::new_press_hit_cell(),
                 move_hosts_pending: Vec::new(),

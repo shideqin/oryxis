@@ -2,6 +2,13 @@
 //! folder (issue #230): the three doors through which a host changes
 //! folder without opening its editor.
 //!
+//! The selection itself is built by Ctrl / Shift + click, by the check
+//! on a card, and by Space on a ringed card. The toolbar's multi-select
+//! mode is the fourth way in, and the only discoverable one: while it is
+//! on, every card click toggles instead of dialling, so a batch is
+//! gathered by pointing at cards. Ctrl+click alone is invisible to
+//! anyone who does not already know it exists.
+//!
 //! A move is an EDIT: `group_id` set, `updated_at` stamped,
 //! `save_connection(conn, None)` (the password column untouched), the
 //! same shape as the folder-delete re-home in `groups.rs`. That is the
@@ -11,6 +18,12 @@
 
 use super::*;
 use uuid::Uuid;
+
+/// Most host labels the batch-remove dialog spells out before it falls
+/// back to a count. Six wrap to about two lines in the dialog, which is
+/// as much as anyone reads before deciding; past that a wall of names
+/// is worse than the number.
+const REMOVE_CONFIRM_NAMES: usize = 6;
 
 impl Oryxis {
     pub(super) fn handle_tabs_selection(&mut self, message: TabsMessage) -> Task<Message> {
@@ -24,30 +37,45 @@ impl Oryxis {
                 // read theirs.
                 let ctrl = self.modifiers.control() || self.modifiers.command();
                 let shift = self.modifiers.shift();
+                // Multi-select mode (issue #230): a mode, not a modifier.
+                // While it is on, a click on a card is a way of ADDING it
+                // to the selection and never a dial, so a whole batch is
+                // built by pointing at cards. The mode deliberately
+                // out-ranks the modifiers: a click that lands without a
+                // held Ctrl must not dial a host the user was only
+                // pointing at, which is the whole reason the mode exists.
+                // Shift still ranges, from the anchor a previous click
+                // set; without one it is a plain toggle.
+                if self.dash_multi_select {
+                    if !shift || !self.extend_selection_to(id) {
+                        self.dash_selection.toggle(id);
+                    }
+                    return Task::none();
+                }
                 if ctrl {
                     self.dash_selection.toggle(id);
                     return Task::none();
                 }
-                if shift && let Some(anchor) = self.dash_selection.anchor {
-                    // Range over the order the dashboard is showing.
-                    let order: Vec<Uuid> = self
-                        .dashboard_host_order()
-                        .into_iter()
-                        .map(|i| self.connections[i].id)
-                        .collect();
-                    let a = order.iter().position(|x| *x == anchor);
-                    let b = order.iter().position(|x| *x == id);
-                    if let (Some(a), Some(b)) = (a, b) {
-                        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-                        self.dash_selection.extend(order[lo..=hi].iter().copied());
-                        return Task::none();
-                    }
+                if shift && self.extend_selection_to(id) {
+                    return Task::none();
                 }
                 // A plain click is what it always was: connect. The
                 // selection is a way of acting on several hosts at once,
                 // and connecting leaves for a terminal tab, so it ends.
                 self.dash_selection.clear();
                 self.update(Message::Ssh(SshMessage::ConnectSsh(idx)))
+            }
+            TabsMessage::ToggleMultiSelect => {
+                // The mode and the selection are one gesture: leaving the
+                // mode hands the cards back to click-connects, and a
+                // selection left behind would keep the action bar up over
+                // hosts whose cards no longer read as chosen. Turning it
+                // ON keeps whatever Ctrl+click had already gathered.
+                self.dash_multi_select = !self.dash_multi_select;
+                if !self.dash_multi_select {
+                    self.dash_selection.clear();
+                }
+                Task::none()
             }
             TabsMessage::CardSelectToggle(id) => {
                 self.dash_selection.toggle(id);
@@ -65,6 +93,110 @@ impl Oryxis {
                     .collect();
                 self.dash_selection.extend(visible);
                 Task::none()
+            }
+            TabsMessage::SelectionDelete => {
+                // Destructive, so it asks first - the same guard the
+                // single-host kebab and the host editor go through
+                // (`confirm_remove`). A selection is cheap to build and
+                // cheap to lose, which is exactly why the dialog is the
+                // only thing between a slip of the wrist and a vault
+                // with holes in it.
+                let ids = self.selected_hosts_in_view_order();
+                if ids.is_empty() {
+                    return Task::none();
+                }
+                let body = self.remove_confirm_body(&ids);
+                self.confirm_remove_body(
+                    body,
+                    Message::Tabs(TabsMessage::SelectionDeleteConfirmed(ids)),
+                );
+                Task::none()
+            }
+            TabsMessage::SelectionDeleteConfirmed(ids) => {
+                // Batch delete. Each host goes exactly the way the single
+                // one does: the vault row, plus the saved AI conversations
+                // that reference it by id (the command history leaves with
+                // the row, per the vault's cascade). The ids rode through
+                // the dialog, never indices: the list can re-sort while it
+                // is up (an auto-saved rename, a sync apply).
+                //
+                // A host open in the host editor is never flushed on its
+                // way out - resurrecting a row the user just deleted would
+                // be worse than dropping its last keystrokes - but a
+                // debouncing auto-save on some OTHER host must not die
+                // with the batch.
+                if self
+                    .editor_form
+                    .editing_id
+                    .is_some_and(|id| !ids.contains(&id))
+                {
+                    self.editor_flush_pending();
+                }
+                let mut attempted = false;
+                if let Some(vault) = &self.vault {
+                    for id in &ids {
+                        if !self.connections.iter().any(|c| c.id == *id) {
+                            continue;
+                        }
+                        attempted = true;
+                        match vault.delete_connection(id) {
+                            Ok(()) => {
+                                let _ = vault.delete_chat_conversations_for_connection(id);
+                            }
+                            Err(e) => tracing::error!("delete host {id}: {e}"),
+                        }
+                    }
+                }
+                if attempted {
+                    // Re-read the vault whatever the writes did: a delete
+                    // that failed leaves its host on screen, which is the
+                    // honest account of what the vault holds.
+                    //
+                    // The drawer closes only when it was showing one of
+                    // the removed hosts; an unrelated host stays open, the
+                    // way a deleted row leaves the editor alone.
+                    if self
+                        .editor_form
+                        .editing_id
+                        .is_some_and(|id| ids.contains(&id))
+                    {
+                        self.panels.host_panel = false;
+                        self.panel_nav_clear();
+                        self.editor_form.sweep_secrets();
+                    }
+                    self.load_data_from_vault();
+                }
+                self.dash_selection.clear();
+                Task::none()
+            }
+            TabsMessage::SelectionConnect => {
+                // Batch connect: one tab per selected host. Read the
+                // selection in the order the dashboard shows it, so the
+                // tabs land in the order the eye reads them. Each dial is
+                // dispatched as its own `ConnectSsh`, so a single host
+                // runs the exact pipeline a plain click would (tab push,
+                // progress card, active-tab hand-off); batching the
+                // messages is what makes them a batch.
+                let ids = self.selected_hosts_in_view_order();
+                // The card's kebab menu reaches this too (the collapsed
+                // selection menu), so any open menu closes with the
+                // action, the way `ConnectSsh` closes it for the single
+                // host it dials.
+                self.card_context_menu = None;
+                self.overlay = None;
+                // Connecting leaves for terminal tabs, so the selection
+                // ends, the way a plain click ends it.
+                self.dash_selection.clear();
+                let connects: Vec<Task<Message>> = ids
+                    .into_iter()
+                    .filter_map(|id| {
+                        self.connections
+                            .iter()
+                            .position(|c| c.id == id)
+                            .map(|idx| Task::done(Message::Ssh(SshMessage::ConnectSsh(idx))))
+                    })
+                    .collect();
+                Task::batch(connects)
             }
             TabsMessage::MoveHostsPick(ids) => {
                 if ids.is_empty() {
@@ -90,6 +222,62 @@ impl Oryxis {
             }
             m => crate::dispatch::unrouted(m),
         }
+    }
+
+    /// The selected hosts, in the order the dashboard is showing them.
+    /// Every batch action reads the selection through this - the tabs a
+    /// batch connect opens, the hosts a batch delete removes, and the
+    /// labels the card menu and the remove dialog spell out - so they all
+    /// land in the order the eye reads them.
+    pub(crate) fn selected_hosts_in_view_order(&self) -> Vec<Uuid> {
+        self.dashboard_host_order()
+            .into_iter()
+            .map(|i| self.connections[i].id)
+            .filter(|id| self.dash_selection.contains(*id))
+            .collect()
+    }
+
+    /// The confirmation body for a batch removal: the hosts' labels while
+    /// the list still reads, the count once it does not. Names are the
+    /// point when they fit - they are what the user checks the dialog
+    /// against - and the number is what they check when they do not.
+    fn remove_confirm_body(&self, ids: &[Uuid]) -> String {
+        if ids.len() > REMOVE_CONFIRM_NAMES {
+            return crate::i18n::host_count(ids.len());
+        }
+        let labels: Vec<&str> = ids
+            .iter()
+            .filter_map(|id| self.connections.iter().find(|c| c.id == *id))
+            .map(|c| c.label.as_str())
+            .collect();
+        if labels.is_empty() {
+            return crate::i18n::host_count(ids.len());
+        }
+        labels.join(", ")
+    }
+
+    /// Extend the selection with every visible host between the anchor
+    /// and `id` (a Shift+click). `false` when there is nothing to range
+    /// from - no anchor, or one that left the list - so the caller can
+    /// fall back to a plain toggle instead of doing nothing.
+    fn extend_selection_to(&mut self, id: Uuid) -> bool {
+        // Range over the order the dashboard is showing.
+        let Some(anchor) = self.dash_selection.anchor else {
+            return false;
+        };
+        let order: Vec<Uuid> = self
+            .dashboard_host_order()
+            .into_iter()
+            .map(|i| self.connections[i].id)
+            .collect();
+        let a = order.iter().position(|x| *x == anchor);
+        let b = order.iter().position(|x| *x == id);
+        let (Some(a), Some(b)) = (a, b) else {
+            return false;
+        };
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        self.dash_selection.extend(order[lo..=hi].iter().copied());
+        true
     }
 
     /// Put `ids` in `target` (`None` = the top level). Refuses a target

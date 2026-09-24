@@ -382,6 +382,20 @@ impl Oryxis {
         Some(set)
     }
 
+    /// Whether the folder the dashboard is inside is a DYNAMIC group: one
+    /// whose contents come from a cloud query rather than from saved
+    /// hosts. Read by the toolbar, which offers a different primary
+    /// action there and no host-selection controls at all - the cards
+    /// inside are resolved cloud tasks, so there is no `Connection` on
+    /// screen to select, move, dial or delete as a batch.
+    pub(crate) fn active_group_is_dynamic(&self) -> bool {
+        self.active_group.is_some_and(|gid| {
+            self.groups
+                .iter()
+                .any(|g| g.id == gid && g.cloud_query.is_some())
+        })
+    }
+
     /// Manual group ids eligible for the parent-group pickers (host
     /// editor combo, Settings default-group). Every manual folder
     /// qualifies, including empty ones (a freshly created subgroup
@@ -505,63 +519,136 @@ impl Oryxis {
         host_order
     }
 
-    /// The bar over the grid while host cards are selected: the count,
-    /// "Move to group" for the selection, select every visible host,
-    /// clear. Its buttons are toolbar items on the keyboard ring,
-    /// recorded here in visual order after the toolbar proper.
+    /// The bar over the grid while the selection is live: the count,
+    /// "Connect", "Move to group" and "Delete" for the selection, then
+    /// select every visible host, clear. Its buttons are toolbar items on
+    /// the keyboard ring, recorded here in visual order after the toolbar
+    /// proper.
+    ///
+    /// The order reads WHICH hosts first, then what to DO with them (the
+    /// accent CTA among them - connecting is what a batch of hosts is
+    /// for), then the one that cannot be undone: select all, clear,
+    /// connect, move to group, delete. The gaps between all five are the
+    /// same width; the colors carry the grouping - neutral for the two
+    /// that build and drop the selection, accent for the CTA, error for
+    /// the destructive one.
+    ///
+    /// It shows while anything is selected AND while the multi-select
+    /// mode is on with nothing selected yet: the bar is how the mode
+    /// spells out what it is for, so entering the mode must not leave
+    /// the user with a grid of suddenly-inert cards and no explanation.
+    /// Every verb that needs a selection (Connect, Move to group,
+    /// Delete, Clear) is then disabled rather than absent, so the row
+    /// never reflows under the cursor; Select all stays live, being the
+    /// one thing to do with an empty selection.
+    ///
+    /// Chrome: a bare row and one hairline under it in the theme's border
+    /// color - no surface, no rounded box. The bar is chrome, not content,
+    /// and the same material as the toolbar it hangs from; drawn as a
+    /// filled card it read as one more thing floating over the grid, and
+    /// outlined in the accent it shouted over the very cards it was
+    /// describing. The accent lives in the count's glyph and text and in
+    /// Connect, where it points at something.
     fn dashboard_selection_bar(&self) -> Element<'_, Message> {
         let n = self.dash_selection.len();
-        let count = text(t("selection_count").replace("{n}", &n.to_string()))
-            .size(13)
-            .color(OryxisColors::t().accent);
-        let move_btn = self.keynav_toolbar_slot(
-            crate::keynav::ToolbarItem::SelectionMove,
-            crate::widgets::styled_button_owned(
-                t("move_to_group").to_string(),
-                Some(Message::Tabs(TabsMessage::MoveHostsPick(self.dash_selection.ids.clone()))),
-                OryxisColors::t().accent,
-            ),
-        );
+        let any = n > 0;
+        // The count, led by the same glyph the toolbar's mode button
+        // wears: the bar says what it is counting before the words are
+        // read, and it costs no fill - the accent stays in the text and in
+        // the one button that carries an action the user came here for.
+        let count = dir_row(vec![
+            iced_fonts::lucide::list_checks()
+                .size(12)
+                .color(OryxisColors::t().accent)
+                .into(),
+            Space::new().width(6).into(),
+            text(t("selection_count").replace("{n}", &n.to_string()))
+                .size(13)
+                .color(OryxisColors::t().accent)
+                .into(),
+        ])
+        .align_y(iced::Alignment::Center);
+        // The row reads left to right as: WHICH hosts (the two that build
+        // the selection), then what to DO with them, then the one that
+        // cannot be undone. The gaps are all the same width - the order
+        // and the colors carry the grouping, not the spacing.
         let all_btn = self.keynav_toolbar_slot(
             crate::keynav::ToolbarItem::SelectionAll,
-            crate::widgets::styled_button(
-                t("select_all"),
-                Message::Tabs(TabsMessage::SelectionSelectAll),
+            crate::widgets::styled_button_owned(
+                t("select_all").to_string(),
+                Some(Message::Tabs(TabsMessage::SelectionSelectAll)),
                 OryxisColors::t().bg_hover,
             ),
         );
         let clear_btn = self.keynav_toolbar_slot(
             crate::keynav::ToolbarItem::SelectionClear,
-            crate::widgets::styled_button(
-                t("deselect_all"),
-                Message::Tabs(TabsMessage::SelectionClear),
+            crate::widgets::styled_button_owned(
+                t("deselect_all").to_string(),
+                any.then_some(Message::Tabs(TabsMessage::SelectionClear)),
                 OryxisColors::t().bg_hover,
             ),
         );
-        container(
+        let connect_btn = self.keynav_toolbar_slot(
+            crate::keynav::ToolbarItem::SelectionConnect,
+            crate::widgets::styled_button_owned(
+                t("connect").to_string(),
+                any.then_some(Message::Tabs(TabsMessage::SelectionConnect)),
+                OryxisColors::t().accent,
+            ),
+        );
+        let move_btn = self.keynav_toolbar_slot(
+            crate::keynav::ToolbarItem::SelectionMove,
+            crate::widgets::styled_button_owned(
+                t("move_to_group").to_string(),
+                any.then_some(Message::Tabs(TabsMessage::MoveHostsPick(
+                    self.dash_selection.ids.clone(),
+                ))),
+                OryxisColors::t().bg_hover,
+            ),
+        );
+        // Destructive, so it wears the app's error red and closes the
+        // row. It asks before it deletes.
+        let delete_btn = self.keynav_toolbar_slot(
+            crate::keynav::ToolbarItem::SelectionDelete,
+            crate::widgets::styled_button_owned(
+                t("delete").to_string(),
+                any.then_some(Message::Tabs(TabsMessage::SelectionDelete)),
+                OryxisColors::t().error,
+            ),
+        );
+        let bar = container(
             dir_row(vec![
                 count.into(),
                 Space::new().width(Length::Fill).into(),
-                move_btn,
-                Space::new().width(8).into(),
                 all_btn,
                 Space::new().width(8).into(),
                 clear_btn,
+                Space::new().width(8).into(),
+                connect_btn,
+                Space::new().width(8).into(),
+                move_btn,
+                Space::new().width(8).into(),
+                delete_btn,
             ])
             .align_y(iced::Alignment::Center),
         )
         .width(Length::Fill)
-        .padding(Padding { top: 8.0, right: 12.0, bottom: 8.0, left: 12.0 })
-        .style(|_| container::Style {
-            background: Some(Background::Color(OryxisColors::t().bg_surface)),
-            border: Border {
-                radius: Radius::from(10.0),
-                color: OryxisColors::t().accent,
-                width: 1.0,
-            },
-            ..Default::default()
-        })
-        .into()
+        // No horizontal padding of its own: the wrapper in
+        // `dashboard_main_content` puts the band on the grid's own 24px
+        // gutter, so the count starts exactly under the card grid's
+        // leading edge and the buttons end under the toolbar's cluster.
+        .padding(Padding { top: 8.0, right: 0.0, bottom: 8.0, left: 0.0 });
+        // Under it, one hairline in the theme's border color - the whole
+        // of the bar's chrome. `Border` applies to all four sides, so a
+        // dedicated separator is how a single edge is drawn (the status
+        // bar's top edge is the same trick).
+        let hairline = container(Space::new().height(1))
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(OryxisColors::t().border)),
+                ..Default::default()
+            });
+        column![bar, hairline].width(Length::Fill).into()
     }
 
     /// True on a first-run vault: nothing saved anywhere, so the
@@ -757,12 +844,36 @@ impl Oryxis {
         {
             content_rows.push(self.quick_connect_card(conn));
         }
-        // Selection bar (issue #230): count, move, select all, clear.
-        // Above the sections in every view mode, so the action on a
-        // selection is where the eye lands when the cards light up.
-        if !self.dash_selection.is_empty() {
-            content_rows.push(self.dashboard_selection_bar());
-        }
+        // Selection bar (issue #230): count, connect, move, delete,
+        // select all, clear. Built HERE - so its buttons land on the
+        // keyboard ring right after the toolbar's own - but placed
+        // OUTSIDE the scroller, pinned under the toolbar: the actions
+        // belong to the selection, and a selection outlives scrolling. A
+        // host picked at the top of a long list must still have its
+        // Connect in reach from the bottom of it. It is also the
+        // multi-select mode's own surface: entering the mode shows it
+        // with nothing selected yet.
+        let selection_bar: Element<'_, Message> = if !self.dash_selection.is_empty()
+            || self.dash_multi_select
+        {
+            container(self.dashboard_selection_bar())
+                .width(Length::Fill)
+                // The 24px band the grid content rides in, plus the gap
+                // that used to sit between the bar and the first card
+                // row when the bar scrolled with it.
+                .padding(Padding { top: 0.0, right: 24.0, bottom: 12.0, left: 24.0 })
+                // The bar's buttons are fixed-width, so a window narrow
+                // enough (the minimum is 800px wide, and an expanded rail
+                // leaves the band under 600) leaves the row wider than
+                // the surface it rides on. Inside the scroller the
+                // overflow was clipped for free; pinned out here it would
+                // be drawn over whatever sits to the right of the band,
+                // so clip it at the same edge the scroller did.
+                .clip(true)
+                .into()
+        } else {
+            Space::new().height(0).into()
+        };
         if tree_mode {
             let washed =
                 apply_card_wash(tree_cards, glass, selected, self.keynav.ring_bounds.clone());
@@ -895,7 +1006,7 @@ impl Oryxis {
             Space::new().into()
         };
 
-        let main_content = column![toolbar, search_bar, filter_chip, status, grid]
+        let main_content = column![toolbar, search_bar, filter_chip, status, selection_bar, grid]
             .width(Length::Fill)
             .height(Length::Fill);
         main_content.into()

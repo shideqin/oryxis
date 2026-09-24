@@ -1087,6 +1087,18 @@ impl Oryxis {
                     Message::Settings(SettingsMessage::CycleHostViewMode),
                     secondary,
                 ));
+                // The multi-select mode (issue #230), named as the mode it
+                // turns on, the same reading the toolbar button's tooltip
+                // gives it. It matters more here than inline: at this
+                // width the grid is one column wide, which is exactly
+                // when a user is scrolling a long list hunting for the
+                // handful of hosts they mean to connect together.
+                col = col.push(self.menu_item(
+                    iced_fonts::lucide::list_checks(),
+                    crate::i18n::t("multi_select"),
+                    Message::Tabs(TabsMessage::ToggleMultiSelect),
+                    secondary,
+                ));
                 col = col.push(self.menu_item(
                     iced_fonts::lucide::arrow_down_a_z(),
                     crate::i18n::t("toolbar_sort"),

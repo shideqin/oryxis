@@ -137,6 +137,13 @@ impl Oryxis {
     /// applied at once (WoL + SSH URL on the tree = 7 rows, not 6).
     pub(crate) fn host_actions_menu_rows(&self, id: uuid::Uuid, dashboard: bool) -> f32 {
         use oryxis_core::models::connection::ConnectionProtocol;
+        // The collapsed selection menu the builder returns below: three
+        // items, whatever this host itself would have offered. Same
+        // predicate as the builder, or the menu is laid out for the wrong
+        // height.
+        if dashboard && self.card_menu_collapses_to_selection(id) {
+            return 3.0;
+        }
         let conn = self.connections.iter().find(|c| c.id == id);
         let protocol = conn.map(|c| c.protocol).unwrap_or(ConnectionProtocol::Ssh);
         let mut rows = 3.0; // Connect + Edit + Duplicate
@@ -173,11 +180,53 @@ impl Oryxis {
         rows
     }
 
+    /// Whether the card menu for `id` collapses to the selected hosts'
+    /// own actions: the card is part of a selection of two or more on the
+    /// dashboard. Read by the builder above AND by the row count, so the
+    /// two cannot disagree about what is on screen.
+    fn card_menu_collapses_to_selection(&self, id: uuid::Uuid) -> bool {
+        self.dash_selection.len() > 1 && self.dash_selection.contains(id)
+    }
+
     fn build_menu_host_actions_inner(
         &self,
         id: uuid::Uuid,
         dashboard: bool,
     ) -> Element<'_, Message> {
+        // A multi-selection collapses this menu to what acts on the WHOLE
+        // selection - the sidebar Files menu's rule, applied to host
+        // cards - because a menu offering both would make "Remove" read
+        // as "remove them all" while it removed exactly one. Two or more
+        // hosts only: with one selected, the selection IS that host and
+        // the full menu is the honest one. The selection is read here at
+        // render time, right after `ShowCardMenu` decided to open, so it
+        // is in sync with the highlighted cards.
+        if dashboard && self.card_menu_collapses_to_selection(id) {
+            let ids = self.selected_hosts_in_view_order();
+            let n = ids.len();
+            let move_ids = ids.clone();
+            return column![
+                self.menu_item_owned(
+                    iced_fonts::lucide::play(),
+                    crate::i18n::t("connect_n_hosts").replace("{n}", &n.to_string()),
+                    Message::Tabs(TabsMessage::SelectionConnect),
+                    OryxisColors::t().success,
+                ),
+                self.menu_item_owned(
+                    iced_fonts::lucide::folder_input(),
+                    crate::i18n::t("move_n_to_group").replace("{n}", &n.to_string()),
+                    Message::Tabs(TabsMessage::MoveHostsPick(move_ids)),
+                    OryxisColors::t().text_secondary,
+                ),
+                self.menu_item_owned(
+                    iced_fonts::lucide::trash(),
+                    crate::i18n::t("remove_n_hosts").replace("{n}", &n.to_string()),
+                    Message::Tabs(TabsMessage::SelectionDelete),
+                    OryxisColors::t().error,
+                ),
+            ]
+            .into();
+        }
         // The menu is anchored to the HOST, so the index every
         // index-taking action still needs is resolved here, per render,
         // against the list this frame draws. A re-sort under the open

@@ -90,11 +90,19 @@ pub(crate) enum ToolbarItem {
     /// "+ DISCOVER" for the linked cloud profile. Carries the profile
     /// id so activation needs no re-derivation of the folder link.
     CloudDiscover(uuid::Uuid),
-    /// The dashboard's selection bar (issue #230), shown while host
-    /// cards are selected: move them, select all, clear.
+    /// The dashboard's selection bar (issue #230), shown while the
+    /// selection is live or the multi-select mode is on: connect the
+    /// batch, move it, delete it, select all, clear.
+    SelectionConnect,
     SelectionMove,
+    /// Delete every selected host, behind the same confirmation the
+    /// single-host delete uses.
+    SelectionDelete,
     SelectionAll,
     SelectionClear,
+    /// The dashboard's multi-select mode toggle, in the toolbar proper
+    /// (not the selection bar): while on, card clicks select.
+    MultiSelect,
 }
 
 /// A keyboard-selectable item, recorded by the views during render.

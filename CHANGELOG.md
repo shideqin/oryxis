@@ -7,6 +7,10 @@ project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- A multi-select mode for the host list, among the toolbar's list controls: while it is on, clicking a card picks it for the selection bar instead of connecting, so a batch is gathered by pointing at cards rather than by holding Ctrl (#230).
+- Host cards connect as a batch: with several selected, the selection bar's Connect dials each one into its own tab, in the order the dashboard shows them (#230).
+- The same selection bar moves the batch to a folder or removes it, the removal behind the same confirmation a single host gets: it names the hosts while the list still reads, and says the count once it does not (#230).
+- The selection bar stays put while the list scrolls under it, and a right-click on a card that is part of a selection offers the selection's own Connect / Move / Remove instead of the single host's menu (#230).
 - An `sz` download with "Ask where to save downloads" on starts receiving at once and moves the files to the folder you pick, so the dialog no longer has to beat the remote `sz` timeout (#230, requested by @ziyouwa).
 - Restored tabs can connect at launch, one after another and in place, and the app can open on the tab that was active, both under "Restore last session's tabs" in Settings > Interface (#229, requested by @nAnderYang).
 - Alibaba Cloud (ECS + ACK) and Tencent Cloud (CVM + TKE) cloud accounts, as on-demand plugins over the `aliyun` and `tccli` CLIs you already configured. ACK and TKE clusters add as Kubernetes accounts; their kubeconfig is stored per cluster under `~/.oryxis/kubeconfig/` and can be refreshed from the same row.
