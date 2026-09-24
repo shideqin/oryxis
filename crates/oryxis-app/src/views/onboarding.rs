@@ -267,9 +267,16 @@ impl Oryxis {
                 .align_x(iced::alignment::Horizontal::Center),
             Space::new().height(16),
             // Bounded so a long list can't push the card past a short
-            // window; the rows scroll instead.
-            container(iced::widget::scrollable(list).height(Length::Fixed(300.0)))
-                .width(Length::Fixed(460.0)),
+            // window; the rows scroll instead. The scrollbar is EMBEDDED
+            // (`spacing`) so it takes layout width of its own: a floating
+            // one is drawn over the trailing edge, which is exactly where
+            // every row's toggle sits.
+            container(
+                iced::widget::scrollable(list)
+                    .spacing(10)
+                    .height(Length::Fixed(300.0)),
+            )
+            .width(Length::Fixed(460.0)),
         ]
         .align_x(iced::Alignment::Center)
         .into()
