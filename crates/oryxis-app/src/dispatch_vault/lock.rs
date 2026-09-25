@@ -410,6 +410,10 @@ impl Oryxis {
                         // nobody took.
                         self.launch_dials.clear();
                         self.launch_landing = None;
+                        // A batch connect still in progress goes the same
+                        // way: the next unlock must not resume dialling a
+                        // list the user picked before locking.
+                        self.batch_dials.clear();
                         self.clear_terminal_tab_memory();
                         self.active_view = View::Dashboard;
                         // Mirror the soft-lock UI sweep: the manual lock

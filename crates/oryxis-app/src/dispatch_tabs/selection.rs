@@ -113,70 +113,24 @@ impl Oryxis {
                 Task::none()
             }
             TabsMessage::SelectionDeleteConfirmed(ids) => {
-                // Batch delete. Each host goes exactly the way the single
-                // one does: the vault row, plus the saved AI conversations
-                // that reference it by id (the command history leaves with
-                // the row, per the vault's cascade). The ids rode through
-                // the dialog, never indices: the list can re-sort while it
-                // is up (an auto-saved rename, a sync apply).
-                //
-                // A host open in the host editor is never flushed on its
-                // way out - resurrecting a row the user just deleted would
-                // be worse than dropping its last keystrokes - but a
-                // debouncing auto-save on some OTHER host must not die
-                // with the batch.
-                if self
-                    .editor_form
-                    .editing_id
-                    .is_some_and(|id| !ids.contains(&id))
-                {
-                    self.editor_flush_pending();
-                }
-                let mut attempted = false;
-                if let Some(vault) = &self.vault {
-                    for id in &ids {
-                        if !self.connections.iter().any(|c| c.id == *id) {
-                            continue;
-                        }
-                        attempted = true;
-                        match vault.delete_connection(id) {
-                            Ok(()) => {
-                                let _ = vault.delete_chat_conversations_for_connection(id);
-                            }
-                            Err(e) => tracing::error!("delete host {id}: {e}"),
-                        }
-                    }
-                }
-                if attempted {
-                    // Re-read the vault whatever the writes did: a delete
-                    // that failed leaves its host on screen, which is the
-                    // honest account of what the vault holds.
-                    //
-                    // The drawer closes only when it was showing one of
-                    // the removed hosts; an unrelated host stays open, the
-                    // way a deleted row leaves the editor alone.
-                    if self
-                        .editor_form
-                        .editing_id
-                        .is_some_and(|id| ids.contains(&id))
-                    {
-                        self.panels.host_panel = false;
-                        self.panel_nav_clear();
-                        self.editor_form.sweep_secrets();
-                    }
-                    self.load_data_from_vault();
-                }
+                // Batch delete, through the same door the single host
+                // goes through (`remove_hosts`). The ids rode through the
+                // dialog, never indices.
+                self.remove_hosts(&ids);
                 self.dash_selection.clear();
                 Task::none()
             }
             TabsMessage::SelectionConnect => {
-                // Batch connect: one tab per selected host. Read the
-                // selection in the order the dashboard shows it, so the
-                // tabs land in the order the eye reads them. Each dial is
-                // dispatched as its own `ConnectSsh`, so a single host
-                // runs the exact pipeline a plain click would (tab push,
-                // progress card, active-tab hand-off); batching the
-                // messages is what makes them a batch.
+                // Batch connect: one tab per selected host, in the order
+                // the dashboard shows them, so the tabs land in the order
+                // the eye reads them. The dials are QUEUED, not fired
+                // together: the host-key, 2FA and command-proxy answers
+                // ride single staging slots, so eight freshly imported
+                // hosts dialled at once would hand the approval the user
+                // gave one host's prompt to another host's dial. The
+                // queue starts the first dial in this same update (the
+                // funnel runs after this arm) and each next one once
+                // nothing is in flight; see `advance_batch_dials`.
                 let ids = self.selected_hosts_in_view_order();
                 // The card's kebab menu reaches this too (the collapsed
                 // selection menu), so any open menu closes with the
@@ -187,16 +141,12 @@ impl Oryxis {
                 // Connecting leaves for terminal tabs, so the selection
                 // ends, the way a plain click ends it.
                 self.dash_selection.clear();
-                let connects: Vec<Task<Message>> = ids
-                    .into_iter()
-                    .filter_map(|id| {
-                        self.connections
-                            .iter()
-                            .position(|c| c.id == id)
-                            .map(|idx| Task::done(Message::Ssh(SshMessage::ConnectSsh(idx))))
-                    })
-                    .collect();
-                Task::batch(connects)
+                for id in ids {
+                    if !self.batch_dials.contains(&id) {
+                        self.batch_dials.push_back(id);
+                    }
+                }
+                Task::none()
             }
             TabsMessage::MoveHostsPick(ids) => {
                 if ids.is_empty() {
@@ -222,6 +172,54 @@ impl Oryxis {
             }
             m => crate::dispatch::unrouted(m),
         }
+    }
+
+    /// Start the next dial a batch connect still owes (issue #230), once
+    /// no dial is in flight anywhere. Called from the update funnel next
+    /// to `advance_launch_dials`, whose in-flight rule it shares with one
+    /// difference: a FAILED progress card also holds the queue. Each
+    /// batch dial is a foreground connect with a card of its own, and
+    /// starting the next one would take that card over and leave the
+    /// failed tab blank, so the failure waits for the user (Retry, Close
+    /// or Edit clear the card, and the queue moves on from there).
+    ///
+    /// A dial that never raises a card (a remote desktop launch, a local
+    /// shell that spawned at once, a host deleted since the pick) lets
+    /// the loop go straight on to the next id in the same update.
+    pub(crate) fn advance_batch_dials(&mut self) -> Option<Task<Message>> {
+        if self.batch_dials.is_empty() {
+            return None;
+        }
+        // Credentials and known hosts are read from the vault at dial
+        // time, so a soft lock pauses the queue rather than draining it
+        // into failures.
+        if self.vault_ui.state != crate::state::VaultState::Unlocked {
+            return None;
+        }
+        let mut tasks: Vec<Task<Message>> = Vec::new();
+        while !self.batch_dial_in_flight() {
+            let Some(id) = self.batch_dials.pop_front() else {
+                break;
+            };
+            if !self.connections.iter().any(|c| c.id == id) {
+                continue;
+            }
+            // By id: the dial resolves the row at fire time, after the
+            // previous dial's editor flush may have re-sorted the list.
+            tasks.push(self.update(Message::Ssh(SshMessage::ConnectSavedHost(id))));
+        }
+        (!tasks.is_empty()).then(|| Task::batch(tasks))
+    }
+
+    /// Whether a dial is still running (or a failed card still waits for
+    /// the user), which is when a batch connect holds its next host.
+    fn batch_dial_in_flight(&self) -> bool {
+        self.connecting.is_some()
+            || self
+                .tabs
+                .iter()
+                .flat_map(|t| t.pane_grid.panes.values())
+                .any(|p| p.connecting)
     }
 
     /// The selected hosts, in the order the dashboard is showing them.

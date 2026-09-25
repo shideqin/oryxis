@@ -342,6 +342,7 @@ impl Oryxis {
                 open_tabs_signature: 0,
                 open_tabs_restored: false,
                 launch_dials: std::collections::VecDeque::new(),
+                batch_dials: std::collections::VecDeque::new(),
                 launch_landing: None,
                 zmodem_swept: false,
                 pending_tab_placement: None,

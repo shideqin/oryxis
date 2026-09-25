@@ -29,13 +29,15 @@ expect "Create host"
 # Three hosts to have a batch out of. The first goes through the
 # first-run empty state - Continue submits its empty field, which
 # opens the editor (the same path hosts-move-to-group.ice uses); the
-# other two through the toolbar's "+ HOST". The editor's label field is
+# other two through the toolbar's "+ HOST". Their addresses are
+# TEST-NET-1 (RFC 5737), which routes nowhere, because the batch
+# connect below really dials them. The editor's label field is
 # reached by position for the toggle's reason: a text_input value is
 # invisible to a selector, so there is nothing else to click.
 click "Continue"
 expect "New Host"
 click "IP or Hostname"
-type "10.0.0.1"
+type "192.0.2.1"
 click (1190.00, 219.00)
 type "web01"
 click "Save"
@@ -44,7 +46,7 @@ expect "web01"
 click "HOST"
 expect "New Host"
 click "IP or Hostname"
-type "10.0.0.2"
+type "192.0.2.2"
 click (1190.00, 219.00)
 type "db01"
 click "Save"
@@ -53,7 +55,7 @@ expect "db01"
 click "HOST"
 expect "New Host"
 click "IP or Hostname"
-type "10.0.0.3"
+type "192.0.2.3"
 click (1190.00, 219.00)
 type "cache01"
 click "Save"
@@ -123,3 +125,25 @@ click (1212.00, 121.00)
 settle 400
 absent "2 selected"
 absent "Select all"
+
+# Batch connect dials ONE host at a time (the host-key, 2FA and
+# command-proxy answers ride single staging slots). The first in view
+# order is db01; web01 has no tab while db01's card is up, and a FAILED
+# card holds the queue too (the next dial would take that card over),
+# so the unroutable address makes the wait deterministic: web01 dials
+# only once the user closes db01's card.
+click (1212.00, 121.00)
+settle 400
+click "web01"
+settle 300
+click "db01"
+settle 300
+expect "2 selected"
+click "Connect"
+settle 800
+expect "db01"
+absent "web01"
+click "Close"
+settle 800
+expect "web01"
+absent "db01"

@@ -314,27 +314,7 @@ impl Oryxis {
             EditorMessage::DeleteConnection(id) => {
                 self.card_context_menu = None;
                 self.overlay = None;
-                if self.connections.iter().any(|c| c.id == id) {
-                    // The delete closes the editor below; a pending
-                    // auto-save on a DIFFERENT host must not die with
-                    // it. The deleted host itself is never flushed:
-                    // resurrecting a row the user just removed would
-                    // be worse than dropping its last keystrokes.
-                    if self.editor_form.editing_id != Some(id) {
-                        self.editor_flush_pending();
-                    }
-                    if let Some(vault) = &self.vault {
-                        let _ = vault.delete_connection(&id);
-                        // Saved AI conversations reference the host by id, so
-                        // they go with it instead of dangling against an id
-                        // that no longer resolves.
-                        let _ = vault.delete_chat_conversations_for_connection(&id);
-                        self.panels.host_panel = false;
-                        self.panel_nav_clear();
-                        self.editor_form.sweep_secrets();
-                        self.load_data_from_vault();
-                    }
-                }
+                self.remove_hosts(&[id]);
             }
             EditorMessage::DuplicateConnection(idx) => {
                 self.card_context_menu = None;
@@ -822,6 +802,61 @@ pub(super) fn host_field_split(
         }
     }
     Some(split)
+}
+
+impl Oryxis {
+    /// Delete saved hosts: the one door for a single host (the kebab, the
+    /// editor) and for a batch (the dashboard's selection bar), so the
+    /// two cannot drift apart in what a removal takes with it. Ids, never
+    /// indices: a batch rides a confirmation dialog, and the list can
+    /// re-sort under it (an auto-saved rename, a sync apply).
+    ///
+    /// Per host: the vault row, plus the saved AI conversations that
+    /// reference it by id, which would otherwise dangle against an id
+    /// that no longer resolves (the command history leaves with the row,
+    /// per the vault's cascade). A failed delete leaves its host on
+    /// screen, since the list is re-read from the vault either way.
+    ///
+    /// The host editor closes only when it is showing one of the removed
+    /// hosts. A host being removed is never flushed on its way out
+    /// (resurrecting a row the user just deleted is worse than dropping
+    /// its last keystrokes), but a debouncing auto-save on any OTHER form
+    /// is flushed first, and that form stays open.
+    pub(crate) fn remove_hosts(&mut self, ids: &[uuid::Uuid]) {
+        let ids: Vec<uuid::Uuid> = ids
+            .iter()
+            .copied()
+            .filter(|id| self.connections.iter().any(|c| c.id == *id))
+            .collect();
+        if ids.is_empty() || self.vault.is_none() {
+            return;
+        }
+        let editing_removed = self
+            .editor_form
+            .editing_id
+            .is_some_and(|id| ids.contains(&id));
+        if !editing_removed {
+            self.editor_flush_pending();
+        }
+        if let Some(vault) = &self.vault {
+            for id in &ids {
+                match vault.delete_connection(id) {
+                    Ok(()) => {
+                        if let Err(e) = vault.delete_chat_conversations_for_connection(id) {
+                            tracing::warn!("delete chats of host {id}: {e}");
+                        }
+                    }
+                    Err(e) => tracing::error!("delete host {id}: {e}"),
+                }
+            }
+        }
+        if editing_removed {
+            self.panels.host_panel = false;
+            self.panel_nav_clear();
+            self.editor_form.sweep_secrets();
+        }
+        self.load_data_from_vault();
+    }
 }
 
 #[cfg(test)]

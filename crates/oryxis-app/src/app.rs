@@ -348,6 +348,15 @@ pub struct Oryxis {
     /// first-time dials at once would overwrite. Seeded once per process
     /// next to the restore; a manual lock drops it with the strip.
     pub(crate) launch_dials: std::collections::VecDeque<uuid::Uuid>,
+    /// Saved hosts still owed a dial by a batch connect from the host
+    /// list (issue #230), in the order the dashboard showed them. Same
+    /// shape and same reason as `launch_dials`: drained ONE AT A TIME by
+    /// `advance_batch_dials` from the update funnel, because the
+    /// host-key, 2FA and command-proxy answers ride single staging slots,
+    /// and a batch of freshly imported hosts is exactly the batch of
+    /// first-time dials that would mis-route them. Host ids, never list
+    /// indices: every dial flushes the editor, which re-sorts the list.
+    pub(crate) batch_dials: std::collections::VecDeque<uuid::Uuid>,
     /// The chip to land on after the restore, when the user asked to
     /// open on the tab that was active (issue #229). Resolved to a live
     /// strip entry at restore time and TAKEN by the boot / unlock site

@@ -168,9 +168,13 @@ impl Oryxis {
         // only exists in the host toolbar. Leaving the view drops it, so
         // the next visit starts on click-connects; a mode that survived
         // a trip through the keychain would make card clicks look broken
-        // to a user who had forgotten the button they pressed.
+        // to a user who had forgotten the button they pressed. The
+        // selection goes with it, the way every other exit from the mode
+        // takes it (the toggle, Esc): a selection with no mode would keep
+        // the bar up over cards that dial again.
         if self.dash_multi_select && self.active_view != crate::state::View::Dashboard {
             self.dash_multi_select = false;
+            self.dash_selection.clear();
         }
         // A tab context menu is keyed by tab id; drop the popover when
         // that tab left in this update, so the menu never outlives what
@@ -226,6 +230,9 @@ impl Oryxis {
         // for the life of an ordinary session, so this costs a length
         // check.
         extra.extend(self.advance_launch_dials());
+        // A batch connect from the host list (issue #230) drains the same
+        // way and under the same in-flight rule, one dial at a time.
+        extra.extend(self.advance_batch_dials());
         // One-shot Privacy Mode hint (issue #78): the first time a
         // redaction bar actually draws, spell out how the reveal works
         // ("hover to peek, click to pin"); getting silently masked with

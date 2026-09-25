@@ -1092,13 +1092,18 @@ impl Oryxis {
                 // gives it. It matters more here than inline: at this
                 // width the grid is one column wide, which is exactly
                 // when a user is scrolling a long list hunting for the
-                // handful of hosts they mean to connect together.
-                col = col.push(self.menu_item(
-                    iced_fonts::lucide::list_checks(),
-                    crate::i18n::t("multi_select"),
-                    Message::Tabs(TabsMessage::ToggleMultiSelect),
-                    secondary,
-                ));
+                // handful of hosts they mean to connect together. Gated
+                // on the same predicate as the toolbar square: inside a
+                // dynamic cloud group the cards are resolved tasks, and a
+                // door the toolbar closes must not stay open here.
+                if !self.active_group_is_dynamic() {
+                    col = col.push(self.menu_item(
+                        iced_fonts::lucide::list_checks(),
+                        crate::i18n::t("multi_select"),
+                        Message::Tabs(TabsMessage::ToggleMultiSelect),
+                        secondary,
+                    ));
+                }
                 col = col.push(self.menu_item(
                     iced_fonts::lucide::arrow_down_a_z(),
                     crate::i18n::t("toolbar_sort"),
