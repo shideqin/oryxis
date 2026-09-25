@@ -115,6 +115,22 @@ pub(crate) fn toolbar_toggle_icon(
     crate::views::terminal::icon_tooltip(btn.into(), tip)
 }
 
+/// The dashboard's multi-select mode toggle (issue #230): one of the
+/// toolbar's icon squares, like the grid cycler and the sort trigger
+/// beside it, wearing the mode's glyph. What the mode is and that it is
+/// on are carried by the glyph, the tooltip and the app's own "on" wash
+/// (`toolbar_toggle_icon`); the mode itself is announced where it acts -
+/// by the check every host card grows and by the selection bar appearing
+/// above the grid.
+pub(crate) fn host_multi_select_toggle_button(active: bool) -> Element<'static, Message> {
+    toolbar_toggle_icon(
+        iced_fonts::lucide::list_checks(),
+        Message::Tabs(crate::app::TabsMessage::ToggleMultiSelect),
+        crate::i18n::t("multi_select"),
+        active,
+    )
+}
+
 /// Shared 24×24 toolbar icon button (search-collapse + overflow). Styled
 /// like `sort_toolbar_button`; when `active` it carries an accent tint so
 /// the open floating field / menu reads as toggled. A tooltip names the
@@ -444,15 +460,21 @@ pub(crate) fn tag_filter_toolbar_button(
     .into()
 }
 
-/// The hover check on a host card (issue #230): an 18 px circle on the
-/// card's leading corner, filled with the accent and a check glyph
-/// while the card is selected, outlined otherwise. Its press is its
-/// own (it sits in a `Stack` layer above the card's button), so
-/// clicking it toggles the selection without dialling the host.
+/// The selection check at the leading edge of a host card (issue
+/// #230): an 18 px rounded square, filled with the accent and a check
+/// glyph while the card is chosen, a bare hairline outline while it is
+/// not. A square with a check is the shape the app's own lists use for
+/// "this row is picked"; a filled CIRCLE reads as a radio button - one
+/// choice out of many - which is the opposite of a multi-selection.
+///
+/// Its press is its own `button`, and it sits inside the card's own
+/// button: iced offers an event to the innermost widget first and
+/// `Button::update` forwards to its content before reacting, so
+/// clicking the box toggles the selection and never dials the host.
 pub(crate) fn card_select_check<'a>(selected: bool, msg: Message) -> Element<'a, Message> {
     let palette = OryxisColors::t();
     let glyph: Element<'a, Message> = if selected {
-        iced_fonts::lucide::check().size(11).color(palette.button_text).into()
+        iced_fonts::lucide::check().size(12).color(palette.button_text).into()
     } else {
         Space::new().into()
     };
@@ -470,11 +492,14 @@ pub(crate) fn card_select_check<'a>(selected: bool, msg: Message) -> Element<'a,
             (true, _) => (palette.accent, palette.accent),
             (false, BtnStatus::Hovered) => (palette.bg_hover, palette.accent),
             (false, BtnStatus::Pressed) => (palette.bg_selected, palette.accent),
-            (false, _) => (palette.bg_surface, palette.text_muted),
+            // Empty and idle: the outline alone, over the card's own fill.
+            // A filled chip here reads as a sticker pasted on the card in
+            // the themes whose surface is not the card's base color.
+            (false, _) => (Color::TRANSPARENT, palette.text_muted),
         };
         button::Style {
             background: Some(Background::Color(bg)),
-            border: Border { radius: Radius::from(9.0), color: border_color, width: 1.5 },
+            border: Border { radius: Radius::from(6.0), color: border_color, width: 1.5 },
             ..Default::default()
         }
     })

@@ -388,6 +388,30 @@ impl Oryxis {
             Space::new().into()
         };
 
+        // Multi-select mode (issue #230): an icon square like the view
+        // cycler, the tag filter and the sort trigger it sits beside,
+        // carrying the mode's glyph and the app's own "on" wash while the
+        // mode is live. What a click MEANS changes with it, but the change
+        // is announced where it acts (the check on every host card, the
+        // selection bar above the grid) rather than by the button's shape.
+        //
+        // Hidden inside a dynamic cloud group, where the cards are
+        // resolved tasks and nothing on screen is a saved host to select.
+        let show_multi_select = !self.active_group_is_dynamic();
+        let multi_select_toggle: Element<'_, Message> = if show_multi_select {
+            dir_row(vec![
+                Space::new().width(6).into(),
+                self.keynav_toolbar_ring(
+                    crate::keynav::ToolbarItem::MultiSelect,
+                    crate::widgets::host_multi_select_toggle_button(self.dash_multi_select),
+                ),
+            ])
+            .align_y(iced::Alignment::Center)
+            .into()
+        } else {
+            Space::new().into()
+        };
+
         // ── Responsive collapse ──
         // #1: search yields before the folder name. #2: but the search
         // keeps a usable min-width, so once it hits that the breadcrumb
@@ -455,6 +479,9 @@ impl Oryxis {
                 self.keynav_toolbar_record(crate::keynav::ToolbarItem::TagFilter);
             }
             self.keynav_toolbar_record(crate::keynav::ToolbarItem::Sort);
+            if show_multi_select {
+                self.keynav_toolbar_record(crate::keynav::ToolbarItem::MultiSelect);
+            }
             for it in &resolved_items {
                 self.keynav_toolbar_record(*it);
             }
@@ -486,6 +513,10 @@ impl Oryxis {
             row_items.push(view_toggle);
             row_items.push(tag_filter_btn);
             row_items.push(sort_btn);
+            // The multi-select square carries the 6px gap between it and
+            // the sort trigger; `sort_btn` has none of its own, and the
+            // 8px Space below is what stands before the primary action.
+            row_items.push(multi_select_toggle);
             row_items.push(Space::new().width(8).into());
             row_items.push(resolved_action);
         }

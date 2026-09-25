@@ -95,6 +95,12 @@ impl Oryxis {
             }
             OverlayContent::ToolbarSearch => self.toolbar_search_width(),
             OverlayContent::ToolbarOverflow => 210.0,
+            // The host card's menu carries selection-aware labels when the
+            // card is part of a selection ("Move 5 hosts to group…",
+            // "Connect 5 hosts"), which wrapped onto two lines at the
+            // default kebab width and inflated a menu whose height is
+            // counted in rows.
+            OverlayContent::HostActions(_) | OverlayContent::TreeHostActions(_) => 220.0,
             // Host labels and identity names on one line, plus the
             // "Enter to send" hint under them.
             OverlayContent::PasswordSuggest { .. } => 260.0,

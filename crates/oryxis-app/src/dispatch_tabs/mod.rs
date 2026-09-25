@@ -167,6 +167,10 @@ impl Oryxis {
                 | TabsMessage::CardSelectToggle(..)
                 | TabsMessage::SelectionClear
                 | TabsMessage::SelectionSelectAll
+                | TabsMessage::SelectionConnect
+                | TabsMessage::SelectionDelete
+                | TabsMessage::SelectionDeleteConfirmed(..)
+                | TabsMessage::ToggleMultiSelect
                 | TabsMessage::MoveHostsPick(..)
             ) => self.handle_tabs_selection(m),
             m @ (

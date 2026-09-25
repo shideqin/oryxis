@@ -164,6 +164,18 @@ impl Oryxis {
                 self.connections.iter().map(|c| c.id).collect();
             self.dash_selection.prune(|id| alive.contains(&id));
         }
+        // The multi-select mode is a DASHBOARD gesture, and its toggle
+        // only exists in the host toolbar. Leaving the view drops it, so
+        // the next visit starts on click-connects; a mode that survived
+        // a trip through the keychain would make card clicks look broken
+        // to a user who had forgotten the button they pressed. The
+        // selection goes with it, the way every other exit from the mode
+        // takes it (the toggle, Esc): a selection with no mode would keep
+        // the bar up over cards that dial again.
+        if self.dash_multi_select && self.active_view != crate::state::View::Dashboard {
+            self.dash_multi_select = false;
+            self.dash_selection.clear();
+        }
         // A tab context menu is keyed by tab id; drop the popover when
         // that tab left in this update, so the menu never outlives what
         // it acts on.
@@ -218,6 +230,9 @@ impl Oryxis {
         // for the life of an ordinary session, so this costs a length
         // check.
         extra.extend(self.advance_launch_dials());
+        // A batch connect from the host list (issue #230) drains the same
+        // way and under the same in-flight rule, one dial at a time.
+        extra.extend(self.advance_batch_dials());
         // One-shot Privacy Mode hint (issue #78): the first time a
         // redaction bar actually draws, spell out how the reveal works
         // ("hover to peek, click to pin"); getting silently masked with
@@ -360,6 +375,14 @@ impl Oryxis {
     /// click can't silently drop an entry. Closes any open card menu first
     /// so it doesn't linger behind the dialog scrim.
     pub(crate) fn confirm_remove(&mut self, name: String, action: Message) {
+        self.confirm_remove_body(format!("\"{name}\""), action);
+    }
+
+    /// [`confirm_remove`] with the body spelled out, for a removal that
+    /// names a SET rather than one entry (the dashboard's batch delete):
+    /// one dialog, one danger styling, one Cancel-default keyboard, so a
+    /// batch cannot invent its own confirmation language.
+    pub(crate) fn confirm_remove_body(&mut self, body: String, action: Message) {
         self.card_context_menu = None;
         self.snippet_context_menu = None;
         self.keys_ui.context_menu = None;
@@ -368,7 +391,7 @@ impl Oryxis {
         self.overlay = None;
         self.error_dialog = Some(crate::state::ErrorDialog {
             title: crate::i18n::t("remove_confirm_title").to_string(),
-            body: format!("\"{name}\""),
+            body,
             link: None,
             action: Some(crate::state::ErrorDialogAction {
                 label: crate::i18n::t("remove").to_string(),

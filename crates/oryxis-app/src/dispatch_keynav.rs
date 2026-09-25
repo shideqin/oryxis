@@ -788,9 +788,15 @@ impl Oryxis {
 
     fn keynav_escape(&mut self) -> Option<Task<Message>> {
         // A host-card selection is the outermost thing Esc undoes on the
-        // dashboard: one press clears it, the next idles the ring.
+        // dashboard: one press clears it, the next leaves the
+        // multi-select mode (so the cards go back to dialling), the last
+        // idles the ring.
         if self.active_view == crate::state::View::Dashboard && !self.dash_selection.is_empty() {
             self.dash_selection.clear();
+            return Some(Task::none());
+        }
+        if self.active_view == crate::state::View::Dashboard && self.dash_multi_select {
+            self.dash_multi_select = false;
             return Some(Task::none());
         }
         if self.keynav.focus.is_some() {
@@ -823,6 +829,19 @@ impl Oryxis {
             if let Some(msg) = a.activate {
                 return self.update(msg);
             }
+            return Task::none();
+        }
+        // Multi-select mode: Enter on a host card selects it, the
+        // keyboard's reading of what a mouse click means while the mode
+        // is on (see `CardPressed`). Every other content item keeps its
+        // usual verb, so the folder drill-downs and the ring's "open the
+        // thing" contract are untouched.
+        if self.active_view == crate::state::View::Dashboard
+            && self.dash_multi_select
+            && let NavItem::Dash(DashNavItem::Host(i)) = item
+            && let Some(id) = self.connections.get(i).map(|c| c.id)
+        {
+            self.dash_selection.toggle(id);
             return Task::none();
         }
         let msg = match item {
@@ -904,11 +923,18 @@ impl Oryxis {
             (View::Dashboard, ToolbarItem::Primary) => Message::Editor(EditorMessage::ShowNewConnection),
             (View::Dashboard, ToolbarItem::PrimaryChevron) => Message::Cloud(CloudMessage::ShowCloudProviderPicker),
             (View::Dashboard, ToolbarItem::CloudDiscover(pid)) => Message::Cloud(CloudMessage::ShowCloudDiscover(pid)),
+            (View::Dashboard, ToolbarItem::SelectionConnect) => {
+                Message::Tabs(TabsMessage::SelectionConnect)
+            }
             (View::Dashboard, ToolbarItem::SelectionMove) => {
                 Message::Tabs(TabsMessage::MoveHostsPick(self.dash_selection.ids.clone()))
             }
+            (View::Dashboard, ToolbarItem::SelectionDelete) => {
+                Message::Tabs(TabsMessage::SelectionDelete)
+            }
             (View::Dashboard, ToolbarItem::SelectionAll) => Message::Tabs(TabsMessage::SelectionSelectAll),
             (View::Dashboard, ToolbarItem::SelectionClear) => Message::Tabs(TabsMessage::SelectionClear),
+            (View::Dashboard, ToolbarItem::MultiSelect) => Message::Tabs(TabsMessage::ToggleMultiSelect),
             (View::Keys, ToolbarItem::Sort) => Message::Navigation(NavigationMessage::ToggleSortMenu(SortMenuKind::Keys)),
             (View::Keys, ToolbarItem::Primary) => Message::Keys(KeysMessage::ToggleKeychainAddMenu),
             (View::Snippets, ToolbarItem::Sort) => Message::Navigation(NavigationMessage::ToggleSortMenu(SortMenuKind::Snippets)),
