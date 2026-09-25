@@ -24,9 +24,18 @@ fn unsafe_remote_entry_names_are_rejected() {
     ] {
         assert!(!is_safe_remote_entry_name(bad), "accepted {bad:?}");
     }
-    for good in ["file.txt", ".bashrc", "...", "a b c", "weird:name", "über"] {
+    for good in ["file.txt", ".bashrc", "a b c", "weird:name", "über"] {
         assert!(is_safe_remote_entry_name(good), "rejected {good:?}");
     }
+    // Dots alone are ordinary on unix and stripped to nothing by the
+    // Win32 layer, which would land the file under a name nobody
+    // checked, so the platform decides (and the download is refused on
+    // Windows rather than written under a different name). Asserted with
+    // the platform NAMED, the way the drive-relative shape below is, so
+    // the Linux runner covers the Windows rule too - that is what
+    // `is_safe_entry_name_on` is for.
+    assert!(oryxis_ssh::sftp::is_safe_entry_name_on("...", false));
+    assert!(!oryxis_ssh::sftp::is_safe_entry_name_on("...", true));
     // A drive-relative shape re-roots a join on Windows and nowhere
     // else, so it is refused there and is a name on unix.
     assert!(!oryxis_ssh::sftp::is_safe_entry_name_on("C:evil", true));
