@@ -15,7 +15,9 @@ click "Next"
 settle
 expect "Make it yours"
 expect "Offline mode"
-click (810, 358)
+# The switch sits left of the list's embedded scrollbar, which takes
+# layout width of its own (it no longer floats over the toggles).
+click (793, 358)
 settle
 click "Next"
 settle
