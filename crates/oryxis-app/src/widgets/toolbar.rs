@@ -77,6 +77,44 @@ pub(crate) fn host_view_toggle_button(
     crate::views::terminal::icon_tooltip(btn.into(), crate::i18n::t("toggle_view"))
 }
 
+/// Stateful 24×24 icon button for a view's toolbar: the same square as
+/// the grid/list toggle, with the glyph it is given and one pressed
+/// state. `active` is the app's "this control is on" reading - an accent
+/// wash in place of the solid fill, the glyph in full accent - the way
+/// the monitor board says a paused fleet without a second label. `tip`
+/// names the action, since a glyph alone is not always self-evident.
+pub(crate) fn toolbar_toggle_icon(
+    glyph: iced::widget::Text<'static, iced::Theme, iced::Renderer>,
+    message: Message,
+    tip: &'static str,
+    active: bool,
+) -> Element<'static, Message> {
+    let btn = button(
+        container(glyph.size(15).color(if active {
+            OryxisColors::t().accent
+        } else {
+            OryxisColors::t().button_text
+        }))
+        .center_y(Length::Fixed(24.0))
+        .center_x(Length::Fixed(24.0)),
+    )
+    .on_press(message)
+    .style(move |_, status| {
+        let c = OryxisColors::t();
+        let bg = match status {
+            BtnStatus::Hovered | BtnStatus::Pressed => c.button_bg_hover,
+            _ if active => Color { a: 0.18, ..c.accent },
+            _ => c.button_bg,
+        };
+        button::Style {
+            background: Some(Background::Color(bg)),
+            border: Border { radius: Radius::from(6.0), ..Default::default() },
+            ..Default::default()
+        }
+    });
+    crate::views::terminal::icon_tooltip(btn.into(), tip)
+}
+
 /// Shared 24×24 toolbar icon button (search-collapse + overflow). Styled
 /// like `sort_toolbar_button`; when `active` it carries an accent tint so
 /// the open floating field / menu reads as toggled. A tooltip names the
