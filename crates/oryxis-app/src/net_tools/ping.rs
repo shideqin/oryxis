@@ -430,36 +430,49 @@ async fn run_tool(program: &str, args: &[String], budget: Duration) -> Result<St
 /// A captured pipe, read back as text.
 ///
 /// UTF-8 is the right assumption everywhere but on Windows, where both
-/// tools write their localized prose in the console OUTPUT code page
-/// (936 on a Chinese system), not in UTF-8: bytes a UTF-8 decoder cannot
-/// represent, and the raw card ends up a column of replacement
-/// characters. A tool that already speaks UTF-8 still takes the first
+/// tools write their localized prose in a console code page, not in
+/// UTF-8: bytes a UTF-8 decoder cannot represent, and the raw card ends
+/// up a column of replacement characters. A tool that already speaks
+/// UTF-8 (a system on the UTF-8 code page, 65001) still takes the first
 /// branch, so nothing that worked before changes.
 fn decode_output(bytes: &[u8]) -> String {
     if let Ok(text) = std::str::from_utf8(bytes) {
         return text.to_string();
     }
     #[cfg(windows)]
-    if let Some(text) = decode_oem(bytes) {
-        return text;
+    {
+        // The page the tool wrote in. Under CREATE_NO_WINDOW the child
+        // gets a console of its own, and a new console opens on the
+        // system OEM page whatever this process has: none at all in a
+        // release build (`windows_subsystem = "windows"`, where
+        // `GetConsoleOutputCP` answers 0, which `MultiByteToWideChar`
+        // reads as CP_ACP, the ANSI page: the same table as OEM on a
+        // Chinese system and a different one on a Russian or German
+        // one), or a `chcp`-ed one in a debug build run from a terminal.
+        // A per-user `HKCU\Console\CodePage` override is the one input
+        // this does not see.
+        let oem = unsafe { windows_sys::Win32::Globalization::GetOEMCP() };
+        if let Some(text) = decode_with(oem, bytes) {
+            return text;
+        }
     }
     String::from_utf8_lossy(bytes).into_owned()
 }
 
-/// The code page the console would have rendered, as Unicode. A process
-/// with no console of its own still gets an answer: the system OEM code
-/// page, which on a Chinese Windows is the 936 that `tracert` writes.
-/// `None` is the fallback's cue, and it is what a refused code page (a
-/// 0 with no console at all) or a conversion the OS declines returns.
+/// `bytes` in Windows code page `cp`, as Unicode. `None` when the OS
+/// declines the conversion, which is the caller's cue for the lossy
+/// floor. The page is a parameter so a test can name one instead of
+/// depending on the machine it runs on.
 #[cfg(windows)]
-fn decode_oem(bytes: &[u8]) -> Option<String> {
+fn decode_with(cp: u32, bytes: &[u8]) -> Option<String> {
     use windows_sys::Win32::Globalization::MultiByteToWideChar;
-    use windows_sys::Win32::System::Console::GetConsoleOutputCP;
 
-    let cp = unsafe { GetConsoleOutputCP() };
     // The tools' output is bounded by what the pipe carries, so the
-    // length always fits the API's i32.
-    let len = bytes.len() as i32;
+    // length fits the API's i32; refuse rather than truncate otherwise.
+    let len = i32::try_from(bytes.len()).ok()?;
+    if len == 0 {
+        return Some(String::new());
+    }
     unsafe {
         // Two calls because only the second one can say how wide the
         // buffer has to be; both see the same bytes and the same code
@@ -956,27 +969,64 @@ over a maximum of 20 hops:\r\n\r\n\
         assert_eq!(decode_output(out.as_bytes()), out);
     }
 
+    /// GBK for "中文", what a Chinese Windows `tracert` writes.
+    const GBK_CHINESE: [u8; 4] = [0xD6, 0xD0, 0xCE, 0xC4];
+    /// CP866 for "Превышен", the first word of a Russian "request timed
+    /// out"; the same bytes read as something else in the ANSI page
+    /// (1251) of that system.
+    #[cfg(windows)]
+    const OEM866_RUSSIAN: [u8; 8] = [0x8F, 0xE0, 0xA5, 0xA2, 0xEB, 0xE8, 0xA5, 0xAD];
+
+    #[cfg(not(windows))]
     #[test]
-    fn code_page_bytes_come_back_as_readable_text() {
-        // GBK for "中文", which is what a Chinese Windows `tracert`
-        // writes. Which branch decodes it depends on the machine's code
-        // page, so the assertion is the floor both share: readable text,
-        // never mojibake bytes.
-        let text = decode_output(&[0xD6, 0xD0, 0xCE, 0xC4, b'\n']);
-        assert!(text.ends_with('\n'));
-        assert!(!text.is_empty());
+    fn code_page_bytes_fall_back_to_the_lossy_form() {
+        let mut bytes = GBK_CHINESE.to_vec();
+        bytes.push(b'\n');
+        assert_eq!(decode_output(&bytes), String::from_utf8_lossy(&bytes));
     }
 
     #[cfg(windows)]
     #[test]
-    fn gbk_comes_back_as_chinese_on_a_936_console() {
-        use windows_sys::Win32::System::Console::GetConsoleOutputCP;
+    fn code_page_bytes_are_read_in_the_oem_page() {
+        use windows_sys::Win32::Globalization::GetOEMCP;
 
-        // The mojibake this guards only has that shape on the machine
-        // that produces it, so there is nothing to assert anywhere else.
-        if unsafe { GetConsoleOutputCP() } != 936 {
-            return;
+        let mut bytes = GBK_CHINESE.to_vec();
+        bytes.push(b'\n');
+        let text = decode_output(&bytes);
+        assert!(text.ends_with('\n'));
+        // Every OEM page reads these four bytes as something (box
+        // drawing on 437, 中文 on 936); only the UTF-8 page (65001)
+        // has no character for them.
+        if unsafe { GetOEMCP() } != 65001 {
+            assert!(!text.contains('\u{FFFD}'), "{text:?}");
         }
-        assert_eq!(decode_oem(&[0xD6, 0xD0, 0xCE, 0xC4]).as_deref(), Some("中文"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn gbk_reads_as_chinese_in_page_936() {
+        assert_eq!(decode_with(936, &GBK_CHINESE).as_deref(), Some("中文"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn oem_866_reads_as_cyrillic_and_the_ansi_page_does_not() {
+        assert_eq!(decode_with(866, &OEM866_RUSSIAN).as_deref(), Some("Превышен"));
+        assert_ne!(decode_with(1251, &OEM866_RUSSIAN).as_deref(), Some("Превышен"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn page_zero_is_the_ansi_page_not_a_refusal() {
+        // What `GetConsoleOutputCP` answers in a process with no console:
+        // not a sentinel the conversion rejects, so it must never be the
+        // page the tool's bytes are read in.
+        assert_eq!(decode_with(0, b"abc").as_deref(), Some("abc"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_empty_pipe_decodes_to_nothing() {
+        assert_eq!(decode_with(866, &[]).as_deref(), Some(""));
     }
 }
