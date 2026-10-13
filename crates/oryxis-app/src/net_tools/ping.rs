@@ -331,13 +331,11 @@ fn one_rtt(rtt: f32) -> String {
 /// thing here (fall back to the binary); a setup failure is reported,
 /// because falling back would hide a bug behind a working command.
 fn native_declined(reason: Unavailable) -> Option<Vec<NetToolCard>> {
-    match reason {
-        Unavailable::Platform | Unavailable::Denied => None,
-        Unavailable::Failed(e) => {
-            tracing::debug!(error = %e, "native ICMP probe unavailable, falling back");
-            None
-        }
-    }
+    // Every refusal is logged, the expected ones included: an IPv6
+    // target on Windows takes the Platform arm, and the binary's output
+    // in the raw card is the only other trace that it ran at all.
+    tracing::debug!(?reason, "native ICMP probe unavailable, falling back");
+    None
 }
 
 /// The address the native probe aims at. Resolved here rather than
