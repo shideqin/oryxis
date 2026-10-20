@@ -43,17 +43,12 @@ impl Oryxis {
         let compact_pins = self.vaults.cur().prefs.pinned_tab_style == "compact";
         let solid_fill =
             self.vaults.cur().prefs.tab_fill_style == "solid" || self.vaults.cur().prefs.performance_mode;
-        let dragging_any = self.strip_drag_id().is_some();
         let ctx = StripCtx {
             privacy_terms: self.privacy_terms(),
             close_on_right: self.vaults.cur().prefs.tab_close_button_side == "right",
             close_armed: self.cur_nav().hover.tab_close_armed,
             compact_pins,
             solid_fill,
-            dragging_any,
-            // Uniform rows: the drag width IS the row width, so the
-            // live-slide never changes the strip geometry.
-            drag_uniform_w: SIDE_TAB_WIDTH,
             uniform_w: Some(SIDE_TAB_WIDTH),
             session_widths: Vec::new(),
             number_px: self.tab_number_px(),
@@ -301,7 +296,7 @@ impl Oryxis {
             || !self.cursor_in_tab_strip();
         if !ghost_elsewhere
             && let Some((ghost, _ghost_w)) =
-                self.strip_drag_ghost_el(SIDE_TAB_WIDTH, compact_pins, &ctx.privacy_terms)
+                self.strip_drag_ghost_el(compact_pins, &ctx.privacy_terms)
         {
             let gy = (self.strip_cursor().y - strip_top - 6.0 - SIDE_ROW_HEIGHT / 2.0)
                 .max(0.0);

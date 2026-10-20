@@ -73,10 +73,12 @@ impl Oryxis {
                 return self.duplicate_in_new_window(idx);
             }
             TabsMessage::TabDragToEnd => {
-                // Trailing drop zone: the live-slide only ever moves the
-                // dragged tab to *before* a hovered tab, so the slot after the
-                // last tab is unreachable by hovering. Entering the `+` area
-                // during an active drag fills that gap.
+                // Trailing drop zone: a drop on the `+` area past the last
+                // chip docks the tab at the end of its partition. The
+                // geometry path already lands `End` as soon as the cursor
+                // passes the last chip + one seam, so by the time the
+                // cursor enters the `+` this usually no-ops; it exists for
+                // the move that never published (a missed CursorMoved).
                 if let Some(drag) = self.tab_drag.filter(|d| d.active) {
                     self.slide_tab_to_partition_end(drag.from_id);
                 }

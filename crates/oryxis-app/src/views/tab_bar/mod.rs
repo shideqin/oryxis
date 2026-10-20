@@ -200,11 +200,8 @@ impl Oryxis {
         if let Some(ref ctx) = ghost_ctx
             && self.cursor_in_tab_strip()
             && self.dragged_tab_pinned()
-            && let Some((ghost, ghost_w)) = self.strip_drag_ghost_el(
-                ctx.drag_uniform_w,
-                ctx.compact_pins,
-                &ctx.privacy_terms,
-            )
+            && let Some((ghost, ghost_w)) =
+                self.strip_drag_ghost_el(ctx.compact_pins, &ctx.privacy_terms)
         {
             let gx = (self.strip_cursor().x - ghost_w / 2.0).max(0.0);
             let positioned: Element<'_, Message> = iced::widget::Column::<iced::Element<'_, _>>::new()
@@ -319,7 +316,6 @@ impl Oryxis {
         let close_on_right = self.vaults.cur().prefs.tab_close_button_side == "right";
         let number_px = self.tab_number_px();
         let mut session_widths = vec![TAB_MIN_WIDTH; self.tabs.len()];
-        let mut max_inactive_content = TAB_MIN_WIDTH;
         for (i, tab) in self.tabs.iter().enumerate() {
             if self.cur_active_tab() == Some(i) {
                 session_widths[i] = TAB_NATURAL_WIDTH;
@@ -331,7 +327,6 @@ impl Oryxis {
                     number_px,
                 );
                 session_widths[i] = cw;
-                max_inactive_content = max_inactive_content.max(cw);
             }
         }
         StripCtx {
@@ -341,8 +336,6 @@ impl Oryxis {
             compact_pins: self.vaults.cur().prefs.pinned_tab_style == "compact",
             solid_fill: self.vaults.cur().prefs.tab_fill_style == "solid"
                 || self.vaults.cur().prefs.performance_mode,
-            dragging_any: self.strip_drag_id().is_some(),
-            drag_uniform_w: max_inactive_content.clamp(TAB_MIN_WIDTH, TAB_NATURAL_WIDTH),
             uniform_w: None,
             session_widths,
             number_px,
@@ -504,11 +497,10 @@ impl Oryxis {
         // the inactive tabs shrink proportionally toward MIN (the
         // scrollable is the final safety net). Compact pinned chips are
         // fixed at CHIP_W and don't participate in the flexible sizing.
-        let close_on_right = self.vaults.cur().prefs.tab_close_button_side == "right";
         let compact_pins = self.vaults.cur().prefs.pinned_tab_style == "compact";
+        let close_on_right = self.vaults.cur().prefs.tab_close_button_side == "right";
         let number_px = self.tab_number_px();
         let mut session_widths = vec![TAB_MIN_WIDTH; n_tabs];
-        let mut max_inactive_content = TAB_MIN_WIDTH;
         for (i, tab) in self.tabs.iter().enumerate() {
             if tab.pinned && compact_pins {
                 session_widths[i] = CHIP_W;
@@ -522,7 +514,6 @@ impl Oryxis {
                     number_px,
                 );
                 session_widths[i] = cw;
-                max_inactive_content = max_inactive_content.max(cw);
             }
         }
         let n_f = n_tabs as f32;
@@ -556,11 +547,6 @@ impl Oryxis {
                 }
             }
         }
-        // Uniform width used while a tab is mid-drag, so the strip
-        // geometry stays stable as the dragged slot slides (the
-        // active/inactive width difference otherwise bounces the seam).
-        // Sized to the widest inactive content so no label clips.
-        let drag_uniform_w = max_inactive_content.clamp(TAB_MIN_WIDTH, TAB_NATURAL_WIDTH);
         // True overflow: even at TAB_MIN_WIDTH (compact pins at CHIP_W)
         // the tabs don't fit, so the scrollable actually scrolls. This
         // is the trigger that docks the "+" at the strip edge; the
@@ -593,11 +579,10 @@ impl Oryxis {
         // terminal). `false` = terminal index into `self.tabs`, `true` = SFTP
         // index into `self.sftp_tabs`. Within a pin partition, terminals come
         // before SFTP tabs (cross-type drag-interleave is a later refinement).
-        // While a drag is active every tab renders at the inactive width so
-        // the strip geometry is uniform. The active-vs-inactive width
-        // difference otherwise shifts positions on each live-slide swap and
-        // bounces the dragged tab back and forth over a seam.
-        let dragging_any = self.strip_drag_id().is_some();
+        // Chips keep their own allocated widths mid-drag: a reorder is a
+        // permutation, so no swap resizes anything and the strip never
+        // bounces (the old uniform drag width made every chip resize on
+        // pickup and again on release).
         // One terms pass for the whole strip: Privacy Mode redacts the
         // rendered tab labels (issue #78) and must not rebuild the
         // hostname list per tab.
@@ -615,8 +600,6 @@ impl Oryxis {
             close_armed: self.cur_nav().hover.tab_close_armed,
             compact_pins,
             solid_fill,
-            dragging_any,
-            drag_uniform_w,
             uniform_w: self.uniform_tab_width(close_on_right, compact_pins, approx_strip_width),
             session_widths,
             number_px,
@@ -630,9 +613,12 @@ impl Oryxis {
         // edge instead, just before the right cluster, so it can never
         // scroll out of reach with the tabs.
         // Wrapped in a MouseArea so entering the `+` during an active tab
-        // drag drops the dragged tab at the end of its partition (the trailing
-        // slot the live-slide can't reach). The handler no-ops when no drag is
-        // in flight, so normal `+` clicks are unaffected.
+        // drag drops the dragged tab at the end of its partition. The
+        // geometry path usually lands `DragLanding::End` before the cursor
+        // ever gets here (it fires past the last chip + one seam), so this
+        // is the fallback for a move that never published. The handler
+        // no-ops when no drag is in flight, so normal `+` clicks are
+        // unaffected.
         let plus_btn: Element<'_, Message> = MouseArea::new(crate::widgets::bounds_reporter(
             new_tab_btn(!strip_overflow),
             self.plus_btn_bounds.clone(),
@@ -813,7 +799,7 @@ impl Oryxis {
         // window-level layer draws it, free in both axes (issue #112).
         let drag_ghost_el = self
             .cursor_in_tab_strip()
-            .then(|| self.strip_drag_ghost_el(drag_uniform_w, compact_pins, &ctx.privacy_terms))
+            .then(|| self.strip_drag_ghost_el(compact_pins, &ctx.privacy_terms))
             .flatten();
         if let Some((ghost, ghost_w)) = drag_ghost_el {
             let gx = (self.strip_cursor().x - ghost_w / 2.0).max(0.0);

@@ -182,6 +182,9 @@ impl Oryxis {
                 if let Some(task) = self.finish_window_carry() {
                     return task;
                 }
+                // The selection the drop leaves behind (a live tab
+                // reorder differs from a merge or a tear-off below).
+                let mut drop_select = Task::none();
                 // The same global Left-release ends a side-panel editor
                 // drawer resize; persist the final width so it survives
                 // a relaunch.
@@ -240,6 +243,16 @@ impl Oryxis {
                 if let Some(drag) = self.tab_drag.take()
                     && drag.active
                 {
+                    // Chrome's drop rule: releasing a reorder drag selects
+                    // the released tab, whose chip the cursor ends the
+                    // gesture on. The chip's button can't supply the
+                    // select itself: the press began on the dragged chip,
+                    // which draws as the gap mid-drag, so the release
+                    // lands either where that button no longer exists or
+                    // on a different chip whose press didn't begin there.
+                    // Without this the reorder ends with the previously
+                    // active tab still lit.
+                    drop_select = self.activate_dropped_tab(drag.from_id);
                     // Persist when the dragged tab (terminal or SFTP) is pinned,
                     // so the rearranged pinned order survives a relaunch.
                     let pinned = self
@@ -295,6 +308,7 @@ impl Oryxis {
                 if self.cur_sftp().pending_rename.is_some() {
                     return self.defer_slow_rename();
                 }
+                return drop_select;
             }
             // Routed here by `handle_ai`; anything else is a
             // grouping mistake rather than a runtime case.
