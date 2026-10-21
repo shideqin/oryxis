@@ -286,7 +286,7 @@ impl Oryxis {
 
         // Floating drag ghost, tracking the cursor's y (the horizontal
         // bars track x). Non-interactive so the tab MouseAreas below
-        // keep receiving the hover events that drive the live-slide.
+        // keep their hover.
         // With the pins docked in the (visible) top bar, that bar draws
         // the pinned ghosts instead.
         // Leaving the strip hands the ghost to the window-level layer,
@@ -294,28 +294,24 @@ impl Oryxis {
         // content area (issue #112).
         let ghost_elsewhere = (pins_top && !hide_top_bar && self.dragged_tab_pinned())
             || !self.cursor_in_tab_strip();
-        if !ghost_elsewhere
-            && let Some((ghost, _ghost_w)) =
-                self.strip_drag_ghost_el(compact_pins, &ctx.privacy_terms)
-        {
-            let gy = (self.strip_cursor().y - strip_top - 6.0 - SIDE_ROW_HEIGHT / 2.0)
-                .max(0.0);
-            let positioned: Element<'_, Message> = iced::widget::Column::<iced::Element<'_, _>>::new()
-                .push(Space::new().height(gy).boxed())
-                .push(
-                    iced::widget::Row::<iced::Element<'_, _>>::new()
-                        .push(Space::new().width(8.0).boxed())
-                        .push(ghost).boxed(),
-                )
-                .boxed();
-            return iced::widget::Stack::<iced::Element<'_, _>>::new()
-                .push(bar)
-                .push(positioned)
-                .width(Length::Fixed(SIDE_STRIP_WIDTH))
-                .height(Length::Fill)
-                .boxed();
-        }
-        bar
+        let ghost = (!ghost_elsewhere)
+            .then(|| {
+                self.strip_drag_ghost_el(Some(SIDE_TAB_WIDTH), compact_pins, &ctx.privacy_terms)
+            })
+            .flatten()
+            .map(|(ghost, _ghost_w)| {
+                let gy = (self.strip_cursor().y - strip_top - 6.0 - SIDE_ROW_HEIGHT / 2.0)
+                    .max(0.0);
+                iced::widget::Column::<iced::Element<'_, _>>::new()
+                    .push(Space::new().height(gy).boxed())
+                    .push(
+                        iced::widget::Row::<iced::Element<'_, _>>::new()
+                            .push(Space::new().width(8.0).boxed())
+                            .push(ghost).boxed(),
+                    )
+                    .boxed()
+            });
+        with_ghost_layer(bar, ghost, Length::Fixed(SIDE_STRIP_WIDTH), Length::Fill)
     }
 
     /// The pinned `strip_order` entries as fixed strip rows: compact

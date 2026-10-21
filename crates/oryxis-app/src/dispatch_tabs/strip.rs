@@ -72,13 +72,12 @@ impl Oryxis {
             TabsMessage::DuplicateInNewWindow(idx) => {
                 return self.duplicate_in_new_window(idx);
             }
+            TabsMessage::TabDragOverChip(over, at) => self.slide_dragged_tab_over(over, at),
             TabsMessage::TabDragToEnd => {
-                // Trailing drop zone: a drop on the `+` area past the last
-                // chip docks the tab at the end of its partition. The
-                // geometry path already lands `End` as soon as the cursor
-                // passes the last chip + one seam, so by the time the
-                // cursor enters the `+` this usually no-ops; it exists for
-                // the move that never published (a missed CursorMoved).
+                // The `+` ends the strip. Inline, the slide already put the
+                // tab last once the cursor passed the last chip's middle;
+                // docked at the edge of an overflowing strip, the last chip
+                // may be scrolled out of reach, and this is the way there.
                 if let Some(drag) = self.tab_drag.filter(|d| d.active) {
                     self.slide_tab_to_partition_end(drag.from_id);
                 }

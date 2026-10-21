@@ -16,9 +16,8 @@ impl Oryxis {
     /// Chrome's drop rule: a released reorder drag selects the tab it
     /// released. Mid-drag the chip draws as the gap, so iced's button can
     /// never answer the release with a select (a button only publishes
-    /// for a release whose press began on it), and this supplies the
-    /// selection that gesture lost. Id routes: terminal tabs through their
-    /// full select, SFTP tabs and panels through their strip-own routes.
+    /// for a release whose press began on it); this sends what the chip
+    /// would have. A dormant pin connects, as a click on it does.
     pub(crate) fn activate_dropped_tab(&mut self, id: uuid::Uuid) -> Task<Message> {
         if let Some(idx) = self.tabs.iter().position(|t| t._id == id) {
             self.handle_select_tab(idx)
@@ -33,8 +32,8 @@ impl Oryxis {
                 kind.view(),
             )))
         } else {
-            // The drag was merged into another tab or torn off into its
-            // own window: its chip is gone, nothing to select.
+            // Merged into another tab: its chip is gone, nothing to
+            // select.
             Task::none()
         }
     }

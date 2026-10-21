@@ -80,28 +80,6 @@ impl Oryxis {
         if let Some(task) = self.carry_window_to_cursor() {
             return task;
         }
-        // Chrome-style live-slide, driven by the rectangles the chips
-        // report as they are drawn. The enter-event path stays as a
-        // fallback: a chip hovered before this drag still carries
-        // `is_hovered`, so moving onto it publishes no enter and the
-        // strip would never slide ("the tab can't be dragged into
-        // position").
-        let from = self.tab_drag.as_ref().filter(|d| d.active).map(|d| d.from_id);
-        if let Some(from_id) = from
-            && let Some(landing) = self.drag_hover_slot(from_id, pos)
-        {
-            match landing {
-                super::ordering::DragLanding::Before(target) => {
-                    self.slide_tab_onto(from_id, target, false);
-                }
-                super::ordering::DragLanding::After(target) => {
-                    self.slide_tab_onto(from_id, target, true);
-                }
-                super::ordering::DragLanding::End => {
-                    self.slide_tab_to_partition_end(from_id);
-                }
-            }
-        }
         // Promote an armed SFTP internal drag once the cursor crosses
         // into the *opposite* pane, driven by cursor geometry (which
         // IS delivered during a button-hold here, the same signal the

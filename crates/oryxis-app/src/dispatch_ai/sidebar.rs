@@ -232,26 +232,24 @@ impl Oryxis {
                 {
                     return self.drop_dragged_cards(drag);
                 }
-                // Ends a tab reorder drag. The live-slide already moved
-                // the tab into place during the drag (see TabHovered); on
-                // drop we just persist the new pinned order (if the dragged
-                // tab is pinned) and clear. A plain click (never promoted to
-                // `active`) clears with no persist. Runs BEFORE any early
+                // Ends a tab reorder drag. The live slide already moved
+                // the tab into place during the drag
+                // (`slide_dragged_tab_over`); the drop selects it, persists
+                // the new pinned order (if the dragged tab is pinned) and
+                // clears. A plain click (never promoted to `active`) clears
+                // with no persist. Runs BEFORE any early
                 // return below: a release that also finished a column
                 // sort / SFTP drag / armed a rename used to skip this,
                 // leaving the ghost chip stuck on screen (field report).
                 if let Some(drag) = self.tab_drag.take()
                     && drag.active
                 {
-                    // Chrome's drop rule: releasing a reorder drag selects
-                    // the released tab, whose chip the cursor ends the
-                    // gesture on. The chip's button can't supply the
-                    // select itself: the press began on the dragged chip,
-                    // which draws as the gap mid-drag, so the release
-                    // lands either where that button no longer exists or
-                    // on a different chip whose press didn't begin there.
-                    // Without this the reorder ends with the previously
-                    // active tab still lit.
+                    // Chrome's drop rule: the released tab is selected.
+                    // The chip's button cannot do it: mid-drag the chip
+                    // draws as the gap, and a button publishes only for a
+                    // release whose press began on it. Selecting at the
+                    // pickup instead would take the content area away
+                    // from the tab a merge is aimed at (issue #112).
                     drop_select = self.activate_dropped_tab(drag.from_id);
                     // Persist when the dragged tab (terminal or SFTP) is pinned,
                     // so the rearranged pinned order survives a relaunch.
@@ -292,7 +290,10 @@ impl Oryxis {
                             self.persist_sftp_columns();
                         }
                     } else if let Some(sort_col) = drag.col.sort_column() {
-                        return Task::done(Message::Sftp(SftpMessage::SftpSort(drag.side, sort_col)));
+                        return Task::batch([
+                            drop_select,
+                            Task::done(Message::Sftp(SftpMessage::SftpSort(drag.side, sort_col))),
+                        ]);
                     }
                 }
                 // Same global Left-release event also ends an internal
@@ -303,10 +304,10 @@ impl Oryxis {
                     && drag.active
                 {
                     self.sftp.pending_rename = None;
-                    return self.handle_internal_drag_drop(drag);
+                    return Task::batch([drop_select, self.handle_internal_drag_drop(drag)]);
                 }
                 if self.cur_sftp().pending_rename.is_some() {
-                    return self.defer_slow_rename();
+                    return Task::batch([drop_select, self.defer_slow_rename()]);
                 }
                 return drop_select;
             }

@@ -591,7 +591,7 @@ impl Oryxis {
         // strip does, and lifted half a row so the pointer sits on it
         // rather than under it.
         if let Some((ghost, ghost_w)) =
-            self.strip_drag_ghost_el(false, &self.privacy_terms())
+            self.strip_drag_ghost_el(None, false, &self.privacy_terms())
         {
             let x = (self.cur_mouse().x - ghost_w / 2.0)
                 .min(self.cur_window_size().width - ghost_w)
