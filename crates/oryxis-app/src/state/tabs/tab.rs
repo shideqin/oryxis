@@ -472,9 +472,10 @@ pub(crate) enum SftpPaneSpec {
 
 /// In-progress drag of a tab in the strip, for reordering. Started on press
 /// (`SelectTab`), promoted to `active` once the cursor moves past a small
-/// threshold (so a plain click isn't a drag), committed on mouse release
-/// onto the hovered tab. Reorder is restricted to within the same group
-/// (pinned among pinned, normal among normal).
+/// threshold (so a plain click isn't a drag) - which is also when the
+/// dragged tab takes the active seat, Chrome-style. Committed on mouse
+/// release onto the hovered tab. Reorder is restricted to within the same
+/// group (pinned among pinned, normal among normal).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TabDrag {
     /// The tab being dragged, by id so it survives any reindexing (a tab
@@ -484,6 +485,12 @@ pub(crate) struct TabDrag {
     pub start: iced::Point,
     /// Promoted past the threshold (a real drag, not a click).
     pub active: bool,
+    /// The terminal tab the strip showed when the drag was armed, by id.
+    /// The pickup activates the dragged tab, which would make every
+    /// pane-grid drop read the dragged tab as its own destination; the
+    /// merge gesture (a drag into the displayed tab's grid) needs the
+    /// pre-drag display instead, so it reads this.
+    pub grab_display: Option<Uuid>,
 }
 
 impl PinnedTabSpec {

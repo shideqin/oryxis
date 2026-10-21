@@ -13,13 +13,15 @@ use crate::app::{
 use crate::state::View;
 
 impl Oryxis {
-    /// Chrome's drop rule: a released reorder drag selects the tab it
-    /// released. Mid-drag the chip draws as the gap, so iced's button can
-    /// never answer the release with a select (a button only publishes
-    /// for a release whose press began on it), and this supplies the
-    /// selection that gesture lost. Id routes: terminal tabs through their
-    /// full select, SFTP tabs and panels through their strip-own routes.
-    pub(crate) fn activate_dropped_tab(&mut self, id: uuid::Uuid) -> Task<Message> {
+    /// Chrome's pickup rule: promoting a reorder drag past the move
+    /// threshold hands the dragged tab the active seat, so the tab is
+    /// already selected wherever the drop lands. Mid-drag the chip draws
+    /// as the gap, and the one press iced's button saw began on it, so
+    /// the button can never answer the release with a select - whatever
+    /// selects the dragged tab has to do it around the gesture.
+    /// Id routes: terminal tabs through their full select, SFTP tabs and
+    /// panels through their strip-own routes.
+    pub(crate) fn activate_picked_tab(&mut self, id: uuid::Uuid) -> Task<Message> {
         if let Some(idx) = self.tabs.iter().position(|t| t._id == id) {
             self.handle_select_tab(idx)
         } else if let Some(idx) = self.sftp_tabs.iter().position(|t| t.id == id) {
