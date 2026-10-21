@@ -379,15 +379,6 @@ impl Oryxis {
                     self.nav.hover.sftp_tab = None;
                     self.nav.hover.panel_tab = None;
                 }
-                // What the content area shows as the press lands. Once the
-                // pickup promotes the drag, the dragged tab takes the
-                // active seat - this field is the only memory of what was
-                // displayed, which the merge gesture needs as its
-                // destination.
-                let grab_display = self
-                    .cur_active_tab()
-                    .and_then(|i| self.tabs.get(i))
-                    .map(|t| t._id);
                 if let Some(idx) = self.cur_nav().hover.tab.filter(|_| in_tab_strip)
                     && let Some(tab) = self.tabs.get(idx)
                 {
@@ -395,7 +386,6 @@ impl Oryxis {
                         from_id: tab._id,
                         start: self.cur_mouse(),
                         active: false,
-                        grab_display: grab_display.filter(|g| *g != tab._id),
                     });
                 } else if let Some(idx) = self.cur_nav().hover.sftp_tab.filter(|_| in_tab_strip)
                     && let Some(tab) = self.sftp_tabs.get(idx)
@@ -405,7 +395,6 @@ impl Oryxis {
                         from_id: tab.id,
                         start: self.cur_mouse(),
                         active: false,
-                        grab_display,
                     });
                 } else if let Some(kind) = self.cur_nav().hover.panel_tab.filter(|_| in_tab_strip) {
                     // So do the panel tabs, under their synthetic ids
@@ -415,7 +404,6 @@ impl Oryxis {
                         from_id: kind.tab_id(),
                         start: self.cur_mouse(),
                         active: false,
-                        grab_display,
                     });
                 }
                 // A click outside the sidebar (i.e. into the terminal or

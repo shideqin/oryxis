@@ -2,13 +2,13 @@
 //! side of the split anchors (issue #112). `crate::pane_drop` answers
 //! *where*; this answers *whether* and *what happens*.
 //!
-//! The gesture reads as "pull this session in beside the one I'm
-//! looking at". The tab the strip showed when the drag was armed is the
-//! destination, the grabbed one is the source. The pickup hands the
-//! active seat to the dragged tab (Chrome-style), so the destination
-//! has to be read from the drag's `grab_display` - the active seat is
-//! the dragged tab itself the moment the gesture is live, and reading
-//! it would make every merge propose dropping the tab onto itself.
+//! The gesture reads as "pull this session in beside the one I'm looking
+//! at", and it works out because iced's `button` publishes `on_press` on
+//! the RELEASE (`button.rs`, `ButtonReleased`), not the press: grabbing a
+//! chip therefore does not select it, so the content area keeps showing
+//! the tab that was already active. That tab is the destination, the
+//! grabbed one is the source, and the whole thing needs no
+//! remember-and-restore of the selection.
 
 use iced::widget::pane_grid::{Axis, Edge, Pane as PaneHandle, Region, Target};
 use iced::{Rectangle, Size};
@@ -52,14 +52,7 @@ impl Oryxis {
         if self.cursor_in_tab_strip() {
             return None;
         }
-        // The destination is the tab the strip SHOWED when the drag was
-        // armed, not the active one: the pickup flip already selected the
-        // dragged tab, and reading the active seat here would make the
-        // gesture propose dropping it onto itself (the `dest == source`
-        // guard below would refuse, and the merge would always be dead).
-        let dest_idx = drag
-            .grab_display
-            .and_then(|g| self.tabs.iter().position(|t| t._id == g))?;
+        let dest_idx = self.cur_active_tab()?;
         // The connect screen replaces the grid for its own tab, so the
         // panes' reported rects are whatever they were before it took
         // over: hit-testing them would target a grid nobody can see.

@@ -37,14 +37,8 @@ impl Oryxis {
             || self.card_drag.is_some()
             || self.window_carry.is_some();
         // Promote an armed tab drag to active once the cursor moves
-        // past a small threshold, so a plain click never reorders. The
-        // promotion then hands the dragged tab the active seat,
-        // Chrome-style: the tab is picked up opened, so a drop never
-        // has to select after the fact. The threshold's own block does
-        // the handover (guarded by `promoted_from`) so it runs exactly
-        // once per drag, not once per move.
+        // past a small threshold, so a plain click never reorders.
         const TAB_DRAG_THRESHOLD: f32 = 6.0;
-        let mut promoted_from = None;
         if let Some(drag) = self.tab_drag.as_mut()
             && !drag.active
         {
@@ -52,14 +46,7 @@ impl Oryxis {
             let dy = pos.y - drag.start.y;
             if (dx * dx + dy * dy).sqrt() > TAB_DRAG_THRESHOLD {
                 drag.active = true;
-                promoted_from = Some(drag.from_id);
             }
-        }
-        if let Some(from_id) = promoted_from {
-            let picked = self.activate_picked_tab(from_id);
-            // The pickup's select is the act; its scroll follow-up rides
-            // along with whatever task this move returns.
-            let _ = picked;
         }
         // Same threshold for a host card drag (issue #230): under it the
         // press is a click the card's own button answers on release.
