@@ -6,7 +6,8 @@
 //! `--harness-ctl` client) parsed from the CLI before anything else
 //! in `main()`:
 //!
-//! - `oryxis --harness-run <dir>`: batch-runs every `.ice` test file
+//! - `oryxis --harness-run <dir>` (`--harness-shard <i>/<n>` for one
+//!   slice of it): batch-runs every `.ice` test file
 //!   in `<dir>`, in file-name order, each on a freshly wiped sandbox
 //!   (first-run state), with the harness line grammar (instructions
 //!   plus `settle` / `wait` / `timeout` / `screenshot` / `#`
@@ -78,6 +79,9 @@ use iced_test::futures::futures::channel::mpsc::{self, TryRecvError};
 /// control over anyway. Generous because a cold tokio +
 /// headless-renderer start under a software rasterizer can be slow.
 const BOOT_TIMEOUT: Duration = Duration::from_secs(120);
+/// The least a boot waits after its last event before it is taken as
+/// up with a session still streaming (`Session::pump_boot`).
+const BOOT_QUIET_FLOOR: Duration = Duration::from_secs(2);
 
 /// Which harness front-end was requested on the CLI.
 enum Frontend {
@@ -119,6 +123,50 @@ pub struct Options {
     mode: emulator::Mode,
     /// Per-instruction completion timeout in the interactive modes.
     timeout: Duration,
+    /// `--harness-shard <i>/<n>`: the slice of the batch this process
+    /// runs, so CI can spread one directory over several runners.
+    shard: Option<Shard>,
+}
+
+/// One slice of a batch run: the files at positions `index - 1`,
+/// `index - 1 + count`, ... of the directory's name-sorted list.
+///
+/// Round-robin over the sorted names, so every slice is decided by
+/// the directory's content alone and a file added or removed moves
+/// the others by at most one slot. Every file runs on a freshly wiped
+/// sandbox, which is what makes the slices independent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shard {
+    /// 1-based.
+    index: usize,
+    count: usize,
+}
+
+impl Shard {
+    /// Parses `<i>/<n>` with `1 <= i <= n`.
+    fn parse(raw: &str) -> Result<Self, String> {
+        let (index, count) = raw
+            .split_once('/')
+            .ok_or_else(|| format!("--harness-shard wants <i>/<n>, got {raw:?}"))?;
+        let index = index
+            .trim()
+            .parse::<usize>()
+            .map_err(|e| format!("--harness-shard index: {e}"))?;
+        let count = count
+            .trim()
+            .parse::<usize>()
+            .map_err(|e| format!("--harness-shard count: {e}"))?;
+        if count == 0 || index == 0 || index > count {
+            return Err(format!("--harness-shard {raw:?}: want 1 <= i <= n"));
+        }
+        Ok(Self { index, count })
+    }
+
+    /// Whether the file at `position` of the sorted list is this
+    /// slice's.
+    pub fn holds(self, position: usize) -> bool {
+        position % self.count == self.index - 1
+    }
 }
 
 /// Parses harness flags out of the process arguments. Returns `None`
@@ -239,6 +287,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
     let mut scale = 1.0f32;
     let mut mode = emulator::Mode::Zen;
     let mut timeout = Duration::from_millis(20_000);
+    let mut shard: Option<Shard> = None;
     // Harness-only flags seen without a harness mode are an error,
     // not a silent no-op: `--home` on a normal launch means the user
     // thought they were sandboxed when they weren't.
@@ -262,6 +311,10 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
             }
             "--harness-run" => {
                 batch = Some(PathBuf::from(value("--harness-run")?));
+            }
+            "--harness-shard" => {
+                harness_flags.push("--harness-shard");
+                shard = Some(Shard::parse(value("--harness-shard")?)?);
             }
             "--home" => {
                 harness_flags.push("--home");
@@ -343,6 +396,9 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
     if port_given && !serve_daemon {
         return Err("--port only makes sense with --harness-serve or --harness-ctl".into());
     }
+    if shard.is_some() && batch.is_none() {
+        return Err("--harness-shard only makes sense with --harness-run".into());
+    }
 
     let frontend = if let Some(dir) = batch {
         Frontend::Batch(dir)
@@ -365,6 +421,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         scale,
         mode,
         timeout,
+        shard,
     })))
 }
 
@@ -485,7 +542,8 @@ where
     P: Program + 'static,
 {
     /// Boots the emulated application and pumps until the boot task
-    /// settles (or [`BOOT_TIMEOUT`] passes).
+    /// settles ([`Session::pump_boot`]: `Ready`, a quiet channel, or
+    /// [`BOOT_TIMEOUT`]).
     fn new(program: &P, options: &Options) -> (Self, Pump) {
         let (sender, receiver) = mpsc::channel(256);
         let mut session = Self {
@@ -500,7 +558,7 @@ where
             shot_counter: 0,
             history: Vec::new(),
         };
-        let boot = session.pump_until_ready(program, BOOT_TIMEOUT);
+        let boot = session.pump_boot(program);
         (session, boot)
     }
 
@@ -525,7 +583,51 @@ where
         self.receiver = receiver;
         self.emulator = Emulator::new(sender, program, self.mode, self.viewport);
         self.history.clear();
-        Ok(self.pump_until_ready(program, BOOT_TIMEOUT))
+        Ok(self.pump_boot(program))
+    }
+
+    /// Pumps a boot (first start or `reset`) until the app is ready,
+    /// or until the channel has been QUIET for the per-instruction
+    /// timeout, or until [`BOOT_TIMEOUT`] passes.
+    ///
+    /// The quiet exit is for a boot that opens a session: a restored
+    /// tab dialled at launch (`restore_tabs_connect`), the landing on a
+    /// live tab, a connect-at-launch host. Its stream lives as long as
+    /// the session, so in Zen mode the emulator never counts its tasks
+    /// down to zero and `Ready` never comes; before this, such a
+    /// `reset` sat out the whole boot budget (120 s, twice in
+    /// `restore-tabs-connect.ice`). Quiet, not elapsed: a boot that is
+    /// still producing events (data load, the shell's first prompt) is
+    /// never cut short, and a test that lowered `timeout` for its live
+    /// session gets a reset that waits that long after the last event,
+    /// the same deal every instruction after the open already has,
+    /// under a floor: a boot has silent stretches an instruction does
+    /// not (the vault open, the data load, the strip restored before
+    /// the dial spawns), and a test's 500 ms would end it early on a
+    /// loaded runner, with the next `expect` racing the boot. A plain
+    /// boot still returns on `Ready`, in well under a second.
+    fn pump_boot(&mut self, program: &P) -> Pump {
+        let quiet = self.timeout.max(BOOT_QUIET_FLOOR);
+        let deadline = Instant::now() + BOOT_TIMEOUT;
+        let mut last_event = Instant::now();
+        loop {
+            match self.receiver.try_recv() {
+                Ok(Event::Action(action)) => {
+                    self.emulator.perform(program, action);
+                    last_event = Instant::now();
+                }
+                Ok(Event::Ready) => return Pump::Ready,
+                Ok(Event::Failed(instruction)) => return Pump::Failed(instruction),
+                Err(TryRecvError::Closed) => return Pump::Closed,
+                Err(TryRecvError::Empty) => {
+                    let now = Instant::now();
+                    if now >= deadline || now.duration_since(last_event) >= quiet {
+                        return Pump::Timeout;
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
     }
 
     /// Parses and executes one `.ice` instruction line, recording it
@@ -1144,6 +1246,38 @@ mod tests {
     #[test]
     fn harness_flags_without_a_mode_are_an_error() {
         assert!(parse(&args(&["--home", "/tmp/x"])).is_err());
+        assert!(parse(&args(&["--harness-shard", "1/2"])).is_err());
+    }
+
+    #[test]
+    fn a_shard_is_one_slice_of_a_batch_run() {
+        let options =
+            mode_options(parse(&args(&["--harness-run", "d", "--harness-shard", "2/3"])).unwrap());
+        assert_eq!(options.shard, Some(Shard { index: 2, count: 3 }));
+        // Only the batch runner has a list to slice.
+        assert!(parse(&args(&["--harness-repl", "--harness-shard", "1/2"])).is_err());
+        assert!(parse(&args(&["--harness-serve", "--harness-shard", "1/2"])).is_err());
+        for bad in ["0/3", "4/3", "1/0", "2", "a/b", "1/"] {
+            assert!(
+                parse(&args(&["--harness-run", "d", "--harness-shard", bad])).is_err(),
+                "{bad:?} parsed"
+            );
+        }
+    }
+
+    #[test]
+    fn shards_partition_the_sorted_list_round_robin() {
+        let shards: Vec<Shard> = (1..=3).map(|i| Shard::parse(&format!("{i}/3")).unwrap()).collect();
+        for position in 0..10 {
+            let holders: Vec<usize> = shards
+                .iter()
+                .filter(|s| s.holds(position))
+                .map(|s| s.index)
+                .collect();
+            assert_eq!(holders, vec![position % 3 + 1], "position {position}");
+        }
+        let whole = Shard::parse("1/1").unwrap();
+        assert!((0..10).all(|p| whole.holds(p)));
     }
 
     #[test]
