@@ -130,15 +130,28 @@ impl Oryxis {
                 // Rendered here, on live state: only plaintext fields
                 // go in (`importers::csv::render` cannot receive
                 // secrets), so no vault access and no password step.
-                let rows: Vec<(&oryxis_core::models::Connection, String)> = self
-                    .vaults.cur().connections
+                // Folder, identity and key go out as LABELS: the
+                // importer reads them back the same way.
+                let ov = self.vaults.cur();
+                let rows: Vec<crate::importers::csv::ExportRow<'_>> = ov
+                    .connections
                     .iter()
-                    .map(|c| {
-                        let group = c
+                    .map(|c| crate::importers::csv::ExportRow {
+                        conn: c,
+                        group: c
                             .group_id
-                            .map(|gid| oryxis_core::models::Group::path_of(&self.vaults.cur().groups, gid))
-                            .unwrap_or_default();
-                        (c, group)
+                            .map(|gid| oryxis_core::models::Group::path_of(&ov.groups, gid))
+                            .unwrap_or_default(),
+                        identity: c
+                            .identity_id
+                            .and_then(|id| ov.identities.iter().find(|i| i.id == id))
+                            .map(|i| i.label.clone())
+                            .unwrap_or_default(),
+                        key: c
+                            .key_id
+                            .and_then(|id| ov.keys.iter().find(|k| k.id == id))
+                            .map(|k| k.label.clone())
+                            .unwrap_or_default(),
                     })
                     .collect();
                 let data = crate::importers::csv::render(&rows);
@@ -391,13 +404,21 @@ impl Oryxis {
                     .iter()
                     .map(|c| c.label.clone())
                     .collect();
-                self.vaults.cur_mut().ssh_import_existing = parsed
+                let kinds: Vec<crate::importers::ImportRowKind> = parsed
                     .iter()
-                    .map(|h| existing_labels.contains(&h.alias))
+                    .map(|h| {
+                        if existing_labels.contains(&h.alias) {
+                            crate::importers::ImportRowKind::LabelExists
+                        } else {
+                            crate::importers::ImportRowKind::New
+                        }
+                    })
                     .collect();
                 // New hosts start ticked; known ones start unticked.
                 self.vaults.cur_mut().ssh_import_selected =
-                    self.vaults.cur().ssh_import_existing.iter().map(|e| !e).collect();
+                    kinds.iter().map(|k| k.starts_ticked()).collect();
+                self.vaults.cur_mut().ssh_import_kinds = kinds;
+                self.vaults.cur_mut().ssh_import_new_folders.clear();
                 self.vaults.cur_mut().ssh_import_hosts = parsed;
                 self.vaults.cur_mut().ssh_import_direct = None;
                 self.vaults.cur_mut().ssh_config_import_status = None;
@@ -407,19 +428,21 @@ impl Oryxis {
                 if let Some(sel) = self.vaults.cur_mut().ssh_import_selected.get_mut(i) {
                     *sel = !*sel;
                 }
+                self.refresh_import_new_folders();
             }
             ShareMessage::SshImportSelectAll(on) => {
                 self.vaults.cur_mut().ssh_import_selected.fill(on);
+                self.refresh_import_new_folders();
             }
-            ShareMessage::SshImportDismiss => {
-                self.vaults.cur_mut().panels.ssh_import_dialog = false;
-                self.vaults.cur_mut().ssh_import_hosts.clear();
-                self.vaults.cur_mut().ssh_import_direct = None;
-                self.vaults.cur_mut().ssh_import_selected.clear();
-                self.vaults.cur_mut().ssh_import_existing.clear();
-                self.vaults.cur_mut().import_target_group = None;
+            ShareMessage::SshImportDismiss => self.close_ssh_import(),
+            ShareMessage::SshImportConfirm if self.direct_import_removes_any() => {
+                // A removal the file asks for goes through the same
+                // confirm every other removal does (Cancel the default
+                // row), naming what goes; the preview stays open under
+                // it, so Cancel lands back on the ticks.
+                return self.confirm_direct_import_removals();
             }
-            ShareMessage::SshImportConfirm => {
+            confirm @ (ShareMessage::SshImportConfirm | ShareMessage::SshImportConfirmed) => {
                 if !self.vault_usable() {
                     self.vaults.cur_mut().panels.ssh_import_dialog = false;
                     self.vaults.cur_mut().ssh_config_import_status =
@@ -434,72 +457,28 @@ impl Oryxis {
                 // cannot outlive this import. Stamped just before the
                 // save, and the stamped copy is what joins the in-memory
                 // list, so the dashboard shows the host where the vault
-                // has it. No importer sets a folder of its own
-                // (`~/.ssh/config` has none; mRemoteNG's and the CSV
-                // group column ride `notes`), so there is nothing to
-                // out-rank.
+                // has it. Only a row that names no folder of its own
+                // takes it: `~/.ssh/config` names none, mRemoteNG's
+                // folders ride `notes`, and a CSV row with a `group`
+                // cell goes where the cell says.
+                //
+                // A confirmed removal arrives after a dialog: a batch
+                // dismissed meanwhile is not there to save.
+                if matches!(confirm, ShareMessage::SshImportConfirmed)
+                    && self.vaults.cur().ssh_import_direct.is_none()
+                {
+                    return Task::none();
+                }
                 let target_group = self.take_import_target_group();
+                // Third-party batch (PuTTY, ..., a CSV): planned rows,
+                // saved in one transaction (`dispatch_direct_import`).
+                if self.vaults.cur().ssh_import_direct.is_some() {
+                    return self.save_direct_import(target_group);
+                }
                 let ov = self.vaults.cur_mut();
                 let Some(vault) = &ov.store else {
                     return Task::none();
                 };
-                // Third-party batch (PuTTY, ...): already Connections,
-                // no alias pass; same transaction shape as below.
-                if let Some(direct) = ov.ssh_import_direct.take() {
-                    let picked: Vec<&crate::importers::DirectHost> = direct
-                        .hosts
-                        .iter()
-                        .zip(ov.ssh_import_selected.iter())
-                        .filter(|(_, sel)| **sel)
-                        .map(|(h, _)| h)
-                        .collect();
-                    let total = picked.len();
-                    let _ = vault.begin_batch();
-                    let mut saved: Vec<oryxis_core::models::connection::Connection> =
-                        Vec::new();
-                    let mut errors: Vec<String> = Vec::new();
-                    for host in &picked {
-                        let mut conn = host.conn.clone();
-                        if conn.group_id.is_none() {
-                            conn.group_id = target_group;
-                        }
-                        // A password the source carried (WinSCP's
-                        // reversible scheme) goes straight into the
-                        // encrypted column; PuTTY never stores one.
-                        match vault
-                            .save_connection(&conn, host.password.as_deref())
-                        {
-                            Ok(()) => saved.push(conn),
-                            Err(e) => {
-                                errors.push(format!("{}: {e}", host.conn.label))
-                            }
-                        }
-                    }
-                    if let Err(e) = vault.commit_batch() {
-                        vault.rollback_batch();
-                        saved.clear();
-                        errors.push(format!("commit: {e}"));
-                    }
-                    let imported = saved.len();
-                    ov.connections.extend(saved);
-                    ov.panels.ssh_import_dialog = false;
-                    ov.ssh_import_selected.clear();
-                    ov.ssh_import_existing.clear();
-                    let mut summary = format!(
-                        "{} {} / {}",
-                        crate::i18n::t("import_summary_imported"),
-                        imported,
-                        total,
-                    );
-                    if errors.is_empty() {
-                        ov.ssh_config_import_status = Some(Ok(summary.clone()));
-                    } else {
-                        summary.push_str("; ");
-                        summary.push_str(&errors.join("; "));
-                        ov.ssh_config_import_status = Some(Err(summary.clone()));
-                    }
-                    return self.show_toast(summary);
-                }
                 // Ticked hosts, in original order so `link_proxy_jumps`
                 // can resolve sibling aliases to freshly-assigned ids.
                 let picked: Vec<crate::ssh_config::SshConfigHost> = ov
@@ -544,7 +523,7 @@ impl Oryxis {
                 self.vaults.cur_mut().panels.ssh_import_dialog = false;
                 self.vaults.cur_mut().ssh_import_hosts.clear();
                 self.vaults.cur_mut().ssh_import_selected.clear();
-                self.vaults.cur_mut().ssh_import_existing.clear();
+                self.vaults.cur_mut().ssh_import_kinds.clear();
                 let mut summary = format!(
                     "{} {} / {}",
                     crate::i18n::t("import_summary_imported"),
@@ -1509,8 +1488,25 @@ impl Oryxis {
         // eight of them from each needing to remember, and it runs
         // before the preview so the dialog shows what will actually be
         // saved rather than what the file said (issue #171).
+        //
+        // A CSV row is planned against the vault first: it may name a
+        // host here to update or remove, and its planner already split
+        // the host string it was given. Only a NEW host is split here,
+        // so a known host's address is never rewritten by a preview.
+        {
+            let ov = self.vaults.cur();
+            let known = crate::importers::csv_plan::Known {
+                connections: &ov.connections,
+                groups: &ov.groups,
+                identities: &ov.identities,
+                keys: &ov.keys,
+            };
+            parsed = crate::importers::csv_plan::plan(parsed, &known);
+        }
         for host in &mut parsed.hosts {
-            crate::importers::split_host_field(&mut host.conn);
+            if host.op == crate::importers::HostOp::Add {
+                crate::importers::split_host_field(&mut host.conn);
+            }
         }
         if parsed.hosts.is_empty() {
             let msg = if parsed.skipped.is_empty() {
@@ -1530,15 +1526,17 @@ impl Oryxis {
             .iter()
             .map(|c| c.label.clone())
             .collect();
-        self.vaults.cur_mut().ssh_import_existing = parsed
+        let kinds: Vec<crate::importers::ImportRowKind> = parsed
             .hosts
             .iter()
-            .map(|h| existing_labels.contains(&h.conn.label))
+            .map(|h| crate::importers::ImportRowKind::of(h, &existing_labels))
             .collect();
         self.vaults.cur_mut().ssh_import_selected =
-            self.vaults.cur().ssh_import_existing.iter().map(|e| !e).collect();
+            kinds.iter().map(|k| k.starts_ticked()).collect();
+        self.vaults.cur_mut().ssh_import_kinds = kinds;
         self.vaults.cur_mut().ssh_import_hosts.clear();
         self.vaults.cur_mut().ssh_import_direct = Some(parsed);
+        self.refresh_import_new_folders();
         self.vaults.cur_mut().ssh_config_import_status = None;
         self.vaults.cur_mut().panels.ssh_import_dialog = true;
         Task::none()

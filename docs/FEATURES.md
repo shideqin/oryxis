@@ -90,6 +90,14 @@ coming next, see the [Roadmap](../README.md#roadmap).
   password column) and go straight into the encrypted vault; clients
   that encrypt with a per-install key import the host and say so in
   its notes rather than guessing.
+- **Maintain the host list from a spreadsheet.** "Export hosts" writes
+  a CSV with each host's id, folder path, identity and key (never a
+  password). Edit it and import it back: a row with an id updates
+  that host, a row without one adds a host, and a row whose `action`
+  column says `remove` removes the host it names. Folders that don't
+  exist yet are created, and the preview says, row by row, what will
+  be added, changed (and which columns) or removed before anything is
+  saved; removals ask once more.
 - **PuTTY-grade details.** TCP_NODELAY on every socket, per-host IPv4/IPv6
   preference honored on direct dials, proxy dials and jump chains, and the
   SSH pre-authentication banner shown instead of silently dropped.

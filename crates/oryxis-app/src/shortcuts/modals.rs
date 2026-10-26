@@ -208,12 +208,7 @@ impl Oryxis {
             // Mirrors CancelClearHistory.
             Modal::ClearHistoryConfirm => self.clear_history_confirm = false,
             // Mirrors SshImportDismiss, companion state included.
-            Modal::SshImport => {
-                self.vaults.cur_mut().panels.ssh_import_dialog = false;
-                self.vaults.cur_mut().ssh_import_hosts.clear();
-                self.vaults.cur_mut().ssh_import_selected.clear();
-                self.vaults.cur_mut().ssh_import_existing.clear();
-            }
+            Modal::SshImport => self.close_ssh_import(),
             Modal::SftpRename => self.sftp.rename = None,
             Modal::SftpNewEntry => self.sftp.new_entry = None,
             Modal::SftpProperties => self.sftp.properties = None,

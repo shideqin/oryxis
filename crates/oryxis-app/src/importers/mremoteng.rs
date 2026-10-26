@@ -157,7 +157,7 @@ fn map_nodes(doc: &Document, password: &str) -> DirectImport {
             }
         };
         conn.notes = Some(notes);
-        out.hosts.push(DirectHost { conn, password });
+        out.hosts.push(DirectHost::new(conn, password));
     }
     out
 }

@@ -90,7 +90,7 @@ pub(crate) fn parse(text: &str) -> Option<DirectImport> {
             notes.push_str(&format!("\nMobaXterm folder: {folder}"));
         }
         conn.notes = Some(notes);
-        out.hosts.push(DirectHost { conn, password: None });
+        out.hosts.push(DirectHost::new(conn, None));
     }
 
     (saw_section && (!out.hosts.is_empty() || !out.skipped.is_empty())).then_some(out)

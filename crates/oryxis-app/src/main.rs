@@ -70,6 +70,7 @@ mod dispatch_sftp_archive;
 mod dispatch_sftp_files;
 mod dispatch_sftp_sync;
 mod dispatch_sftp_transfers;
+mod dispatch_direct_import;
 mod dispatch_share;
 mod dispatch_remote_desktop;
 mod dispatch_serial;

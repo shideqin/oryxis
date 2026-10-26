@@ -352,6 +352,28 @@ pub struct Connection {
 }
 
 impl Connection {
+    /// Record in [`Self::customized_fields`] every discovery-pushed field
+    /// (`label`, `hostname`, `username`) that differs from `before`, so a
+    /// cloud refresh leaves the person's value alone. A no-op on a host
+    /// that did not come from a cloud provider, where the list means
+    /// nothing. Shared by every writer that edits an existing host (the
+    /// editor, the CSV import) so none can forget a field.
+    pub fn mark_customized_since(&mut self, before: &Connection) {
+        if self.cloud_ref.is_none() {
+            return;
+        }
+        let changed = [
+            ("label", self.label != before.label),
+            ("hostname", self.hostname != before.hostname),
+            ("username", self.username != before.username),
+        ];
+        for (name, differs) in changed {
+            if differs && !self.customized_fields.iter().any(|s| s == name) {
+                self.customized_fields.push(name.to_string());
+            }
+        }
+    }
+
     /// Drop the fields that are a LOCAL trust decision rather than host
     /// data, for a copy about to leave this machine (the sync wire, a
     /// portable export).

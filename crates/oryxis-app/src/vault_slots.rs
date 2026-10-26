@@ -353,7 +353,7 @@ pub(crate) struct OpenVault {
     pub(crate) ssh_import_hosts: Vec<crate::ssh_config::SshConfigHost>,
     /// A third-party import (PuTTY, ...) waiting in the same preview
     /// dialog. Mutually exclusive with `ssh_import_hosts`; the shared
-    /// `ssh_import_selected` / `ssh_import_existing` vecs serve both.
+    /// `ssh_import_selected` / `ssh_import_kinds` vecs serve both.
     pub(crate) ssh_import_direct: Option<crate::importers::DirectImport>,
     /// Inline error of the Import hub modal ("couldn't recognize this
     /// file"); cleared on open and on a successful detection.
@@ -377,9 +377,13 @@ pub(crate) struct OpenVault {
     pub(crate) import_hub_password: String,
     /// Per-host tick state, parallel to `ssh_import_hosts`.
     pub(crate) ssh_import_selected: Vec<bool>,
-    /// Per-host "label already exists" flag, parallel to
-    /// `ssh_import_hosts`; these are surfaced and default to unticked.
-    pub(crate) ssh_import_existing: Vec<bool>,
+    /// How each pending row reads (new, label clash, update, removal),
+    /// parallel to the pending batch; decides its starting tick.
+    pub(crate) ssh_import_kinds: Vec<crate::importers::ImportRowKind>,
+    /// The folders saving the ticked rows would create, named before
+    /// anything is made (`csv_plan::folders_to_create`); recomputed on
+    /// every tick change.
+    pub(crate) ssh_import_new_folders: Vec<String>,
     // MCP Server
     pub(crate) mcp: crate::state::McpState,
     // Sync (settings + runtime engine handles + pairing/SFTP forms)
@@ -617,7 +621,8 @@ impl OpenVault {
             import_hub_pending: None,
             import_hub_password: String::new(),
             ssh_import_selected: Vec::new(),
-            ssh_import_existing: Vec::new(),
+            ssh_import_kinds: Vec::new(),
+            ssh_import_new_folders: Vec::new(),
             vault_import: crate::state::VaultImportState::default(),
             chain_editor_adding: false,
             chain_editor_search: String::new(),

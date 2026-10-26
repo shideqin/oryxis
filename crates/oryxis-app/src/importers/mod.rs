@@ -6,6 +6,9 @@
 //! pass none of these formats have).
 
 pub(crate) mod csv;
+pub(crate) mod csv_plan;
+#[cfg(test)]
+mod csv_plan_tests;
 pub(crate) mod detect;
 pub(crate) mod finalshell;
 pub(crate) mod ini;
@@ -54,10 +57,107 @@ pub(crate) fn split_host_field(conn: &mut oryxis_core::models::connection::Conne
 /// (WinSCP's and mRemoteNG's decodable schemes). The password travels
 /// only from parse to the batch save, where it lands in the encrypted
 /// column.
+///
+/// Every format but the CSV yields `Add` rows with no folder of their
+/// own. A CSV row is read first ([`Self::sheet`]) and planned against
+/// the vault by [`csv_plan::plan`], which is what can turn it into an
+/// update of a known host or a removal.
 #[derive(Clone)]
 pub(crate) struct DirectHost {
     pub conn: oryxis_core::models::connection::Connection,
     pub password: Option<String>,
+    /// What saving this row does.
+    pub op: HostOp,
+    /// Which folder the row asks for.
+    pub folder: FolderPlan,
+    /// A CSV row before planning: its cells as written. `None` for
+    /// every other source, and once [`csv_plan::plan`] has run.
+    pub sheet: Option<Box<csv::SheetRow>>,
+}
+
+impl DirectHost {
+    /// A host to add, placed wherever the import is aimed.
+    pub(crate) fn new(
+        conn: oryxis_core::models::connection::Connection,
+        password: Option<String>,
+    ) -> Self {
+        Self {
+            conn,
+            password,
+            op: HostOp::Add,
+            folder: FolderPlan::Open,
+            sheet: None,
+        }
+    }
+}
+
+/// What the batch save does with one row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HostOp {
+    /// A new host, with a fresh id.
+    Add,
+    /// `conn` is a known host with the file's columns laid over it
+    /// (same id). `changes` names the columns that differ from what
+    /// the vault holds, in the file's own vocabulary; empty when the
+    /// row matches the host as it is.
+    Update { changes: Vec<&'static str> },
+    /// `conn` is the known host the row names, to be removed.
+    Remove,
+}
+
+/// Where a saved row goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FolderPlan {
+    /// The folder the import was opened in (`import_target_group`),
+    /// or the top level.
+    Open,
+    /// Wherever the host already is (an update whose file has no
+    /// folder column).
+    Keep,
+    /// The top level.
+    Root,
+    /// An existing manual folder.
+    Existing(uuid::Uuid),
+    /// A path that names no folder yet: created at the save, segment
+    /// by segment ([`oryxis_core::models::Group::create_path`]), in
+    /// the normalized `"A / B"` form.
+    Create(String),
+}
+
+/// How one preview row reads, and whether it starts ticked. Parallel
+/// to the pending batch (ssh_config hosts or direct hosts).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ImportRowKind {
+    /// A new host.
+    New,
+    /// A new host whose label a host here already has: shown, but
+    /// unticked, so re-importing the same file does not pile up
+    /// duplicates.
+    LabelExists,
+    /// A known host the row changes.
+    Update,
+    /// A known host the row leaves as it is: nothing to do.
+    Unchanged,
+    /// A known host the row removes.
+    Remove,
+}
+
+impl ImportRowKind {
+    pub(crate) fn of(host: &DirectHost, existing_labels: &std::collections::HashSet<String>) -> Self {
+        match &host.op {
+            HostOp::Add if existing_labels.contains(&host.conn.label) => Self::LabelExists,
+            HostOp::Add => Self::New,
+            HostOp::Update { changes } if changes.is_empty() => Self::Unchanged,
+            HostOp::Update { .. } => Self::Update,
+            HostOp::Remove => Self::Remove,
+        }
+    }
+
+    /// Ticked when the preview opens: whatever the file asks to change.
+    /// A label clash and a row with nothing to do start unticked.
+    pub(crate) fn starts_ticked(self) -> bool {
+        matches!(self, Self::New | Self::Update | Self::Remove)
+    }
 }
 
 // Hand-written so a debug print can never put an imported password in
@@ -68,6 +168,9 @@ impl std::fmt::Debug for DirectHost {
         f.debug_struct("DirectHost")
             .field("conn", &self.conn.label)
             .field("password", &self.password.is_some())
+            .field("op", &self.op)
+            .field("folder", &self.folder)
+            .field("sheet", &self.sheet.as_ref().map(|r| r.line))
             .finish()
     }
 }

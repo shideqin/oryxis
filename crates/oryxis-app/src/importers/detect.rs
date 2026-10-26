@@ -70,7 +70,7 @@ pub(crate) fn detect(bytes: &[u8], file_stem: &str) -> Detected {
                 import
                     .connections
                     .into_iter()
-                    .map(|conn| DirectHost { conn, password: None }),
+                    .map(|conn| DirectHost::new(conn, None)),
             );
             skipped.extend(import.skipped);
         }

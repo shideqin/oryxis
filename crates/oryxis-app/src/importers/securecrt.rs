@@ -100,7 +100,7 @@ pub(crate) fn parse(text: &str, file_stem: &str) -> Option<DirectImport> {
         notes.push_str(&format!("\nSecureCRT firewall: {fw}"));
     }
     conn.notes = Some(notes);
-    out.hosts.push(DirectHost { conn, password: None });
+    out.hosts.push(DirectHost::new(conn, None));
     Some(out)
 }
 

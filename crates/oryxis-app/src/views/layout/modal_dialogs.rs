@@ -582,10 +582,17 @@ impl Oryxis {
     /// element at the root: the dialogs read exactly as before there.
     /// ONE text widget, so a harness `expect` can match the whole line.
     pub(crate) fn import_target_line(&self) -> Element<'_, Message> {
+        self.import_target_line_keyed("import_into_folder")
+    }
+
+    /// [`Self::import_target_line`] with its sentence picked by the
+    /// caller: a batch whose rows name folders of their own says the
+    /// open folder takes only the rest.
+    fn import_target_line_keyed(&self, key: &'static str) -> Element<'_, Message> {
         match self.import_target_folder_path() {
             Some(path) => column![
                 Space::new().height(6),
-                text(format!("{} {}", crate::i18n::t("import_into_folder"), path))
+                text(format!("{} {}", crate::i18n::t(key), path))
                     .size(12)
                     .color(OryxisColors::t().accent),
             ].boxed(),
@@ -746,8 +753,11 @@ impl Oryxis {
     /// Content for the import preview (per-host checklist with
     /// select/deselect all, then Import + Cancel). Serves both the
     /// ssh_config flow and the third-party importers: the row data
-    /// resolves from whichever batch is pending.
+    /// resolves from whichever batch is pending. Each row says what the
+    /// save does with it (a new host, an update and of which columns,
+    /// a removal), from `ssh_import_kinds`.
     pub(crate) fn build_ssh_import_dialog(&self) -> Element<'_, Message> {
+        use crate::importers::{FolderPlan, HostOp, ImportRowKind};
         // (label, detail) per row, source-agnostic. Direct batches
         // are already Connections; ssh_config rows derive from the
         // parsed block.
@@ -834,12 +844,30 @@ impl Oryxis {
         for (i, (name, detail)) in rows.iter().enumerate() {
             let checked =
                 self.vaults.cur().ssh_import_selected.get(i).copied().unwrap_or(false);
-            let exists =
-                self.vaults.cur().ssh_import_existing.get(i).copied().unwrap_or(false);
+            let kind = self
+                .vaults.cur().ssh_import_kinds
+                .get(i)
+                .copied()
+                .unwrap_or(ImportRowKind::New);
             let mut label = format!("{name}  ({detail})");
-            if exists {
+            let what = match kind {
+                ImportRowKind::New => None,
+                ImportRowKind::LabelExists => Some(crate::i18n::t("ssh_import_exists").to_string()),
+                ImportRowKind::Unchanged => Some(crate::i18n::t("import_row_unchanged").to_string()),
+                ImportRowKind::Remove => Some(crate::i18n::t("import_row_remove").to_string()),
+                // The column names are the file's own vocabulary (its
+                // header), so they stay as written.
+                ImportRowKind::Update => direct
+                    .and_then(|d| d.hosts.get(i))
+                    .and_then(|h| match &h.op {
+                        HostOp::Update { changes } => Some(changes.join(", ")),
+                        _ => None,
+                    })
+                    .map(|fields| format!("{} {fields}", crate::i18n::t("import_row_updates"))),
+            };
+            if let Some(what) = what {
                 label.push_str("  · ");
-                label.push_str(crate::i18n::t("ssh_import_exists"));
+                label.push_str(&what);
             }
             list = list.push(self.modal_nav_slot(
                 crate::keynav::RowAction::activate(Message::Share(ShareMessage::SshImportToggle(i))),
@@ -853,21 +881,59 @@ impl Oryxis {
                     .boxed(),
             ));
         }
-        // Sessions the parser could not map: named, muted, honest.
+        // Sessions the parser could not map, and CSV rows the planner
+        // refused: named, with the reason, honest. A long list scrolls
+        // instead of pushing the buttons off the dialog.
         let skipped_line: Element<'_, Message> = match direct.filter(|d| !d.skipped.is_empty())
         {
-            Some(d) => column![
-                Space::new().height(6),
-                text(format!(
+            Some(d) => {
+                let line = text(format!(
                     "{} {}",
                     crate::i18n::t("import_skipped"),
                     d.skipped.join(", ")
                 ))
                 .size(11)
-                .color(OryxisColors::t().warning),
-            ].boxed(),
+                .color(OryxisColors::t().warning);
+                // About three wrapped lines of the 440 px column; past
+                // that the list gets a box of its own.
+                let body: Element<'_, Message> = if d.skipped.iter().map(String::len).sum::<usize>() > 180 {
+                    iced::widget::scrollable(line).height(Length::Fixed(56.0)).boxed()
+                } else {
+                    line.boxed()
+                };
+                column![Space::new().height(6), body].boxed()
+            }
             None => Space::new().boxed(),
         };
+        // The folders the save will create, named before anything is
+        // made; always a slot, so the rows below keep their place.
+        let new_folders = &self.vaults.cur().ssh_import_new_folders;
+        let folders_line: Element<'_, Message> = if new_folders.is_empty() {
+            Space::new().boxed()
+        } else {
+            column![
+                Space::new().height(6),
+                text(format!(
+                    "{} {}",
+                    crate::i18n::t("import_new_folders"),
+                    new_folders.join(", ")
+                ))
+                .size(12)
+                .color(OryxisColors::t().text_muted),
+            ].boxed()
+        };
+        // Rows that name a folder of their own go there; the open
+        // folder takes only the rest, and the line says so.
+        let rows_place_themselves = direct.is_some_and(|d| {
+            d.hosts
+                .iter()
+                .any(|h| !matches!(h.folder, FolderPlan::Open | FolderPlan::Keep))
+        });
+        let target_line = self.import_target_line_keyed(if rows_place_themselves {
+            "import_into_folder_rest"
+        } else {
+            "import_into_folder"
+        });
         let dialog_content = container(
             column![
                 text(crate::i18n::t(title_key))
@@ -882,7 +948,8 @@ impl Oryxis {
                 ))
                     .size(12)
                     .color(OryxisColors::t().text_muted),
-                self.import_target_line(),
+                target_line,
+                folders_line,
                 skipped_line,
                 Space::new().height(8),
                 row![select_all_btn, Space::new().width(8), deselect_all_btn],

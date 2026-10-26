@@ -778,25 +778,8 @@ impl Oryxis {
         // anything else (port, color, group_id, ...) is fully
         // user-controlled on imported hosts already and doesn't
         // need a flag.
-        if conn.cloud_ref.is_some()
-            && let Some(orig) = &original
-        {
-            let mut customized = conn.customized_fields.clone();
-            let mark = |list: &mut Vec<String>, name: &str| {
-                if !list.iter().any(|s| s == name) {
-                    list.push(name.to_string());
-                }
-            };
-            if conn.label != orig.label {
-                mark(&mut customized, "label");
-            }
-            if conn.hostname != orig.hostname {
-                mark(&mut customized, "hostname");
-            }
-            if conn.username != orig.username {
-                mark(&mut customized, "username");
-            }
-            conn.customized_fields = customized;
+        if let Some(orig) = &original {
+            conn.mark_customized_since(orig);
         }
         // Validate a newly typed TOTP secret before anything is
         // written, so a typo'd secret can't be stored and then

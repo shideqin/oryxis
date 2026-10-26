@@ -58,7 +58,11 @@ pub enum ShareMessage {
     /// Tick or untick every parsed host at once.
     SshImportSelectAll(bool),
     /// Save the ticked hosts and close the preview, emitting a toast.
+    /// A batch with ticked removals asks first, and its confirm sends
+    /// `SshImportConfirmed`.
     SshImportConfirm,
+    /// The removals of the pending batch were confirmed: save it.
+    SshImportConfirmed,
     /// Discard the SSH-config import preview without saving.
     SshImportDismiss,
     ImportFileLoaded(Vec<u8>),

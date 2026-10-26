@@ -238,7 +238,7 @@ fn to_host(site: &WinScpSite) -> Option<DirectHost> {
         );
     }
     conn.notes = Some(notes);
-    Some(DirectHost { conn, password })
+    Some(DirectHost::new(conn, password))
 }
 
 const PW_MAGIC: u8 = 0xA3;

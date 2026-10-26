@@ -329,7 +329,7 @@ impl Oryxis {
     /// the list still reads, the count once it does not. Names are the
     /// point when they fit - they are what the user checks the dialog
     /// against - and the number is what they check when they do not.
-    fn remove_confirm_body(&self, ids: &[Uuid]) -> String {
+    pub(crate) fn remove_confirm_body(&self, ids: &[Uuid]) -> String {
         if ids.len() > REMOVE_CONFIRM_NAMES {
             return crate::i18n::host_count(ids.len());
         }
