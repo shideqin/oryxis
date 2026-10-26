@@ -127,6 +127,20 @@ pub const DEVICE_KEYS: &[&str] = &[
     "wheel_zoom_migrated",
 ];
 
+/// Device settings that name a FOLDER. In a portable tree a folder on
+/// the tree's own volume is stored relative to the tree
+/// ([`DeviceStore::with_relative_paths`]), so the setting survives the
+/// USB key coming up as another drive; reads hand back the absolute
+/// path either way. The program settings (`local_terminals`,
+/// `sftp_default_editor`) are command lines, not paths, and stay as
+/// written.
+pub const DEVICE_FOLDER_KEYS: &[&str] = &[
+    "zmodem_download_dir",
+    "session_log_file_dir",
+    "command_history_file_dir",
+    "snippet_output_dir",
+];
+
 /// Settings that belong to the device, by key prefix: the shortcut
 /// table (`hotkey_<action>`) and the plugin cache's per-plugin state
 /// (`plugins_<id>_pinned_version`, `plugins_<id>_auto_update`,
@@ -164,11 +178,20 @@ pub struct VaultEntry {
 }
 
 impl VaultEntry {
-    /// Whether the file lives outside the `.oryxis` folder (opened from
-    /// where the user keeps it, never made by this install): such a vault
-    /// may be taken off the list with its file left alone.
+    /// Whether the file was opened from where the user keeps it rather
+    /// than made by this install (the first `vault.db`, a `vaults/<id>.db`):
+    /// such a vault may be taken off the list with its file left alone,
+    /// and no folder is ever made for it. An absolute entry, and a
+    /// relative one a portable tree stores for a file elsewhere on its
+    /// volume (`../../Vaults/work.db`).
     pub fn is_outside(&self) -> bool {
-        self.path.is_absolute()
+        use std::path::Component;
+        let made_here = match self.path.components().collect::<Vec<_>>().as_slice() {
+            [Component::Normal(name)] => *name == FIRST_VAULT_FILE,
+            [Component::Normal(dir), Component::Normal(_)] => *dir == VAULTS_DIR,
+            _ => false,
+        };
+        !made_here
     }
 
     /// The entry for the install's `vault.db`.
@@ -269,6 +292,9 @@ pub enum DeviceError {
 /// `~/.oryxis/device.json`, read through, written under a lock.
 pub struct DeviceStore {
     dir: PathBuf,
+    /// Store paths on the tree's own volume relative to it (a portable
+    /// tree, [`Self::with_relative_paths`]).
+    relative_paths: bool,
     cache: Mutex<Cached>,
 }
 
@@ -284,8 +310,41 @@ impl DeviceStore {
     pub fn at(dir: impl Into<PathBuf>) -> Self {
         Self {
             dir: dir.into(),
+            relative_paths: false,
             cache: Mutex::new(Cached { stamp: None, file: DeviceFile::fresh() }),
         }
+    }
+
+    /// The store of a portable tree: a vault registered from the tree's
+    /// own volume and a folder setting on it are written relative to the
+    /// tree (`oryxis_core::paths::relative_on_same_volume`), so the USB
+    /// key keeps working under another drive letter or mount point.
+    /// Another volume (a VeraCrypt drive) keeps its absolute path.
+    pub fn with_relative_paths(mut self) -> Self {
+        self.relative_paths = true;
+        self
+    }
+
+    /// `path` as this store writes it: relative to the tree when the
+    /// store keeps relative paths and `path` is on the tree's volume,
+    /// absolute otherwise.
+    fn stored_path(&self, path: &Path) -> PathBuf {
+        let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        if self.relative_paths
+            && let Some(relative) = oryxis_core::paths::relative_on_same_volume(&self.dir, &absolute)
+        {
+            return relative;
+        }
+        absolute
+    }
+
+    /// A stored folder setting as the app uses it: a relative value is
+    /// the tree's own, resolved against it; anything else as written.
+    fn read_folder(&self, key: &str, value: String) -> String {
+        if !DEVICE_FOLDER_KEYS.contains(&key) || value.is_empty() || Path::new(&value).is_absolute() {
+            return value;
+        }
+        oryxis_core::paths::join_lexically(&self.dir, Path::new(&value)).display().to_string()
     }
 
     /// The `.oryxis` folder this store lives in (relative vault paths
@@ -371,19 +430,31 @@ impl DeviceStore {
 
     /// A device setting, `None` when never set.
     pub fn get(&self, key: &str) -> Option<String> {
-        self.with_current(|f| f.settings.get(key).cloned())
+        self.with_current(|f| f.settings.get(key).cloned()).map(|v| self.read_folder(key, v))
     }
 
-    /// Store a device setting.
+    /// Store a device setting. A folder setting ([`DEVICE_FOLDER_KEYS`])
+    /// is written the way [`Self::with_relative_paths`] says.
     pub fn set(&self, key: &str, value: &str) -> Result<(), DeviceError> {
+        let value = if DEVICE_FOLDER_KEYS.contains(&key) && !value.is_empty() {
+            self.stored_path(Path::new(value)).display().to_string()
+        } else {
+            value.to_owned()
+        };
         self.update(|f| {
-            f.settings.insert(key.to_owned(), value.to_owned());
+            f.settings.insert(key.to_owned(), value);
         })
     }
 
-    /// Every device setting, sorted by key.
+    /// Every device setting, sorted by key, folders resolved like [`Self::get`].
     pub fn settings(&self) -> Vec<(String, String)> {
-        self.with_current(|f| f.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        self.with_current(|f| f.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>())
+            .into_iter()
+            .map(|(k, v)| {
+                let v = self.read_folder(&k, v);
+                (k, v)
+            })
+            .collect()
     }
 
     /// Remove every device setting whose key starts with `prefix`.
@@ -444,7 +515,11 @@ impl DeviceStore {
     /// Where `entry`'s file is: a relative path inside this store's
     /// folder, an absolute one as written.
     pub fn resolve(&self, entry: &VaultEntry) -> PathBuf {
-        if entry.path.is_absolute() { entry.path.clone() } else { self.dir.join(&entry.path) }
+        if entry.path.is_absolute() {
+            entry.path.clone()
+        } else {
+            oryxis_core::paths::join_lexically(&self.dir, &entry.path)
+        }
     }
 
     /// The registered vault `id`.
@@ -475,10 +550,11 @@ impl DeviceStore {
     }
 
     /// Register the vault file at `path` (where the user keeps it), called
-    /// `label`. Stored absolute, as given: the canonical form is only how
-    /// two spellings of one file are told apart (on Windows it is a
-    /// `\\?\` path no one should see). A file already registered is not
-    /// registered twice: answers that entry and `false`.
+    /// `label`. Stored absolute, as given, or relative to a portable tree
+    /// on its own volume ([`Self::with_relative_paths`]): the canonical
+    /// form is only how two spellings of one file are told apart (on
+    /// Windows it is a `\\?\` path no one should see). A file already
+    /// registered is not registered twice: answers that entry and `false`.
     pub fn register_existing(&self, path: &Path, label: &str) -> Result<(VaultEntry, bool), DeviceError> {
         let canonical = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
         let wanted = canonical(path);
@@ -493,7 +569,7 @@ impl DeviceStore {
                 id: Uuid::new_v4(),
                 slug: slug_for(label, &taken),
                 label: Some(label.trim().to_owned()).filter(|l| !l.is_empty()),
-                path: std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()),
+                path: self.stored_path(path),
                 hotkey: None,
                 extra: serde_json::Map::new(),
             };
@@ -886,7 +962,9 @@ pub fn installed() -> Option<Arc<DeviceStore>> {
 /// `oryxis_core::paths` included: `ORYXIS_DATA_DIR`, `ORYXIS_HOME`, the
 /// portable `data` folder), `None` when nothing resolves.
 pub fn for_app_dir() -> Option<DeviceStore> {
-    oryxis_core::paths::oryxis_dir().map(DeviceStore::at)
+    let tree = oryxis_core::paths::data_dir()?;
+    let store = DeviceStore::at(tree.path);
+    Some(if tree.source == oryxis_core::paths::DataDirSource::Portable { store.with_relative_paths() } else { store })
 }
 
 /// The environment variables a vault's MCP secrets ride in, for the

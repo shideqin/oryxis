@@ -172,6 +172,9 @@ impl Oryxis {
             ov.proxy_identities = vault.list_proxy_identities().unwrap_or_default();
             ov.login_scripts = vault.list_login_scripts().unwrap_or_default();
             ov.cloud_profiles = vault.list_cloud_profiles().unwrap_or_default();
+            // A managed kubeconfig names the file in THIS tree (a portable
+            // USB key under another drive letter).
+            crate::kubeconfig_file::follow_tree(&mut ov.cloud_profiles);
         }
     }
 

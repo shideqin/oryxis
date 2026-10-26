@@ -80,11 +80,36 @@ pub(crate) fn referenced_paths(profiles: &[oryxis_core::models::CloudProfile]) -
         .collect()
 }
 
-/// The managed kubeconfig a Kubernetes account's `config` points at.
+/// The managed kubeconfig a Kubernetes account's `config` points at, in
+/// this tree ([`managed_file`]).
 pub(crate) fn referenced_path(config: &str) -> Option<PathBuf> {
     let v = serde_json::from_str::<serde_json::Value>(config).ok()?;
-    let path = v.get("kubeconfig")?.as_str()?;
-    is_managed_path(path).then(|| PathBuf::from(path))
+    managed_file(v.get("kubeconfig")?.as_str()?)
+}
+
+/// Every Kubernetes account's managed kubeconfig path, rewritten in
+/// memory to name the file in THIS tree ([`managed_file`]). The vault
+/// keeps what it holds (no write, so a moved tree does not sync a change
+/// to every peer); the next save of the account stores the current
+/// path. Run where the accounts are loaded, so everything that hands a
+/// profile to the k8s provider, `kubectl` or a comparison reads the
+/// file that is here.
+pub(crate) fn follow_tree(profiles: &mut [oryxis_core::models::CloudProfile]) {
+    for p in profiles.iter_mut().filter(|p| p.provider == "k8s") {
+        let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&p.config) else {
+            continue;
+        };
+        let Some(stored) = cfg.get("kubeconfig").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(here) = managed_file(stored).map(|f| f.display().to_string()) else {
+            continue;
+        };
+        if here != stored {
+            cfg["kubeconfig"] = serde_json::Value::String(here);
+            p.config = cfg.to_string();
+        }
+    }
 }
 
 /// Remove every kubeconfig file of ours in `dir` that no account
@@ -125,15 +150,38 @@ pub(crate) fn sweep_unreferenced(
     removed
 }
 
-/// True when `path` is one of ours, so deleting the Kubernetes account
-/// that owns it may remove the file. Anything the user typed into a k8s
-/// account by hand (`~/.kube/config`, a company file) is left alone.
-pub(crate) fn is_managed_path(path: &str) -> bool {
-    let Some(dir) = dir() else {
-        return false;
-    };
+/// The file of ours `path` names, in THIS tree: a `.yaml` in our
+/// directory as it is, or a path of the shape [`path_for`] writes
+/// (`.../kubeconfig/<family>-<cluster>-<account>.yaml`) written in a tree
+/// that is not this one any more (a portable copy whose USB key came up
+/// as another drive letter, a profile tree copied into a portable `data`
+/// folder) read as the same file name here. Without the second half the
+/// account would point at a drive that is gone and the sweep, finding no
+/// account referencing the file that IS here, would delete it.
+///
+/// `None` for anything the user typed into a k8s account by hand
+/// (`~/.kube/config`, a company file): deleting the account leaves it
+/// alone and no sweep touches it.
+pub(crate) fn managed_file(path: &str) -> Option<PathBuf> {
+    let dir = dir()?;
     let p = Path::new(path);
-    p.parent() == Some(dir.as_path()) && p.extension().and_then(|e| e.to_str()) == Some("yaml")
+    let name = p.file_name()?.to_str()?;
+    let stem = name.strip_suffix(".yaml")?;
+    if p.parent() == Some(dir.as_path()) {
+        return Some(p.to_path_buf());
+    }
+    let in_a_kubeconfig_dir = p.parent().and_then(|d| d.file_name()).is_some_and(|n| n == "kubeconfig");
+    let (head, account) = stem.rsplit_once('-')?;
+    let shaped = account.len() == 32
+        && account.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        && head.split_once('-').is_some_and(|(family, cluster)| sanitize_component(family).is_some() && sanitize_component(cluster).is_some());
+    (in_a_kubeconfig_dir && shaped).then(|| dir.join(name))
+}
+
+/// True when `path` is one of ours ([`managed_file`]).
+#[cfg(test)]
+fn is_managed_path(path: &str) -> bool {
+    managed_file(path).is_some()
 }
 
 /// The `current-context` a kubeconfig names, when it names one. A
@@ -313,6 +361,37 @@ mod tests {
         let set = referenced_paths(&[k8s, by_hand, other]);
         assert_eq!(set.len(), 1);
         assert!(set.contains(&ours));
+    }
+
+    /// A path this module wrote in another tree (the USB key under
+    /// another drive letter) is the same file here; a look-alike the user
+    /// typed is not ours.
+    #[test]
+    fn a_managed_path_from_another_tree_is_read_here() {
+        let account = Uuid::new_v4();
+        let ours = path_for("ack", account, "c1").unwrap();
+        let name = ours.file_name().unwrap().to_str().unwrap().to_string();
+        let moved = Path::new("/media/old/Oryxis/data/kubeconfig").join(&name);
+        assert_eq!(managed_file(moved.to_str().unwrap()), Some(ours.clone()));
+        assert_eq!(managed_file(ours.to_str().unwrap()), Some(ours.clone()));
+        // Not our shape: another folder name, no account id, a short id.
+        assert_eq!(managed_file(&format!("/media/old/kube/{name}")), None);
+        assert_eq!(managed_file("/media/old/kubeconfig/ack-c1.yaml"), None);
+        assert_eq!(managed_file("/media/old/kubeconfig/ack-c1-abc.yaml"), None);
+
+        let mut k8s = oryxis_core::models::CloudProfile::new("ACK: prod", "k8s");
+        k8s.config = serde_json::json!({ "kubeconfig": moved, "context": "prod" }).to_string();
+        let mut by_hand = oryxis_core::models::CloudProfile::new("mine", "k8s");
+        by_hand.config = serde_json::json!({ "kubeconfig": "/home/u/.kube/config" }).to_string();
+        let untouched = by_hand.config.clone();
+        let mut profiles = vec![k8s, by_hand];
+        follow_tree(&mut profiles);
+        let cfg: serde_json::Value = serde_json::from_str(&profiles[0].config).unwrap();
+        assert_eq!(cfg["kubeconfig"], ours.display().to_string());
+        assert_eq!(cfg["context"], "prod", "the rest of the config stays");
+        assert_eq!(profiles[1].config, untouched);
+        // The sweep sees the file here as referenced.
+        assert!(referenced_paths(&profiles).contains(&ours));
     }
 
     #[test]

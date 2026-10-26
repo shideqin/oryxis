@@ -415,7 +415,7 @@ impl Oryxis {
                     .find(|p| p.id == id && p.provider == "k8s")
                     .and_then(|p| serde_json::from_str::<serde_json::Value>(&p.config).ok())
                     .and_then(|v| v.get("kubeconfig")?.as_str().map(str::to_string))
-                    .filter(|path| crate::kubeconfig_file::is_managed_path(path));
+                    .and_then(|path| crate::kubeconfig_file::managed_file(&path));
                 if let Some(vault) = &self.vaults.cur().store {
                     let _ = vault.delete_cloud_profile(&id);
                     self.load_data_from_vault();

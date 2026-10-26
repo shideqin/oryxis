@@ -3,22 +3,25 @@
 //!
 //! Four sources, the first that answers wins:
 //!
-//! 1. `ORYXIS_DATA_DIR` names the data tree ITSELF. The app writes it
-//!    into every MCP client entry when its own tree is not the default
-//!    one, so `oryxis-mcp` (spawned by the client from `<tree>/bin`)
-//!    reads the vaults the app shows.
+//! 1. `ORYXIS_DATA_DIR` names the data tree ITSELF. Not a user setting:
+//!    the app writes it into every MCP client entry when its own tree is
+//!    not the default one, so `oryxis-mcp` (spawned by the client from
+//!    `<tree>/bin`) reads the vaults the app shows.
 //! 2. `ORYXIS_HOME` overrides the home directory the `.oryxis` tree
 //!    lives under. It exists for the harness sandbox on Windows, where
 //!    `dirs::home_dir()` is `SHGetKnownFolderPath` (a WinAPI call that
 //!    ignores `$HOME` / `%USERPROFILE%`).
-//! 3. A `data` entry beside the running executable (portable mode,
-//!    issue #271): unzip the portable build, create `data` next to
-//!    `oryxis.exe`, and the whole tree lives there. ANY entry by that
-//!    name counts, a dangling junction or a file included: the user
-//!    asked for that folder, and a tree that cannot be used there is
-//!    reported by whatever fails to open in it, never swapped in silence
-//!    for the profile's. Decided ONCE per process, so a folder created
-//!    while the app runs does not move the tree under it.
+//! 3. A `data` entry beside the program (portable mode, issue #271): the
+//!    whole tree lives there and travels with it. "Beside the program" is
+//!    the folder of the executable, of the `.AppImage` file, or of the
+//!    `Oryxis.app` bundle ([`anchor_for`]). ANY entry by that name
+//!    counts, a dangling junction or a file included: the user asked for
+//!    that folder, and a tree that cannot be used there is reported by
+//!    whatever fails to open in it, never swapped in silence for the
+//!    profile's. The app's own start may CREATE it ([`settle_portable`]:
+//!    the Windows portable zip, when the profile holds no tree yet).
+//!    Decided ONCE per process, so a folder created while the app runs
+//!    does not move the tree under it.
 //! 4. `.oryxis` under the OS home.
 //!
 //! The environment wins over the folder: the harness sandbox has to hold
@@ -100,22 +103,250 @@ pub fn data_dir_for_children() -> Option<PathBuf> {
     data_dir().filter(|d| d.source != DataDirSource::OsHome).map(|d| d.path)
 }
 
-/// The portable folder beside the running executable, probed once per
-/// process.
-fn portable_dir() -> Option<PathBuf> {
-    static PORTABLE: OnceLock<Option<PathBuf>> = OnceLock::new();
-    PORTABLE
-        .get_or_init(|| std::env::current_exe().ok().and_then(|exe| portable_dir_beside(&exe)))
-        .clone()
+/// Whether the tree is a portable one: the `data` folder beside the
+/// program.
+pub fn is_portable() -> bool {
+    data_dir().is_some_and(|d| d.source == DataDirSource::Portable)
 }
 
-/// The `data` entry beside `exe`, when there is one. `symlink_metadata`
+/// The portable decision of this process: [`settle_portable`]'s, or the
+/// passive probe's for a process that never settles (`oryxis-mcp`, the
+/// cloud plugins, tests).
+static PORTABLE: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+/// The portable folder of this process.
+fn portable_dir() -> Option<PathBuf> {
+    PORTABLE.get_or_init(|| match program_anchor() {
+        Some(Anchor::Dir(dir)) => existing_data_entry(&dir),
+        Some(Anchor::Translocated) | None => None,
+    })
+    .clone()
+}
+
+/// What [`settle_portable`] found, for the start's log.
+#[derive(Debug)]
+pub enum PortableStart {
+    /// An override variable is set; the folder is not looked at.
+    Overridden,
+    /// The `data` folder was there.
+    Found(PathBuf),
+    /// The `data` folder was made by this start.
+    Created(PathBuf),
+    /// No `data` folder, and this copy does not make one (an installed
+    /// build, a platform where portable mode is the user's to turn on).
+    Off,
+    /// No `data` folder, and the profile already holds a tree: a copy
+    /// that ran before portable mode existed keeps it.
+    ProfileKept(PathBuf),
+    /// The `data` folder could not be made (a read-only folder, a copy
+    /// run from inside the zip); the profile's tree is used. Nothing was
+    /// there to lose.
+    CreateFailed { path: PathBuf, error: String },
+    /// macOS runs this copy from a randomized read-only location (App
+    /// Translocation, a quarantined app not yet moved by Finder): the
+    /// folder beside the bundle cannot be seen from here.
+    Translocated,
+}
+
+/// The app's start settles portable mode before anything touches the
+/// tree. With `create_by_default` (the Windows portable zip: no
+/// installer beside it) a copy with no `data` folder MAKES one, unless
+/// the profile already holds a tree, which a zip copy older than this
+/// mode wrote there and keeps using. Every other process only looks
+/// ([`portable_dir`]). A second call answers what the first decided.
+pub fn settle_portable(create_by_default: bool) -> PortableStart {
+    let set = |v: Option<OsString>| v.is_some_and(|v| !v.is_empty());
+    if set(std::env::var_os(DATA_DIR_ENV)) || set(std::env::var_os(HOME_ENV)) {
+        let _ = PORTABLE.set(None);
+        return PortableStart::Overridden;
+    }
+    let anchor = program_anchor();
+    let (decision, outcome) = decide_portable(anchor, create_by_default, dirs::home_dir().map(|h| h.join(".oryxis")));
+    if PORTABLE.set(decision).is_err() {
+        // Something read the tree before the start settled it: the
+        // passive probe answered, and it stays (the tree never moves
+        // inside a process).
+        return match portable_dir() {
+            Some(dir) => PortableStart::Found(dir),
+            None => PortableStart::Off,
+        };
+    }
+    outcome
+}
+
+/// [`settle_portable`] past the environment check.
+fn decide_portable(
+    anchor: Option<Anchor>,
+    create_by_default: bool,
+    profile_tree: Option<PathBuf>,
+) -> (Option<PathBuf>, PortableStart) {
+    let dir = match anchor {
+        Some(Anchor::Dir(dir)) => dir,
+        Some(Anchor::Translocated) => return (None, PortableStart::Translocated),
+        None => return (None, PortableStart::Off),
+    };
+    if let Some(found) = existing_data_entry(&dir) {
+        return (Some(found.clone()), PortableStart::Found(found));
+    }
+    if !create_by_default {
+        return (None, PortableStart::Off);
+    }
+    if let Some(profile) = profile_tree.filter(|p| p.symlink_metadata().is_ok()) {
+        return (None, PortableStart::ProfileKept(profile));
+    }
+    let data = dir.join(PORTABLE_DIR_NAME);
+    match std::fs::create_dir(&data) {
+        Ok(()) => (Some(data.clone()), PortableStart::Created(data)),
+        Err(e) => (None, PortableStart::CreateFailed { path: data, error: e.to_string() }),
+    }
+}
+
+/// The `data` entry in `dir`, when there is one. `symlink_metadata`
 /// rather than `is_dir`: a junction to a volume that is not mounted (a
 /// VeraCrypt drive) is still the user's choice of tree, and following it
 /// would fall back to the profile in silence.
-fn portable_dir_beside(exe: &Path) -> Option<PathBuf> {
-    let dir = exe.parent()?.join(PORTABLE_DIR_NAME);
-    dir.symlink_metadata().is_ok().then_some(dir)
+fn existing_data_entry(dir: &Path) -> Option<PathBuf> {
+    let data = dir.join(PORTABLE_DIR_NAME);
+    data.symlink_metadata().is_ok().then_some(data)
+}
+
+/// Where "beside the program" is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Anchor {
+    /// The folder the `data` entry goes in.
+    Dir(PathBuf),
+    /// macOS App Translocation: no folder to look in.
+    Translocated,
+}
+
+/// The anchor of this process, from its executable and the AppImage
+/// runtime's variables.
+fn program_anchor() -> Option<Anchor> {
+    let exe = std::env::current_exe().ok()?;
+    let var = |name| std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from);
+    let appimage = var("APPIMAGE").zip(var("APPDIR"));
+    anchor_for(&exe, appimage.as_ref().map(|(image, dir)| (image.as_path(), dir.as_path())))
+}
+
+/// Pure core of [`program_anchor`]:
+///
+/// - an AppImage runs from a read-only mount of itself; the folder is the
+///   one holding the `.AppImage` FILE (`APPIMAGE`). Honoured only when the
+///   executable is inside the mount the runtime names (`APPDIR`): a
+///   program started from a terminal some other AppImage opened inherits
+///   that one's variables.
+/// - a macOS bundle is `Oryxis.app/Contents/MacOS/<exe>`; the folder is
+///   the one holding `Oryxis.app`, never inside the bundle (writing
+///   there breaks its signature). A quarantined bundle macOS runs from
+///   `.../AppTranslocation/...` has no such folder to look in.
+/// - anything else: the executable's own folder.
+fn anchor_for(exe: &Path, appimage: Option<(&Path, &Path)>) -> Option<Anchor> {
+    if let Some((image, mount)) = appimage
+        && exe.starts_with(mount)
+    {
+        return image.parent().map(|d| Anchor::Dir(d.to_path_buf()));
+    }
+    if exe.components().any(|c| c.as_os_str() == "AppTranslocation") {
+        return Some(Anchor::Translocated);
+    }
+    let dir = exe.parent()?;
+    if dir.file_name().is_some_and(|n| n == "MacOS")
+        && let Some(contents) = dir.parent()
+        && contents.file_name().is_some_and(|n| n == "Contents")
+        && let Some(bundle) = contents.parent()
+        && bundle.extension().is_some_and(|e| e.eq_ignore_ascii_case("app"))
+    {
+        return bundle.parent().map(|d| Anchor::Dir(d.to_path_buf()));
+    }
+    Some(Anchor::Dir(dir.to_path_buf()))
+}
+
+/// `target` as a path relative to `base`, `..` steps included, when both
+/// sit on the same volume: the same drive (or share) on Windows, the same
+/// mount on Unix. A portable tree stores what it points at on its own
+/// volume this way, so the key keeps working when it comes up as another
+/// drive letter (or under another user's `/media/<user>`). `None` across
+/// volumes (a VeraCrypt drive keeps its letter on purpose) or when either
+/// path cannot be made absolute.
+pub fn relative_on_same_volume(base: &Path, target: &Path) -> Option<PathBuf> {
+    let base = std::path::absolute(base).ok()?;
+    let target = std::path::absolute(target).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        // The nearest existing ancestor of each: a folder about to be
+        // made is on the volume its parent is on.
+        let dev = |p: &Path| p.ancestors().find_map(|a| std::fs::metadata(a).ok()).map(|m| m.dev());
+        if dev(&base)? != dev(&target)? {
+            return None;
+        }
+    }
+    relative_lexically(&base, &target)
+}
+
+/// `relative` joined onto `base` with its `..` steps folded away, the
+/// inverse of [`relative_on_same_volume`] (which works on the paths as
+/// written, never through links): `E:\Oryxis\data` + `..\..\Vaults\
+/// work.db` is `E:\Vaults\work.db`, which is also what a user should
+/// see. A `..` past the root stays at the root.
+pub fn join_lexically(base: &Path, relative: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in base.join(relative).components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !matches!(out.components().next_back(), None | Some(Component::RootDir | Component::Prefix(_))) {
+                    out.pop();
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// The lexical half of [`relative_on_same_volume`]: both paths absolute,
+/// `None` when their prefixes (drive, share) differ. Windows compares
+/// names without case.
+fn relative_lexically(base: &Path, target: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let same = |a: &Component, b: &Component| {
+        if cfg!(windows) {
+            a.as_os_str().to_string_lossy().to_lowercase() == b.as_os_str().to_string_lossy().to_lowercase()
+        } else {
+            a == b
+        }
+    };
+    let base: Vec<Component> = base.components().filter(|c| *c != Component::CurDir).collect();
+    let target: Vec<Component> = target.components().filter(|c| *c != Component::CurDir).collect();
+    let rooted = |c: &[Component]| c.iter().take_while(|c| matches!(c, Component::Prefix(_) | Component::RootDir)).count();
+    let (base_root, target_root) = (rooted(&base), rooted(&target));
+    if base_root == 0
+        || base_root != target_root
+        || !base[..base_root].iter().zip(&target[..target_root]).all(|(a, b)| same(a, b))
+    {
+        return None;
+    }
+    if base.iter().chain(&target).any(|c| *c == Component::ParentDir) {
+        // `absolute` keeps `..` as written; resolving it lexically could
+        // cross a link, so such a path is not made relative.
+        return None;
+    }
+    let common = base.iter().zip(&target).take_while(|(a, b)| same(a, b)).count();
+    let mut out = PathBuf::new();
+    for _ in common..base.len() {
+        out.push("..");
+    }
+    for c in &target[common..] {
+        out.push(c.as_os_str());
+    }
+    if out.as_os_str().is_empty() {
+        // The base itself: an empty string reads as "not set" wherever a
+        // path is stored.
+        out.push(".");
+    }
+    Some(out)
 }
 
 /// Pure core of [`data_dir`], split out so the resolution is
@@ -216,40 +447,134 @@ mod tests {
         );
     }
 
-    /// Portable mode is the `data` entry beside the executable, in any
+    /// Portable mode is the `data` entry beside the program, in any
     /// form: a folder, a link whose target is gone (a VeraCrypt volume
     /// not mounted yet), even a file. Each of those is the user asking
     /// for that tree; what fails to open there reports itself, and the
     /// profile's tree is never used in its place.
     #[test]
-    fn portable_folder_is_any_data_entry_beside_the_executable() {
-        let root = std::env::temp_dir().join(format!("oryxis-portable-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        let exe = root.join("oryxis.exe");
-        std::fs::write(&exe, b"").unwrap();
+    fn portable_folder_is_any_data_entry_beside_the_program() {
+        let root = tempdir("entry");
+        assert_eq!(existing_data_entry(&root), None);
 
-        // Nothing beside it: not portable.
-        assert_eq!(portable_dir_beside(&exe), None);
-
-        // A folder.
         std::fs::create_dir(root.join(PORTABLE_DIR_NAME)).unwrap();
-        assert_eq!(portable_dir_beside(&exe), Some(root.join(PORTABLE_DIR_NAME)));
+        assert_eq!(existing_data_entry(&root), Some(root.join(PORTABLE_DIR_NAME)));
         std::fs::remove_dir(root.join(PORTABLE_DIR_NAME)).unwrap();
 
-        // A file by that name.
         std::fs::write(root.join(PORTABLE_DIR_NAME), b"").unwrap();
-        assert_eq!(portable_dir_beside(&exe), Some(root.join(PORTABLE_DIR_NAME)));
+        assert_eq!(existing_data_entry(&root), Some(root.join(PORTABLE_DIR_NAME)));
         std::fs::remove_file(root.join(PORTABLE_DIR_NAME)).unwrap();
 
-        // A link to a target that is not there.
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(root.join("unmounted"), root.join(PORTABLE_DIR_NAME)).unwrap();
-            assert_eq!(portable_dir_beside(&exe), Some(root.join(PORTABLE_DIR_NAME)));
+            assert_eq!(existing_data_entry(&root), Some(root.join(PORTABLE_DIR_NAME)));
         }
-
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn tempdir(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("oryxis-portable-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    /// "Beside the program" is the executable's folder, the folder of the
+    /// `.AppImage` file (never the read-only mount it runs from), or the
+    /// folder of the `.app` bundle (never inside it); a translocated
+    /// bundle has none.
+    #[test]
+    fn the_anchor_follows_how_the_program_is_packaged() {
+        let dir = |p: &str| Some(Anchor::Dir(PathBuf::from(p)));
+        assert_eq!(anchor_for(Path::new("/media/usb/Oryxis/oryxis"), None), dir("/media/usb/Oryxis"));
+        // AppImage: the image file's folder.
+        let mounted = Path::new("/tmp/.mount_OryxisAbc/usr/bin/oryxis");
+        let image = (Path::new("/media/usb/Oryxis.AppImage"), Path::new("/tmp/.mount_OryxisAbc"));
+        assert_eq!(anchor_for(mounted, Some(image)), dir("/media/usb"));
+        // Variables inherited from ANOTHER AppImage: ignored.
+        assert_eq!(anchor_for(Path::new("/opt/x/oryxis"), Some(image)), dir("/opt/x"));
+        // macOS bundle: the folder holding it.
+        assert_eq!(
+            anchor_for(Path::new("/Volumes/USB/Oryxis.app/Contents/MacOS/oryxis"), None),
+            dir("/Volumes/USB")
+        );
+        // A bare binary in a folder that merely looks like one.
+        assert_eq!(anchor_for(Path::new("/x/MacOS/oryxis"), None), dir("/x/MacOS"));
+        assert_eq!(
+            anchor_for(
+                Path::new("/private/var/folders/ab/T/AppTranslocation/1234/d/Oryxis.app/Contents/MacOS/oryxis"),
+                None
+            ),
+            Some(Anchor::Translocated)
+        );
+    }
+
+    /// The start's decision: a `data` entry is always taken; without one,
+    /// only a copy that makes it by default (the Windows zip) makes it,
+    /// and only when the profile holds no tree a pre-portable copy wrote.
+    #[test]
+    fn a_start_takes_makes_or_leaves_the_portable_folder() {
+        let root = tempdir("decide");
+        let profile = root.join("home").join(".oryxis");
+        let app = root.join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let anchor = || Some(Anchor::Dir(app.clone()));
+
+        // Opt-in platforms: nothing there, nothing made.
+        assert!(matches!(decide_portable(anchor(), false, Some(profile.clone())), (None, PortableStart::Off)));
+        assert!(!app.join(PORTABLE_DIR_NAME).exists());
+        // The profile holds a tree: kept, nothing made.
+        std::fs::create_dir_all(&profile).unwrap();
+        assert!(matches!(decide_portable(anchor(), true, Some(profile.clone())), (None, PortableStart::ProfileKept(_))));
+        assert!(!app.join(PORTABLE_DIR_NAME).exists());
+        std::fs::remove_dir_all(&profile).unwrap();
+        // A fresh copy: made.
+        let (made, outcome) = decide_portable(anchor(), true, Some(profile.clone()));
+        assert_eq!(made, Some(app.join(PORTABLE_DIR_NAME)));
+        assert!(matches!(outcome, PortableStart::Created(_)));
+        // From then on it is found, whatever the profile holds and on
+        // every platform.
+        std::fs::create_dir_all(&profile).unwrap();
+        assert!(matches!(decide_portable(anchor(), false, Some(profile.clone())), (Some(_), PortableStart::Found(_))));
+        // A folder that cannot hold it: the profile, said so.
+        let missing = || Some(Anchor::Dir(root.join("gone")));
+        assert!(matches!(decide_portable(missing(), true, None), (None, PortableStart::CreateFailed { .. })));
+        assert!(matches!(decide_portable(Some(Anchor::Translocated), true, None), (None, PortableStart::Translocated)));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A path on the tree's own volume is stored relative to the tree, so
+    /// a new drive letter (or another `/media/<user>`) does not break it;
+    /// another volume keeps its absolute path.
+    #[test]
+    fn a_path_on_the_trees_volume_is_relative_to_it() {
+        if cfg!(windows) {
+            let rel = |a: &str, b: &str| relative_lexically(Path::new(a), Path::new(b));
+            assert_eq!(rel("E:\\Oryxis\\data", "E:\\Oryxis\\data\\vaults\\x.db"), Some(PathBuf::from("vaults\\x.db")));
+            assert_eq!(rel("E:\\Oryxis\\data", "e:\\Vaults\\work.db"), Some(PathBuf::from("..\\..\\Vaults\\work.db")));
+            assert_eq!(rel("E:\\Oryxis\\data", "V:\\work.db"), None);
+            assert_eq!(rel("E:\\Oryxis\\data", "E:\\Oryxis\\data"), Some(PathBuf::from(".")));
+        } else {
+            let rel = |a: &str, b: &str| relative_lexically(Path::new(a), Path::new(b));
+            assert_eq!(rel("/media/u/USB/Oryxis/data", "/media/u/USB/Oryxis/data/vaults/x.db"), Some(PathBuf::from("vaults/x.db")));
+            assert_eq!(rel("/media/u/USB/Oryxis/data", "/media/u/USB/Vaults/work.db"), Some(PathBuf::from("../../Vaults/work.db")));
+            assert_eq!(rel("/media/u/USB/Oryxis/data", "/media/u/USB/Oryxis/data"), Some(PathBuf::from(".")));
+            assert_eq!(rel("/a/b", "/a/../c"), None, "a `..` as written is not resolved");
+            assert_eq!(rel("a/b", "/a/c"), None, "a relative base");
+            for (base, target) in [("/media/u/USB/Oryxis/data", "/media/u/USB/Vaults/work.db"), ("/a/b", "/a/b/c/d")] {
+                let relative = rel(base, target).unwrap();
+                assert_eq!(join_lexically(Path::new(base), &relative), PathBuf::from(target), "the round trip");
+            }
+            assert_eq!(join_lexically(Path::new("/a"), Path::new("../../x")), PathBuf::from("/x"));
+            // Two mounts: the device numbers differ, never relative.
+            let root = tempdir("volume");
+            assert_eq!(relative_on_same_volume(&root, &root.join("x.db")), Some(PathBuf::from("x.db")));
+            if Path::new("/proc/self").exists() {
+                assert_eq!(relative_on_same_volume(&root, Path::new("/proc/self/status")), None);
+            }
+            let _ = std::fs::remove_dir_all(&root);
+        }
     }
 
     /// The diagnostic report names the source without the path (which

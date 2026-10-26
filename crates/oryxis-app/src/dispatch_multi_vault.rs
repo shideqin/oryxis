@@ -459,7 +459,7 @@ impl Oryxis {
         let path = oryxis_vault::device::installed().map(|d| d.resolve(entry));
         // Only the app's own folder is made; a vault registered elsewhere
         // (a USB key) is opened where it is, never a folder made for it.
-        if entry.path.is_relative()
+        if !entry.is_outside()
             && let Some(parent) = path.as_ref().and_then(|p| p.parent())
         {
             let _ = std::fs::create_dir_all(parent);

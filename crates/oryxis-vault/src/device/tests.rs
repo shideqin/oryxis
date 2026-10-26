@@ -121,6 +121,60 @@ fn a_start_is_told_when_the_file_cannot_be_read() {
     assert!(matches!(store.read_problem(), Some(DeviceError::Io { .. })));
 }
 
+/// A portable tree stores what lives on its own volume relative to
+/// itself (issue #271): a vault opened from the USB key and a folder
+/// setting there survive the key coming up as another drive. Reads hand
+/// back absolute paths; a store of the profile's tree writes absolute.
+#[test]
+fn a_portable_tree_stores_its_own_volume_relative() {
+    let root = tempfile::tempdir().unwrap();
+    let tree = root.path().join("Oryxis").join("data");
+    std::fs::create_dir_all(&tree).unwrap();
+    let vaults = root.path().join("Vaults");
+    std::fs::create_dir_all(&vaults).unwrap();
+    let work = vaults.join("work.db");
+    std::fs::write(&work, b"").unwrap();
+
+    let store = DeviceStore::at(&tree).with_relative_paths();
+    let (entry, added) = store.register_existing(&work, "Work").unwrap();
+    assert!(added);
+    assert_eq!(entry.path, Path::new("..").join("..").join("Vaults").join("work.db"));
+    assert_eq!(store.resolve(&entry), work, "resolved without the `..` steps");
+    assert!(entry.is_outside(), "opened from elsewhere: removable from the list, no folder made for it");
+    assert!(!store.register_existing(&work, "Again").unwrap().1, "the same file is not registered twice");
+
+    store.set("snippet_output_dir", &vaults.display().to_string()).unwrap();
+    let written: serde_json::Value = serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+    assert_eq!(written["settings"]["snippet_output_dir"], Path::new("..").join("..").join("Vaults").display().to_string());
+    assert_eq!(store.get("snippet_output_dir").as_deref(), Some(vaults.display().to_string().as_str()));
+    assert!(store.settings().contains(&("snippet_output_dir".into(), vaults.display().to_string())));
+    // Clearing stays empty, and a setting that is not a folder is never
+    // touched.
+    store.set("snippet_output_dir", "").unwrap();
+    assert_eq!(store.get("snippet_output_dir").as_deref(), Some(""));
+    store.set("language", "ja").unwrap();
+    assert_eq!(store.get("language").as_deref(), Some("ja"));
+
+    // The profile's tree: absolute, as before.
+    let plain = DeviceStore::at(root.path().join("profile"));
+    let (entry, _) = plain.register_existing(&work, "Work").unwrap();
+    assert!(entry.path.is_absolute());
+}
+
+/// Only the files this install made are its own: the first vault and a
+/// `vaults/<id>.db`. Anything else, absolute or relative, was opened from
+/// where the user keeps it.
+#[test]
+fn only_the_vaults_this_install_made_are_inside() {
+    let entry = |p: &str| VaultEntry { path: PathBuf::from(p), ..VaultEntry::first() };
+    assert!(!entry("vault.db").is_outside());
+    assert!(!entry("vaults/0f.db").is_outside());
+    assert!(entry("../../Vaults/work.db").is_outside());
+    assert!(entry("vaults/../x.db").is_outside());
+    assert!(entry("copy.db").is_outside());
+    assert!(entry(if cfg!(windows) { "V:\\work.db" } else { "/mnt/v/work.db" }).is_outside());
+}
+
 #[test]
 fn a_registry_emptied_by_hand_gets_its_first_vault_back() {
     let dir = tempfile::tempdir().unwrap();

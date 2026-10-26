@@ -232,6 +232,18 @@ fn main() -> iced::Result {
         std::process::exit(2);
     }
 
+    // Portable mode (issue #271) is settled before anything reads the data
+    // tree: the `data` folder beside the program holds it when it is
+    // there, and the Windows portable zip MAKES it on a computer whose
+    // profile holds no tree yet (a zip copy from before this mode keeps
+    // the profile's). Release builds only: a development binary in
+    // `target/` has no installer beside it either and must not grow a
+    // `data` folder there. Under the harness the sandbox variable wins
+    // and nothing is made. Logged once the subscriber exists.
+    let portable_start = oryxis_core::paths::settle_portable(
+        cfg!(target_os = "windows") && !cfg!(debug_assertions) && !harness_active && update::is_portable_install(),
+    );
+
     // rustls 0.23 requires a crypto provider to be installed before any
     // TLS connection, without it the AWS SDK's HTTPS client fails with a
     // generic "dispatch failure" and reqwest panics with "No provider
@@ -657,6 +669,22 @@ fn main() -> iced::Result {
         .init();
 
     tracing::info!("Starting Oryxis");
+    match &portable_start {
+        oryxis_core::paths::PortableStart::Created(dir) => {
+            tracing::info!(dir = %dir.display(), "portable mode: data folder created beside the program");
+        }
+        oryxis_core::paths::PortableStart::Found(dir) => tracing::info!(dir = %dir.display(), "portable mode"),
+        oryxis_core::paths::PortableStart::ProfileKept(dir) => {
+            tracing::info!(dir = %dir.display(), "portable copy keeps the profile's data tree it used before portable mode");
+        }
+        oryxis_core::paths::PortableStart::CreateFailed { path, error } => {
+            tracing::warn!(path = %path.display(), %error, "portable data folder could not be created; using the profile's tree");
+        }
+        oryxis_core::paths::PortableStart::Translocated => {
+            tracing::warn!("macOS runs this copy translocated (quarantined, not moved by Finder): a data folder beside it cannot be seen; using the profile's tree");
+        }
+        oryxis_core::paths::PortableStart::Off | oryxis_core::paths::PortableStart::Overridden => {}
+    }
     if let Some(e) = &early_vault_error {
         // Deferred from the pre-boot open above, which runs before the
         // subscriber exists; the debug log is what a report comes with.
