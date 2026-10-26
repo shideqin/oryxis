@@ -44,9 +44,13 @@ async fn main() {
             std::process::exit(1);
         }
     };
+    // Which tree the vaults came from: a client entry written by an app
+    // on a portable `data` folder names it in `ORYXIS_DATA_DIR`, and an
+    // entry without it reads the profile's (issue #271).
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         vaults = %served.iter().map(|v| v.slug.as_str()).collect::<Vec<_>>().join(", "),
+        data = oryxis_core::paths::data_dir().map_or("none", |d| d.source.label()),
         "Oryxis MCP server started"
     );
 

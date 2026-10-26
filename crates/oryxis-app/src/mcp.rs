@@ -240,9 +240,10 @@ fn cmd_escape(value: &str) -> String {
 /// stderr, so the JSON-RPC stream on stdout stays clean. `win_exe` is
 /// the native `C:\...exe` path (cmd is a Windows program), emitted
 /// unquoted: the WSL argv -> Windows command-line translation rewrites
-/// embedded quotes to `\"`, which cmd rejects. A username with a space
-/// in `C:\Users\<name>` is the one unsupported case; standard profile
-/// folders have none.
+/// embedded quotes to `\"`, which cmd rejects. A launcher path with a
+/// space is the one unsupported case: a username with one in
+/// `C:\Users\<name>` (standard profile folders have none), or a portable
+/// copy unzipped under a folder with one (`E:\My Tools\Oryxis`).
 ///
 /// With neither a token nor a vault password, the plain
 /// `/mnt/c/...exe` launch already works, so we keep `wsl_exe` for that
