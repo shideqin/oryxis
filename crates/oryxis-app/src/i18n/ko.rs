@@ -2782,6 +2782,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "이 창에서 열 수 있는 다른 볼트가 없어 아무것도 바꾸지 않았습니다.",
         "vault_remove_title" => "{name}을(를) 목록에서 제거할까요?",
         "vault_remove_body" => "파일은 그대로 남습니다. \"기존 볼트 열기…\"로 다시 가져올 수 있습니다.",
+        "device_store_unreadable_title" => "기기 설정을 읽을 수 없습니다",
+        "device_store_unreadable_body" => "Oryxis가 기본 기기 설정과 첫 번째 볼트만으로 시작되었으며, 파일을 읽을 수 있게 될 때까지 덮어쓰지 않습니다. 파일을 고치거나 삭제한 다음 Oryxis를 다시 시작하세요.",
         "vault_file_filter" => "Oryxis 볼트",
         "vault_open_not_a_vault" => "이 파일은 마스터 비밀번호가 있는 Oryxis 볼트가 아닙니다.",
 _ => return None,

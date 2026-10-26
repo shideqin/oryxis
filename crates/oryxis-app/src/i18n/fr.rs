@@ -2748,6 +2748,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "Aucun autre coffre n’a pu être ouvert pour cette fenêtre, rien n’a donc été modifié.",
         "vault_remove_title" => "Retirer {name} de la liste ?",
         "vault_remove_body" => "Son fichier reste où il est ; « Ouvrir un coffre existant… » le ramène.",
+        "device_store_unreadable_title" => "Impossible de lire les réglages de l’appareil",
+        "device_store_unreadable_body" => "Oryxis a démarré avec les réglages par défaut de l’appareil et uniquement le premier coffre, et n’écrasera pas le fichier tant qu’il ne peut pas être lu. Corrigez-le ou supprimez-le, puis redémarrez Oryxis.",
         "vault_file_filter" => "Coffre Oryxis",
         "vault_open_not_a_vault" => "Ce fichier n’est pas un coffre Oryxis avec mot de passe maître.",
 _ => return None,

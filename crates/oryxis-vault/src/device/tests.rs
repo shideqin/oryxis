@@ -101,6 +101,26 @@ fn a_file_that_does_not_parse_reads_as_fresh_and_is_never_written_over() {
     assert_eq!(store_in(dir.path()).get("language"), None);
 }
 
+/// A start names the file it could not read (issue #271: a portable
+/// `data` folder on a USB key whose `device.json` was damaged): absent is
+/// a first start, not a problem; a file that reads is none; one that does
+/// not parse, or that cannot be read at all, is.
+#[test]
+fn a_start_is_told_when_the_file_cannot_be_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = store_in(dir.path());
+    assert!(store.read_problem().is_none(), "no file is a fresh device");
+    store.set("language", "de").unwrap();
+    assert!(store.read_problem().is_none(), "a file that reads");
+    std::fs::write(store.path(), b"{ not json").unwrap();
+    assert!(matches!(store.read_problem(), Some(DeviceError::Unparsable { .. })));
+    std::fs::remove_file(store.path()).unwrap();
+    // A folder where the file should be: reading it fails for a reason
+    // other than absence.
+    std::fs::create_dir(store.path()).unwrap();
+    assert!(matches!(store.read_problem(), Some(DeviceError::Io { .. })));
+}
+
 #[test]
 fn a_registry_emptied_by_hand_gets_its_first_vault_back() {
     let dir = tempfile::tempdir().unwrap();

@@ -151,8 +151,8 @@ pub struct VaultEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// The file. Relative = inside the `.oryxis` folder (so a moved
-    /// `ORYXIS_HOME` takes its vaults along); absolute = where the user
-    /// put it.
+    /// `ORYXIS_HOME` or a portable `data` folder takes its vaults along);
+    /// absolute = where the user put it.
     pub path: PathBuf,
     /// The chord that moves the window in use to this vault, in the
     /// hotkey table's text form (`"ctrl+alt+1"`); `None` = none. Lives on
@@ -292,6 +292,17 @@ impl DeviceStore {
     /// resolve against it).
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// Why the file on disk cannot be read as it is: it does not parse,
+    /// or reading it failed for another reason than its absence (a
+    /// medium that went away, a permission). Reads then see a fresh
+    /// device and every write is refused, so a start shows this rather
+    /// than leaving the user to wonder where their vaults went (a
+    /// portable `data` folder on a USB key, issue #271). `None` when the
+    /// file reads or is not there (a first start).
+    pub fn read_problem(&self) -> Option<DeviceError> {
+        parse_file(&self.path()).err()
     }
 
     /// The file itself.
@@ -871,8 +882,9 @@ pub fn installed() -> Option<Arc<DeviceStore>> {
     INSTALLED.get().cloned()
 }
 
-/// The store for the app's own `.oryxis` folder (`ORYXIS_HOME`
-/// included), `None` when the home directory is unknown.
+/// The store for the app's own `.oryxis` folder (every override of
+/// `oryxis_core::paths` included: `ORYXIS_DATA_DIR`, `ORYXIS_HOME`, the
+/// portable `data` folder), `None` when nothing resolves.
 pub fn for_app_dir() -> Option<DeviceStore> {
     oryxis_core::paths::oryxis_dir().map(DeviceStore::at)
 }

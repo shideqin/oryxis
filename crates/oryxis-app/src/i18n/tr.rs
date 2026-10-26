@@ -2781,6 +2781,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "Bu pencere için başka bir kasa açılamadı, bu yüzden hiçbir şey değişmedi.",
         "vault_remove_title" => "{name} listeden kaldırılsın mı?",
         "vault_remove_body" => "Dosyası olduğu yerde kalır; \"Var olan kasayı aç…\" onu geri getirir.",
+        "device_store_unreadable_title" => "Cihaz ayarları okunamadı",
+        "device_store_unreadable_body" => "Oryxis varsayılan cihaz ayarları ve yalnızca ilk kasayla başlatıldı; dosya okunamadığı sürece üzerine yazmayacak. Dosyayı düzeltin veya kaldırın, ardından Oryxis'i yeniden başlatın.",
         "vault_file_filter" => "Oryxis kasası",
         "vault_open_not_a_vault" => "Bu dosya ana parolası olan bir Oryxis kasası değil.",
 _ => return None,

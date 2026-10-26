@@ -2769,6 +2769,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "صندوقچه دیگری برای این پنجره باز نشد، پس چیزی تغییر نکرد.",
         "vault_remove_title" => "{name} از فهرست حذف شود؟",
         "vault_remove_body" => "فایل آن سر جایش می‌ماند؛ «باز کردن صندوقچه موجود…» آن را برمی‌گرداند.",
+        "device_store_unreadable_title" => "تنظیمات دستگاه خوانده نشد",
+        "device_store_unreadable_body" => "Oryxis با تنظیمات پیش‌فرض دستگاه و فقط نخستین صندوقچه اجرا شد و تا وقتی فایل خوانا نشود آن را بازنویسی نمی‌کند. فایل را اصلاح یا حذف کنید و سپس Oryxis را دوباره اجرا کنید.",
         "vault_file_filter" => "صندوقچه Oryxis",
         "vault_open_not_a_vault" => "این فایل صندوقچه Oryxis با رمز اصلی نیست.",
 _ => return None,

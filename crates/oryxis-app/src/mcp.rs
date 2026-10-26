@@ -35,25 +35,32 @@ pub(crate) fn mcp_binary_command() -> String {
 /// Translates the Windows launcher path (`C:\Users\<user>\.oryxis\bin\
 /// oryxis-mcp.exe`) into its WSL mount equivalent
 /// (`/mnt/c/Users/<user>/.oryxis/bin/oryxis-mcp.exe`). Returns an
-/// empty string when `USERPROFILE` isn't available; the WSL block in
-/// the info panel only renders on Windows, where it always is.
+/// empty string when no data tree resolves; the WSL block in the info
+/// panel only renders on Windows, where one always does.
 pub(crate) fn mcp_wsl_command() -> String {
-    // The launcher path is computed against `dirs::home_dir`, which
-    // reads `USERPROFILE` on Windows. We post-process the result into
-    // the WSL form rather than going through `USERPROFILE` again so
-    // both helpers stay in lockstep.
+    // The launcher path is computed against the app's data tree
+    // (`oryxis_core::paths`: the profile's `.oryxis` or a portable `data`
+    // folder). We post-process the result into the WSL form rather than
+    // resolving the tree again so both helpers stay in lockstep.
     let Ok(path) = mcp_install::launcher_path() else {
         return String::new();
     };
-    let s = path.to_string_lossy();
-    // Drive-letter form: `C:\Users\...` -> `/mnt/c/Users/...`.
-    if let Some(rest) = s.strip_prefix("C:\\").or_else(|| s.strip_prefix("c:\\")) {
-        return format!("/mnt/c/{}", rest.replace('\\', "/"));
+    wsl_mount_path(&path.to_string_lossy())
+}
+
+/// A Windows path in WSL's default mount form: `E:\Oryxis\data\bin\
+/// oryxis-mcp.exe` -> `/mnt/e/Oryxis/data/bin/oryxis-mcp.exe`. Any drive
+/// letter, not only `C:` (a portable copy runs from a USB key's). Any
+/// other layout (a network share, a `\\?\` path) is too unusual to guess
+/// at: the bare Windows path, for the user to fix by hand.
+fn wsl_mount_path(win: &str) -> String {
+    let mut chars = win.chars();
+    if let (Some(drive), Some(':'), Some('\\')) = (chars.next(), chars.next(), chars.next())
+        && drive.is_ascii_alphabetic()
+    {
+        return format!("/mnt/{}/{}", drive.to_ascii_lowercase(), chars.as_str().replace('\\', "/"));
     }
-    // Any other layout (network share, non-C drive) is too unusual to
-    // guess at; fall back to the bare Windows path so the user can fix
-    // it by hand.
-    s.into_owned()
+    win.to_string()
 }
 
 /// One vault's MCP secrets as a client config carries them: the names
@@ -92,13 +99,40 @@ impl McpSecrets {
 
 /// The env an entry gets when `secrets`' vault writes it over `existing`
 /// (the variables the entry on disk carries): the other vaults' kept,
-/// this vault's replaced (dropped when it no longer has one).
-fn merged_env(existing: Vec<(String, String)>, secrets: &McpSecrets) -> Vec<(String, String)> {
+/// this vault's replaced (dropped when it no longer has one), and the
+/// data tree's variable set to what this app uses ([`with_data_dir`]).
+fn merged_env(
+    existing: Vec<(String, String)>,
+    secrets: &McpSecrets,
+    data_dir: Option<&std::path::Path>,
+) -> Vec<(String, String)> {
     let mine = [&secrets.names.token, &secrets.names.password];
     let mut env: Vec<(String, String)> =
         existing.into_iter().filter(|(name, _)| !mine.contains(&name)).collect();
     env.extend(secrets.pairs());
-    env
+    with_data_dir(env, data_dir)
+}
+
+/// `vars` with `ORYXIS_DATA_DIR` naming `data_dir`, or without it when
+/// `None`. The client spawns `oryxis-mcp` from `<tree>/bin`, where
+/// nothing tells it which tree that is: with no variable it reads the
+/// profile's `.oryxis`, so an app running on another tree (a portable
+/// `data` folder, issue #271) has to say so in the entry, or the server
+/// would serve other vaults and post its sudo requests where the app
+/// never looks. The tree belongs to the app that WRITES the entry: one
+/// running on the profile's tree takes a stale variable out.
+fn with_data_dir(mut vars: Vec<(String, String)>, data_dir: Option<&std::path::Path>) -> Vec<(String, String)> {
+    vars.retain(|(name, _)| name != oryxis_core::paths::DATA_DIR_ENV);
+    if let Some(dir) = data_dir {
+        vars.push((oryxis_core::paths::DATA_DIR_ENV.to_string(), dir.display().to_string()));
+    }
+    vars
+}
+
+/// The tree this app tells a spawned `oryxis-mcp` about, `None` on the
+/// profile's own `.oryxis`.
+fn children_data_dir() -> Option<std::path::PathBuf> {
+    oryxis_core::paths::data_dir_for_children()
 }
 
 /// The variables an `oryxis` entry already carries: its `env` block, or
@@ -197,7 +231,8 @@ fn cmd_escape(value: &str) -> String {
 /// therefore never reaches `oryxis-mcp.exe`: the token gate sees an
 /// empty token and rejects every call with "token mismatch". (The
 /// binary still resolves the correct Windows vault via the interop
-/// user's profile, so the token is the only thing missing.)
+/// user's profile, so the token is the only thing missing; an app on a
+/// portable `data` folder sends `ORYXIS_DATA_DIR` the same way.)
 ///
 /// When a token is set we launch through `cmd.exe`, which rebuilds the
 /// Windows environment, and inject the token Windows-side with `set`
@@ -255,14 +290,20 @@ fn wsl_entry(vars: &[(String, String)]) -> serde_json::Value {
 /// `vault_pw` is the master password of a password-protected vault,
 /// embedded only after the user confirmed it in the setup panel.
 pub(crate) fn mcp_config_snippet(client: McpClient, secrets: &McpSecrets) -> String {
-    mcp_clients::render_snippet(client.format(), &native_entry(&secrets.pairs()))
+    mcp_clients::render_snippet(
+        client.format(),
+        &native_entry(&with_data_dir(secrets.pairs(), children_data_dir().as_deref())),
+    )
 }
 
 /// Same as [`mcp_config_snippet`] but for a client running *inside* a
 /// WSL distro on a Windows host; the Windows app produces this so the
 /// user doesn't have to assemble the cmd.exe wrapper by hand.
 pub(crate) fn mcp_config_snippet_wsl(client: McpClient, secrets: &McpSecrets) -> String {
-    mcp_clients::render_snippet(client.format(), &wsl_entry(&secrets.pairs()))
+    mcp_clients::render_snippet(
+        client.format(),
+        &wsl_entry(&with_data_dir(secrets.pairs(), children_data_dir().as_deref())),
+    )
 }
 
 /// Cap on the token's bullet run, mirroring the token row so both
@@ -661,7 +702,7 @@ fn rewrite_entry_at(client: McpClient, path: &std::path::Path, secrets: &McpSecr
         String::new()
     };
     let current = mcp_clients::existing_entry(client.format(), &existing).map(|e| entry_env(&e)).unwrap_or_default();
-    let output = mcp_clients::merge_into(client.format(), &existing, native_entry(&merged_env(current, secrets)))
+    let output = mcp_clients::merge_into(client.format(), &existing, native_entry(&merged_env(current, secrets, children_data_dir().as_deref())))
         .map_err(|e| format!("{e} ({})", path.display()))?;
     write_config_private(path, &output)
 }
@@ -761,7 +802,7 @@ pub(crate) fn install_mcp_config_to_wsl(client: McpClient, secrets: &McpSecrets)
         let current = mcp_clients::existing_entry(client.format(), existing.trim())
             .map(|e| entry_env(&e))
             .unwrap_or_default();
-        let output = mcp_clients::merge_into(client.format(), existing.trim(), wsl_entry(&merged_env(current, secrets)))
+        let output = mcp_clients::merge_into(client.format(), existing.trim(), wsl_entry(&merged_env(current, secrets, children_data_dir().as_deref())))
             .map_err(|e| format!("{e} (WSL {path})"))?;
         wsl_write_home_file_private(&path, &output)?;
 
@@ -839,7 +880,7 @@ mod tests {
 
     use super::{
         cmd_escape, entry_env, mcp_config_snippet_display, merged_env, oryxis_mcp_entry, oryxis_mcp_entry_wsl,
-        parse_cmd_sets, McpClient, McpSecrets,
+        parse_cmd_sets, with_data_dir, wsl_mount_path, McpClient, McpSecrets,
     };
 
     fn vars(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
@@ -983,7 +1024,7 @@ mod tests {
             token: "t2".into(),
             vault_pw: Some("p2".into()),
         };
-        let merged = merged_env(on_disk, &work);
+        let merged = merged_env(on_disk, &work, None);
         assert_eq!(
             merged,
             vars(&[
@@ -993,9 +1034,45 @@ mod tests {
                 ("ORYXIS_VAULT_PASSWORD_WORK", "p2"),
             ])
         );
-        let revoked = merged_env(merged, &McpSecrets { vault_pw: None, ..work });
+        let revoked = merged_env(merged, &McpSecrets { vault_pw: None, ..work }, None);
         assert!(revoked.iter().all(|(k, _)| k != "ORYXIS_VAULT_PASSWORD_WORK"));
         assert!(revoked.iter().any(|(k, v)| k == "ORYXIS_VAULT_PASSWORD" && v == "p1"), "another vault's password stays");
+    }
+
+    /// An app on a portable `data` folder names its tree in the entry,
+    /// because the server it spawns from `<tree>/bin` would otherwise
+    /// read the profile's `.oryxis` (issue #271); an app on the profile's
+    /// tree takes a variable another copy left there out, and a rewrite
+    /// never doubles it.
+    #[test]
+    fn the_entry_names_the_apps_data_tree_when_it_is_not_the_profiles() {
+        let tree = std::path::Path::new("E:\\Oryxis\\data");
+        let portable = merged_env(vars(&[("ORYXIS_MCP_TOKEN", "old")]), &first("tok", None), Some(tree));
+        assert_eq!(portable, vars(&[("ORYXIS_MCP_TOKEN", "tok"), ("ORYXIS_DATA_DIR", "E:\\Oryxis\\data")]));
+        let again = merged_env(portable.clone(), &first("tok", None), Some(tree));
+        assert_eq!(again, portable, "a rewrite keeps one variable");
+        let profile = merged_env(portable, &first("tok", None), None);
+        assert_eq!(profile, vars(&[("ORYXIS_MCP_TOKEN", "tok")]));
+        // Alone, it still needs the WSL wrapper: an env block never
+        // crosses the boundary.
+        let v = oryxis_mcp_entry_wsl(WSL, WIN, &with_data_dir(Vec::new(), Some(tree)));
+        assert_eq!(v["args"][1], format!("set ORYXIS_DATA_DIR=E:\\Oryxis\\data&& {WIN}"));
+        let v = oryxis_mcp_entry("oryxis-mcp", &with_data_dir(Vec::new(), Some(tree)));
+        assert_eq!(v["env"]["ORYXIS_DATA_DIR"], "E:\\Oryxis\\data");
+    }
+
+    /// The WSL launch path follows any drive letter (a portable copy runs
+    /// from a USB key's), and leaves what it cannot place as written.
+    #[test]
+    fn the_wsl_path_follows_any_drive_letter() {
+        assert_eq!(wsl_mount_path(WIN), WSL);
+        assert_eq!(
+            wsl_mount_path("E:\\Oryxis\\data\\bin\\oryxis-mcp.exe"),
+            "/mnt/e/Oryxis/data/bin/oryxis-mcp.exe"
+        );
+        assert_eq!(wsl_mount_path("\\\\server\\share\\oryxis-mcp.exe"), "\\\\server\\share\\oryxis-mcp.exe");
+        assert_eq!(wsl_mount_path("1:\\x"), "1:\\x");
+        assert_eq!(wsl_mount_path("oryxis-mcp"), "oryxis-mcp");
     }
 
     /// What the WSL wrapper wrote is read back exactly, metacharacters

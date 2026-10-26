@@ -2781,6 +2781,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "Nie udało się otworzyć innego sejfu dla tego okna, więc nic nie zmieniono.",
         "vault_remove_title" => "Usunąć {name} z listy?",
         "vault_remove_body" => "Jego plik zostaje na miejscu; „Otwórz istniejący sejf…” przywróci go.",
+        "device_store_unreadable_title" => "Nie można odczytać ustawień urządzenia",
+        "device_store_unreadable_body" => "Oryxis uruchomił się z domyślnymi ustawieniami urządzenia i tylko pierwszym sejfem i nie nadpisze pliku, dopóki nie da się go odczytać. Popraw lub usuń plik, a następnie uruchom Oryxis ponownie.",
         "vault_file_filter" => "Sejf Oryxis",
         "vault_open_not_a_vault" => "Ten plik nie jest sejfem Oryxis z hasłem głównym.",
 _ => return None,

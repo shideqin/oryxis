@@ -302,8 +302,10 @@ mod imp {
         };
         use windows_sys::Win32::System::Threading::CreateMutexW;
 
-        let name: Vec<u16> = "Local\\oryxis-single-instance\0"
+        let tree = oryxis_core::paths::data_dir_for_children();
+        let name: Vec<u16> = super::instance_mutex_name(tree.as_deref())
             .encode_utf16()
+            .chain(std::iter::once(0))
             .collect();
         let h = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
         let already = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
@@ -522,6 +524,27 @@ mod imp {
 #[cfg(target_os = "windows")]
 pub use imp::*;
 
+/// The single-instance mutex's name for a data tree (`None`: the
+/// profile's `.oryxis`, the name every build before portable mode used).
+/// One primary, one tray PER TREE: the window registry, the deep-link
+/// queue and the tray's "Hidden windows" all live in the tree's
+/// `runtime` folder, so a portable copy started beside an installed one
+/// (issue #271) is its own primary rather than a tray-less child of an
+/// app whose registry it never writes to. Windows paths compare without
+/// case; the digest keeps the name inside what a kernel object name may
+/// hold (no `\` past the namespace).
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn instance_mutex_name(tree: Option<&std::path::Path>) -> String {
+    use sha2::{Digest as _, Sha256};
+    const PROFILE: &str = "Local\\oryxis-single-instance";
+    let Some(tree) = tree else {
+        return PROFILE.to_string();
+    };
+    let key = tree.to_string_lossy().trim_end_matches(['\\', '/']).to_lowercase();
+    let digest: String = Sha256::digest(key.as_bytes())[..8].iter().map(|b| format!("{b:02x}")).collect();
+    format!("{PROFILE}-{digest}")
+}
+
 /// Cross-platform stubs so call sites compile uniformly. On non-
 /// Windows targets the tray module is a no-op: `install` succeeds
 /// silently, polls return `None`. The settings UI also hides the
@@ -613,3 +636,22 @@ mod stub {
 
 #[cfg(not(target_os = "windows"))]
 pub use stub::*;
+
+#[cfg(test)]
+mod tests {
+    use super::instance_mutex_name;
+    use std::path::Path;
+
+    /// The profile's tree keeps the name older builds hold, so an update
+    /// running beside one still finds it; another tree gets its own,
+    /// the same for every spelling Windows treats as one folder.
+    #[test]
+    fn each_data_tree_has_its_own_instance_mutex() {
+        assert_eq!(instance_mutex_name(None), "Local\\oryxis-single-instance");
+        let usb = instance_mutex_name(Some(Path::new("E:\\Oryxis\\data")));
+        assert!(usb.starts_with("Local\\oryxis-single-instance-"));
+        assert_eq!(usb.matches('\\').count(), 1, "one backslash, after the namespace");
+        assert_eq!(usb, instance_mutex_name(Some(Path::new("e:\\oryxis\\DATA\\"))));
+        assert_ne!(usb, instance_mutex_name(Some(Path::new("F:\\Oryxis\\data"))));
+    }
+}

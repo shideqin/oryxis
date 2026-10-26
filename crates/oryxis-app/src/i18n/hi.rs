@@ -2787,6 +2787,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "इस विंडो के लिए कोई दूसरा वॉल्ट नहीं खुल सका, इसलिए कुछ नहीं बदला गया।",
         "vault_remove_title" => "{name} को सूची से हटाएँ?",
         "vault_remove_body" => "इसकी फ़ाइल वहीं रहेगी; \"मौजूदा वॉल्ट खोलें…\" से यह वापस आ जाएगा।",
+        "device_store_unreadable_title" => "डिवाइस सेटिंग्स पढ़ी नहीं जा सकीं",
+        "device_store_unreadable_body" => "Oryxis डिफ़ॉल्ट डिवाइस सेटिंग्स और केवल पहले वॉल्ट के साथ शुरू हुआ है, और जब तक फ़ाइल पढ़ी नहीं जा सकती, उसे अधिलेखित नहीं करेगा। फ़ाइल ठीक करें या हटाएँ, फिर Oryxis को दोबारा शुरू करें।",
         "vault_file_filter" => "Oryxis वॉल्ट",
         "vault_open_not_a_vault" => "यह फ़ाइल मास्टर पासवर्ड वाला Oryxis वॉल्ट नहीं है।",
 _ => return None,

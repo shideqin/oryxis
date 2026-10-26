@@ -93,6 +93,8 @@ shell. The auto-updater detects the install scope and downloads the
 matching installer. Windows binaries are Authenticode-signed (see
 [Code signing policy](#code-signing-policy)).
 
+- **Portable** (`oryxis-windows-*.zip`): unzip anywhere and run `oryxis.exe`; the auto-updater replaces the exe in place. Settings and vaults stay in `%USERPROFILE%\.oryxis` unless you create a folder named `data` next to `oryxis.exe`: then everything Oryxis keeps (device settings, the vault list, the vaults it creates, plugins, logs) lives in that folder and travels with it. Nothing is copied or moved for you: copy the contents of `%USERPROFILE%\.oryxis` into `data` to bring an existing setup along. A vault opened from another drive (a VeraCrypt volume) stays where it is, by its full path. Settings that name a program or a folder on this computer, the biometric unlock and the MCP client configs belong to each computer.
+
 </details>
 
 ## Highlights

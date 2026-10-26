@@ -2749,6 +2749,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "No se pudo abrir otro cofre para esta ventana, así que no se cambió nada.",
         "vault_remove_title" => "¿Quitar {name} de la lista?",
         "vault_remove_body" => "Su archivo se queda donde está; \"Abrir cofre existente…\" lo recupera.",
+        "device_store_unreadable_title" => "No se pudo leer la configuración del dispositivo",
+        "device_store_unreadable_body" => "Oryxis se inició con la configuración predeterminada del dispositivo y solo el primer cofre, y no sobrescribirá el archivo mientras no pueda leerse. Corríjalo o elimínelo y reinicie Oryxis.",
         "vault_file_filter" => "Cofre de Oryxis",
         "vault_open_not_a_vault" => "Ese archivo no es un cofre de Oryxis con contraseña maestra.",
 _ => return None,

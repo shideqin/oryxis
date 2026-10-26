@@ -2749,6 +2749,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "Für dieses Fenster ließ sich kein anderer Tresor öffnen, daher wurde nichts geändert.",
         "vault_remove_title" => "{name} aus der Liste entfernen?",
         "vault_remove_body" => "Seine Datei bleibt, wo sie ist; „Vorhandenen Tresor öffnen…“ holt ihn zurück.",
+        "device_store_unreadable_title" => "Geräteeinstellungen konnten nicht gelesen werden",
+        "device_store_unreadable_body" => "Oryxis wurde mit den Standard-Geräteeinstellungen und nur dem ersten Tresor gestartet und überschreibt die Datei nicht, solange sie nicht gelesen werden kann. Korrigieren oder entfernen Sie sie und starten Sie Oryxis neu.",
         "vault_file_filter" => "Oryxis-Tresor",
         "vault_open_not_a_vault" => "Diese Datei ist kein Oryxis-Tresor mit Master-Passwort.",
 _ => return None,

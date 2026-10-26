@@ -872,6 +872,7 @@ Five transports, one at a time, all carrying the same encrypted payload.
   primary/child IPC.
 - **Windows JumpList.** Recent hosts on the taskbar icon; right-click,
   pick, connected.
+- **Portable mode.** A folder named `data` next to the portable `oryxis.exe` holds the whole data tree (device settings, the vault list, vaults, plugins, logs), so the app and its configuration travel together on a USB key, while a vault on another volume (a VeraCrypt drive) is opened from where it lives. Nothing is migrated in silence, a settings file that cannot be read is reported at start and never written over, and a portable copy runs as its own instance beside an installed one; the MCP client entries it writes point the server at the same folder. Windows-verified only.
 - **Window memory.** Size, position, monitor, maximized and fullscreen
   state restored across launches.
 - **Truthful rendering.** A boot probe detects software rasterizers

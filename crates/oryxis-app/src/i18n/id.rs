@@ -2782,6 +2782,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "Tidak ada vault lain yang bisa dibuka untuk jendela ini, jadi tidak ada yang diubah.",
         "vault_remove_title" => "Hapus {name} dari daftar?",
         "vault_remove_body" => "Berkasnya tetap di tempatnya; \"Buka vault yang ada…\" mengembalikannya.",
+        "device_store_unreadable_title" => "Pengaturan perangkat tidak dapat dibaca",
+        "device_store_unreadable_body" => "Oryxis dimulai dengan pengaturan perangkat bawaan dan hanya vault pertama, dan tidak akan menimpa berkas itu selama berkas tidak dapat dibaca. Perbaiki atau hapus berkasnya, lalu mulai ulang Oryxis.",
         "vault_file_filter" => "Vault Oryxis",
         "vault_open_not_a_vault" => "Berkas itu bukan vault Oryxis yang punya kata sandi utama.",
 _ => return None,

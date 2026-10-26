@@ -532,7 +532,7 @@ impl VaultStore {
     /// that ignores `$HOME` / `%USERPROFILE%`; without the override
     /// the harness would read and write the REAL profile vault).
     /// Where `open_default` looks: `vault.db` in the app's own tree
-    /// (`ORYXIS_HOME` override included). The error screen names it and
+    /// (every override of `oryxis_core::paths` included). The error screen names it and
     /// the rebuild (`store::rebuild`) works on it.
     pub fn default_path() -> Option<std::path::PathBuf> {
         oryxis_core::paths::oryxis_dir().map(|dir| dir.join("vault.db"))

@@ -2787,6 +2787,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "לא ניתן היה לפתוח כספת אחרת לחלון הזה, ולכן דבר לא השתנה.",
         "vault_remove_title" => "להסיר את {name} מהרשימה?",
         "vault_remove_body" => "הקובץ שלה נשאר במקומו; \"פתיחת כספת קיימת…\" מחזירה אותה.",
+        "device_store_unreadable_title" => "לא ניתן היה לקרוא את הגדרות המכשיר",
+        "device_store_unreadable_body" => "Oryxis הופעל עם הגדרות המכשיר המוגדרות כברירת מחדל ועם הכספת הראשונה בלבד, ולא יכתוב על הקובץ כל עוד לא ניתן לקרוא אותו. תקנו או הסירו את הקובץ, ואז הפעילו מחדש את Oryxis.",
         "vault_file_filter" => "כספת Oryxis",
         "vault_open_not_a_vault" => "הקובץ הזה אינו כספת Oryxis עם סיסמה ראשית.",
 _ => return None,

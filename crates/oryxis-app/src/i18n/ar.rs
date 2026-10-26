@@ -2768,6 +2768,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "تعذّر فتح خزنة أخرى لهذه النافذة، لذلك لم يتغير شيء.",
         "vault_remove_title" => "إزالة {name} من القائمة؟",
         "vault_remove_body" => "يبقى ملفها في مكانه؛ ويعيدها \"فتح خزنة موجودة…\".",
+        "device_store_unreadable_title" => "تعذّرت قراءة إعدادات الجهاز",
+        "device_store_unreadable_body" => "بدأ Oryxis بإعدادات الجهاز الافتراضية وبالخزنة الأولى فقط، ولن يكتب فوق الملف ما دامت قراءته متعذّرة. أصلح الملف أو احذفه، ثم أعد تشغيل Oryxis.",
         "vault_file_filter" => "خزنة Oryxis",
         "vault_open_not_a_vault" => "هذا الملف ليس خزنة Oryxis لها كلمة مرور رئيسية.",
 _ => return None,

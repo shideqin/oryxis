@@ -2786,6 +2786,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "Pro toto okno se nepodařilo otevřít jiný trezor, takže se nic nezměnilo.",
         "vault_remove_title" => "Odebrat {name} ze seznamu?",
         "vault_remove_body" => "Jeho soubor zůstane na místě; „Otevřít existující trezor…“ ho vrátí.",
+        "device_store_unreadable_title" => "Nastavení zařízení nelze přečíst",
+        "device_store_unreadable_body" => "Oryxis se spustil s výchozím nastavením zařízení a jen s prvním trezorem a soubor nepřepíše, dokud ho nebude možné přečíst. Opravte nebo odstraňte soubor a poté Oryxis restartujte.",
         "vault_file_filter" => "Trezor Oryxis",
         "vault_open_not_a_vault" => "Tento soubor není trezor Oryxis s hlavním heslem.",
 _ => return None,

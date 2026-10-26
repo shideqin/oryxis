@@ -2782,6 +2782,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "Không mở được kho nào khác cho cửa sổ này, nên không có gì thay đổi.",
         "vault_remove_title" => "Xóa {name} khỏi danh sách?",
         "vault_remove_body" => "Tệp vẫn ở nguyên chỗ; \"Mở kho có sẵn…\" sẽ đưa nó trở lại.",
+        "device_store_unreadable_title" => "Không đọc được cài đặt thiết bị",
+        "device_store_unreadable_body" => "Oryxis đã khởi động với cài đặt thiết bị mặc định và chỉ kho đầu tiên, và sẽ không ghi đè tệp khi chưa đọc được nó. Hãy sửa hoặc xóa tệp, rồi khởi động lại Oryxis.",
         "vault_file_filter" => "Kho Oryxis",
         "vault_open_not_a_vault" => "Tệp đó không phải là kho Oryxis có mật khẩu chính.",
 _ => return None,

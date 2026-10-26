@@ -667,6 +667,23 @@ impl Oryxis {
                 action: None,
             });
         }
+        // A device file that cannot be read (it does not parse, or its
+        // medium went away: a portable `data` folder on a USB key) leaves
+        // this start on a fresh device's defaults and vault list, every
+        // write refused. Said at the start, with the file and the reason,
+        // so the vaults missing from the list are not taken for lost and
+        // the tree is never swapped for another in silence (issue #271).
+        if let Some(problem) = oryxis_vault::device::installed().and_then(|d| d.read_problem()) {
+            tracing::error!(error = %problem, "device store unreadable at start");
+            if app.error_dialog.is_none() {
+                app.error_dialog = Some(crate::state::ErrorDialog {
+                    title: crate::i18n::t("device_store_unreadable_title").to_string(),
+                    body: format!("{}\n\n{problem}", crate::i18n::t("device_store_unreadable_body")),
+                    link: None,
+                    action: None,
+                });
+            }
+        }
         // What follows is the boot vault's work; its answers must reach
         // that vault whichever one the window is on when they arrive.
         // Boot's tasks do not go through `update`, which is what tags

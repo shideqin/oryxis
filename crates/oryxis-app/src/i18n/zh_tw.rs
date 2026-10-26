@@ -2749,6 +2749,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "無法為此視窗開啟其他保險庫，因此未做任何變更。",
         "vault_remove_title" => "要從清單移除 {name} 嗎？",
         "vault_remove_body" => "其檔案會留在原處；可透過「開啟現有保險庫…」重新加入。",
+        "device_store_unreadable_title" => "無法讀取裝置設定",
+        "device_store_unreadable_body" => "Oryxis 已使用預設裝置設定啟動，且只有第一個保險庫；在該檔案可讀取之前不會覆寫它。請修正或移除該檔案，然後重新啟動 Oryxis。",
         "vault_file_filter" => "Oryxis 保險庫",
         "vault_open_not_a_vault" => "該檔案不是設有主密碼的 Oryxis 保險庫。",
 _ => return None,

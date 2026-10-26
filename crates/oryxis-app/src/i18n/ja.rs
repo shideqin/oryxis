@@ -2750,6 +2750,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "このウィンドウで開けるほかのボールトがなかったため、何も変更していません。",
         "vault_remove_title" => "{name} を一覧から削除しますか？",
         "vault_remove_body" => "ファイルはそのまま残ります。「既存のボールトを開く…」で戻せます。",
+        "device_store_unreadable_title" => "デバイス設定を読み込めませんでした",
+        "device_store_unreadable_body" => "Oryxis は既定のデバイス設定と最初のボールトだけで起動しました。ファイルが読み込めるようになるまで上書きはしません。ファイルを修正するか削除してから、Oryxis を再起動してください。",
         "vault_file_filter" => "Oryxis ボールト",
         "vault_open_not_a_vault" => "このファイルはマスターパスワードのある Oryxis ボールトではありません。",
 _ => return None,

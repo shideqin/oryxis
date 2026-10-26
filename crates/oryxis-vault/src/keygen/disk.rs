@@ -173,9 +173,10 @@ pub fn resolve_disk_key(
 /// `dirs`, for two reasons: `dirs::home_dir()` is a WinAPI call that
 /// ignores `$HOME` on Windows, and the headless harness relocates the
 /// home it sandboxes so a test run never reads the developer's real
-/// `~/.ssh`. Deliberately NOT `oryxis_core::paths::home_dir`, whose
-/// `ORYXIS_HOME` override governs the app's own data tree only: a
-/// portable vault must not relocate the user's SSH configuration.
+/// `~/.ssh`. Deliberately NOT `oryxis_core::paths`, whose overrides
+/// (`ORYXIS_HOME`, the portable `data` folder) govern the app's own data
+/// tree only: a portable vault must not relocate the user's SSH
+/// configuration.
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))

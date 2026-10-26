@@ -2791,6 +2791,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "vault_no_heir" => "No other vault could be opened for this window, so nothing was changed.",
         "vault_remove_title" => "Remove {name} from the list?",
         "vault_remove_body" => "Its file stays where it is; \"Open existing vault…\" brings it back.",
+        "device_store_unreadable_title" => "Device settings could not be read",
+        "device_store_unreadable_body" => "Oryxis started with the default device settings and its first vault only, and will not write over the file while it cannot be read. Fix or remove it, then restart Oryxis.",
         "vault_file_filter" => "Oryxis vault",
         "vault_open_not_a_vault" => "That file is not an Oryxis vault with a master password.",
         _ => "???",

@@ -2786,6 +2786,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "Δεν ήταν δυνατό να ανοίξει άλλο vault για αυτό το παράθυρο, οπότε δεν άλλαξε τίποτα.",
         "vault_remove_title" => "Αφαίρεση {name} από τη λίστα;",
         "vault_remove_body" => "Το αρχείο του μένει όπου είναι· το «Άνοιγμα υπάρχοντος vault…» το επαναφέρει.",
+        "device_store_unreadable_title" => "Δεν ήταν δυνατή η ανάγνωση των ρυθμίσεων της συσκευής",
+        "device_store_unreadable_body" => "Το Oryxis ξεκίνησε με τις προεπιλεγμένες ρυθμίσεις συσκευής και μόνο το πρώτο vault, και δεν θα αντικαταστήσει το αρχείο όσο δεν μπορεί να διαβαστεί. Διορθώστε ή αφαιρέστε το αρχείο και επανεκκινήστε το Oryxis.",
         "vault_file_filter" => "Vault του Oryxis",
         "vault_open_not_a_vault" => "Αυτό το αρχείο δεν είναι vault του Oryxis με κύριο κωδικό.",
 _ => return None,

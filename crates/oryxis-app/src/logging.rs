@@ -292,6 +292,12 @@ pub(crate) fn environment_report(renderer: Option<&(String, String)>) -> String 
             "system"
         }
     ));
+    // Where the data tree came from, never the path (it carries the
+    // user's name): a portable `data` folder or an override explains a
+    // report of vaults "gone" after a move (issue #271).
+    if let Some(dir) = oryxis_core::paths::data_dir() {
+        lines.push(format!("Data: {}", dir.source.label()));
+    }
     if let Some((backend, adapter)) = renderer {
         lines.push(format!("Renderer: {backend}, {adapter}"));
     }

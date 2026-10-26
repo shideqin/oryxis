@@ -2788,6 +2788,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "vault_no_heir" => "เปิด Vault อื่นให้หน้าต่างนี้ไม่ได้ จึงไม่มีการเปลี่ยนแปลงใด",
         "vault_remove_title" => "นำ {name} ออกจากรายการหรือไม่",
         "vault_remove_body" => "ไฟล์ยังอยู่ที่เดิม และ \"เปิด Vault ที่มีอยู่…\" จะนำกลับมาได้",
+        "device_store_unreadable_title" => "อ่านการตั้งค่าอุปกรณ์ไม่ได้",
+        "device_store_unreadable_body" => "Oryxis เริ่มทำงานด้วยการตั้งค่าอุปกรณ์เริ่มต้นและ Vault แรกเท่านั้น และจะไม่เขียนทับไฟล์ตราบใดที่ยังอ่านไม่ได้ แก้ไขหรือลบไฟล์ แล้วเริ่ม Oryxis ใหม่",
         "vault_file_filter" => "Vault ของ Oryxis",
         "vault_open_not_a_vault" => "ไฟล์นี้ไม่ใช่ Vault ของ Oryxis ที่มีรหัสผ่านหลัก",
 _ => return None,
