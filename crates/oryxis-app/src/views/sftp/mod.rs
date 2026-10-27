@@ -104,6 +104,15 @@ impl Oryxis {
             }
             panes_area = panes_area.push(strip.boxed());
         }
+        // Open / Edit downloads this surface started, past their first
+        // second (`EditFetch::shown`). Pushed after the panes, so a strip
+        // coming and going leaves their widget state where it was.
+        let owner = self.current_sftp_owner();
+        for fetch in self.edit_fetches.iter().filter(|f| {
+            f.shown() && owner.is_some_and(|o| f.surface == Some(crate::state::EditFetchSurface::Sftp(o)))
+        }) {
+            panes_area = panes_area.push(edit_fetch_strip(fetch, false));
+        }
 
         // Footer: the optional message-log panel (FileZilla-style) above a
         // always-visible thin bar carrying the log toggle. The panes own the

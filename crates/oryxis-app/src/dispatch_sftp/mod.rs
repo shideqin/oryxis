@@ -206,6 +206,8 @@ impl Oryxis {
             | SftpMessage::SftpEditPromptChoice(..)
             | SftpMessage::SftpEditReopenChoice(..)
             | SftpMessage::SftpEditToast(..)
+            | SftpMessage::SftpEditFetchEnded(..)
+            | SftpMessage::SftpEditFetchCancel(..)
             | SftpMessage::SftpEditWatchUploadDone(..)
             | SftpMessage::SftpShowProperties(..)
             | SftpMessage::SftpPropertiesLoaded(..)

@@ -514,7 +514,10 @@ impl Oryxis {
         // panes, not on the tab. Missing them here would leave the strip's
         // border and the sidebar's own bar both frozen at whatever value
         // the last repaint happened to catch.
+        // An Open / Edit download in flight rides the same tick: its strip
+        // appears after a second and its bar moves with the counter.
         if self.cur_sftp().transfer.state.is_some()
+            || !self.edit_fetches.is_empty()
             || self.sftp_tabs.iter().any(|t| t.state.transfer.state.is_some())
             || self.tabs.iter().any(|t| {
                 t.files_state.transfer.state.is_some()

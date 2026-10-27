@@ -114,6 +114,31 @@ pub(crate) fn transfer_progress_strip<'a>(
     )
 }
 
+/// An Open / Edit download's strip (`EditFetch`), once it has run long
+/// enough to show (`EditFetch::shown`): the file streaming into its temp
+/// copy, and the Cancel that drops it.
+pub(crate) fn edit_fetch_strip<'a>(fetch: &crate::state::EditFetch, narrow: bool) -> Element<'a, Message> {
+    let done = fetch.bytes_done.load(std::sync::atomic::Ordering::Relaxed);
+    let total = fetch.bytes_total.load(std::sync::atomic::Ordering::Relaxed);
+    let (count, pct) = if total > 0 {
+        let done = done.min(total);
+        (
+            format!("{} / {}", format_size(done), format_size(total)),
+            Some((done as f32 / total as f32).clamp(0.0, 1.0)),
+        )
+    } else {
+        (format_size(done), None)
+    };
+    progress_strip(
+        format!("{} {}", t("transfer_downloading"), fetch.label),
+        count,
+        None,
+        pct,
+        Message::Sftp(SftpMessage::SftpEditFetchCancel(fetch.id)),
+        narrow,
+    )
+}
+
 /// The transfer strip itself, for anything that moves bytes: the SFTP
 /// queue (`transfer_progress_strip`) and a pane's own transfer, a ZMODEM
 /// session or a file dropped on the terminal (`pane_transfer_strip`).

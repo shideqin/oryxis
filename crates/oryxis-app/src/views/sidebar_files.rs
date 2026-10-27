@@ -474,6 +474,20 @@ impl Oryxis {
             );
             col = col.push(strip);
         }
+        // Open / Edit downloads this browser started, past their first
+        // second (`EditFetch::shown`), under the transfer strip and
+        // recorded after it, in drawing order.
+        for fetch in self.edit_fetches.iter().filter(|f| {
+            f.shown() && f.surface == Some(crate::state::EditFetchSurface::SidebarFiles(pane_id))
+        }) {
+            let cancel = Message::Sftp(SftpMessage::SftpEditFetchCancel(fetch.id));
+            col = col.push(self.sidebar_nav_slot(
+                crate::keynav::SidebarRow::button(cancel),
+                stab,
+                0.0,
+                crate::views::sftp::edit_fetch_strip(fetch, true),
+            ));
+        }
         let stack: Element<'_, Message> = col.boxed();
         // Clicks on dead space blur the inline edits (owner ask: "blur
         // should exit the path input"). MouseArea only fires when no

@@ -402,12 +402,14 @@ impl Oryxis {
                 }
                 .or_else(|| self.active_pane_mut().map(|p| p.label.clone()))
                 .unwrap_or_default();
+                let surface = self.active_pane_mut().map(|p| crate::state::EditFetchSurface::SidebarFiles(p.id));
                 self.start_edit_watch(
                     crate::state::SftpPaneSide::Right,
                     path,
                     crate::state::SftpEditOpener::OsDefault,
                     Some((client, host)),
                     true,
+                    surface,
                 )
             }
             SidebarFilesMessage::SidebarFilesOpToast(text) => {

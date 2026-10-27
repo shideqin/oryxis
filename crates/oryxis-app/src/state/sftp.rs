@@ -885,6 +885,46 @@ pub(crate) struct EditReopenPrompt {
     /// Report failures of the replayed open as a toast instead of a pane
     /// error banner (the sidebar Files browser has no banner).
     pub to_toast: bool,
+    /// Where the replayed download draws its progress.
+    pub surface: Option<EditFetchSurface>,
+}
+
+/// The surface an Open / Edit download draws its progress on: the
+/// sidebar Files browser of a pane, or the dual-pane SFTP surface of an
+/// owner (`current_sftp_owner`: a standalone SFTP tab or a Files-mode
+/// terminal tab).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EditFetchSurface {
+    SidebarFiles(uuid::Uuid),
+    Sftp(uuid::Uuid),
+}
+
+/// How long an Open / Edit download runs before its strip shows. A
+/// small file opens before a strip could be read, and one that flashed
+/// for a frame on every open would be noise.
+pub(crate) const EDIT_FETCH_SHOW_AFTER: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// An Open / Edit download in flight: the remote file streaming into its
+/// temp copy before the application opens it. Cancel drops it, and with
+/// it the task (`_task` aborts on drop).
+pub(crate) struct EditFetch {
+    pub id: u64,
+    /// Basename shown on the strip.
+    pub label: String,
+    pub temp_path: std::path::PathBuf,
+    pub surface: Option<EditFetchSurface>,
+    pub started: std::time::Instant,
+    pub bytes_done: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// The remote size once the stat answered, 0 before.
+    pub bytes_total: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    pub _task: iced::task::Handle,
+}
+
+impl EditFetch {
+    /// Whether the strip is drawn yet (`EDIT_FETCH_SHOW_AFTER`).
+    pub(crate) fn shown(&self) -> bool {
+        self.started.elapsed() >= EDIT_FETCH_SHOW_AFTER
+    }
 }
 
 /// A button of the reopen-or-redownload dialog.

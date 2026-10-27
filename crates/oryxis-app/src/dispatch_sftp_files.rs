@@ -276,12 +276,14 @@ impl Oryxis {
                 // asks whether to send the file back (FileZilla model);
                 // nothing about this flow blocks navigation.
                 self.sftp.row_menu = None;
+                let surface = self.current_sftp_owner().map(crate::state::EditFetchSurface::Sftp);
                 return Ok(self.start_edit_watch(
                     side,
                     remote_path,
                     crate::state::SftpEditOpener::OsDefault,
                     None,
                     false,
+                    surface,
                 ));
             }
             SftpMessage::SftpEditWatchTick => {
@@ -343,7 +345,8 @@ impl Oryxis {
             }
             SftpMessage::SftpStartEditWith(side, remote_path, opener) => {
                 self.sftp.close_menus();
-                return Ok(self.start_edit_watch(side, remote_path, opener, None, false));
+                let surface = self.current_sftp_owner().map(crate::state::EditFetchSurface::Sftp);
+                return Ok(self.start_edit_watch(side, remote_path, opener, None, false, surface));
             }
             SftpMessage::SftpToggleOpenGroup => {
                 if let Some(menu) = self.sftp.row_menu.as_mut() {
@@ -505,6 +508,7 @@ impl Oryxis {
                             prompt.opener,
                             Some((prompt.client, prompt.host)),
                             prompt.to_toast,
+                            prompt.surface,
                         ));
                     }
                     C::Cancel => {}
@@ -512,6 +516,23 @@ impl Oryxis {
             }
             SftpMessage::SftpEditToast(text) => {
                 return Ok(self.show_toast_secs(text, 5));
+            }
+            SftpMessage::SftpEditFetchEnded(id, ended) => {
+                self.edit_fetches.retain(|f| f.id != id);
+                return Ok(Task::done(*ended));
+            }
+            SftpMessage::SftpEditFetchCancel(id) => {
+                // Dropping the entry aborts its task; the scratch file the
+                // download was writing goes with it.
+                if let Some(at) = self.edit_fetches.iter().position(|f| f.id == id) {
+                    let fetch = self.edit_fetches.remove(at);
+                    let temp = fetch.temp_path.clone();
+                    drop(fetch);
+                    return Ok(Task::perform(
+                        async move { oryxis_ssh::SftpClient::discard_download_scratch(&temp).await },
+                        |()| Message::NoOp,
+                    ));
+                }
             }
             SftpMessage::SftpEditWatchUploadDone(temp_path, result) => {
                 // The watch may live on any surface (a parked tab's own
@@ -570,6 +591,7 @@ impl Oryxis {
         opener: crate::state::SftpEditOpener,
         channel: Option<(oryxis_ssh::SftpClient, String)>,
         to_toast: bool,
+        surface: Option<crate::state::EditFetchSurface>,
     ) -> Task<Message> {
         // The configured editor resolves NOW so an unset setting fails with
         // guidance instead of a broken spawn later.
@@ -639,22 +661,39 @@ impl Oryxis {
                     opener,
                     client,
                     to_toast,
+                    surface,
                 });
                 return Task::none();
             }
             self.take_edit_watch(&temp_path);
         }
         let watch_client = client.clone();
-        Task::perform(
+        let (basename, temp_path) = crate::util::edit_temp_file(&remote_path);
+        let bytes_done = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let bytes_total = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        self.edit_fetch_seq += 1;
+        let id = self.edit_fetch_seq;
+        let (done, total, label, temp) =
+            (bytes_done.clone(), bytes_total.clone(), basename.clone(), temp_path.clone());
+        let (task, handle) = Task::perform(
             async move {
-                let (basename, temp_path) = crate::util::edit_temp_file(&remote_path);
-                let bytes = client
-                    .read_file(&remote_path)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                tokio::fs::write(&temp_path, &bytes)
-                    .await
-                    .map_err(|e| format!("write temp: {e}"))?;
+                // Streamed into the temp copy with a live counter, never
+                // read whole into memory: a large file shows its strip and
+                // can be cancelled. The download lands in a scratch file
+                // renamed into place only once complete, and a scratch
+                // left by a failure is removed here: an edit copy is never
+                // resumed.
+                let fetched = async {
+                    let size = client.stat(&remote_path).await?.size;
+                    total.store(size, std::sync::atomic::Ordering::Relaxed);
+                    client.download_to_progress(&remote_path, &temp, Some(size), Some(done)).await
+                }
+                .await;
+                if let Err(e) = fetched {
+                    oryxis_ssh::SftpClient::discard_download_scratch(&temp).await;
+                    return Err(e.to_string());
+                }
+                let temp_path = temp;
                 // Tighten temp file perms to 0600: the file holds plaintext
                 // remote contents and shouldn't be world-readable on a
                 // shared system. Default umask often leaves files at 0644.
@@ -676,7 +715,7 @@ impl Oryxis {
                     client: Some(watch_client),
                     remote_path,
                     temp_path,
-                    label: basename,
+                    label,
                     host,
                     opener,
                     initial_mtime,
@@ -684,13 +723,28 @@ impl Oryxis {
                     uploading: false,
                 })
             },
-            move |result| match result {
-                Ok(session) => Message::Sftp(SftpMessage::SftpEditWatchReady(session)),
-                // A paneless caller (sidebar) has no error banner to fill.
-                Err(e) if to_toast => Message::Sftp(SftpMessage::SftpEditToast(e)),
-                Err(e) => Message::Sftp(SftpMessage::SftpOpResult(side, e, true)),
+            move |result| {
+                let ended = match result {
+                    Ok(session) => Message::Sftp(SftpMessage::SftpEditWatchReady(session)),
+                    // A paneless caller (sidebar) has no error banner to fill.
+                    Err(e) if to_toast => Message::Sftp(SftpMessage::SftpEditToast(e)),
+                    Err(e) => Message::Sftp(SftpMessage::SftpOpResult(side, e, true)),
+                };
+                Message::Sftp(SftpMessage::SftpEditFetchEnded(id, Box::new(ended)))
             },
         )
+        .abortable();
+        self.edit_fetches.push(crate::state::EditFetch {
+            id,
+            label: basename,
+            temp_path,
+            surface,
+            started: std::time::Instant::now(),
+            bytes_done,
+            bytes_total,
+            _task: handle.abort_on_drop(),
+        });
+        task
     }
 
     /// Live watch for `(host, remote_path)` on ANY surface: the hoisted

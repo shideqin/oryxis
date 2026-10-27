@@ -287,6 +287,11 @@ pub enum SftpMessage {
     /// Surface an edit-flow message as a toast. Used by the paths that
     /// have no pane to report into (a relaunched opener, sidebar edits).
     SftpEditToast(String),
+    /// An Open / Edit download ended (`EditFetch::id`): drop its strip,
+    /// then run what it ended with.
+    SftpEditFetchEnded(u64, Box<crate::app::Message>),
+    /// Cancel an Open / Edit download from its strip.
+    SftpEditFetchCancel(u64),
     /// A watch upload finished: re-arm the entry (keyed by temp path)
     /// with the temp mtime captured at upload time, or surface the error.
     SftpEditWatchUploadDone(std::path::PathBuf, Result<std::time::SystemTime, String>),

@@ -368,6 +368,8 @@ impl Oryxis {
                 pending_console_purpose: false,
                 sftp_click_gen: 0,
                 sftp_edit_reopen: None,
+                edit_fetches: Vec::new(),
+                edit_fetch_seq: 0,
                 cmd_history_search: String::new(),
                 snippet_context_menu: None,
                 card_context_menu: None,

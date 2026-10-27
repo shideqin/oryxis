@@ -545,6 +545,13 @@ pub struct Oryxis {
     /// from the sidebar Files browser, which has no SFTP state at all,
     /// and a parked dialog would strand unanswered.
     pub(crate) sftp_edit_reopen: Option<crate::state::EditReopenPrompt>,
+    /// Open / Edit downloads in flight, each drawing its strip on the
+    /// surface that asked (`EditFetch::surface`) once it has run a while.
+    /// App-wide like `sftp_edit_reopen`: the sidebar asker has no SFTP
+    /// state to hold one.
+    pub(crate) edit_fetches: Vec<crate::state::EditFetch>,
+    /// Source of `EditFetch::id`.
+    pub(crate) edit_fetch_seq: u64,
     /// Filter text of the sidebar History tab's search field (distinct
     /// from `history_search`, which filters the session-logs view).
     pub(crate) cmd_history_search: String,
