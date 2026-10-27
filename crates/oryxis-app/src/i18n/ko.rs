@@ -1069,6 +1069,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server_desc" => "AI 어시스턴트가 MCP 프로토콜을 통해 호스트에 접근할 수 있도록 합니다",
         "mcp_allow_writes" => "MCP 서버가 호스트를 추가하고 편집하도록 허용",
         "mcp_allow_writes_desc" => "AI 어시스턴트가 MCP로 호스트를 만들고 필드를 바꿀 수 있게 합니다(create_host, update_host). 폴더는 만들지 않고, 프록시는 설정하지 않으며, 비밀번호는 쓰기만 됩니다. 기본값은 꺼짐.",
+        "mcp_allow_transfers" => "MCP 서버가 호스트로 파일을 보내도록 허용",
+        "mcp_allow_transfers_desc" => "AI 어시스턴트가 이 컴퓨터의 파일을 SFTP로 호스트에 보낼 수 있게 합니다(sftp_upload). 지정된 파일을 읽으므로 자체 디스크 접근 권한이 없는 클라이언트도 이를 통해 읽을 수 있습니다. 호스트에 이미 있는 파일은 요청할 때만 교체됩니다. 기본값은 꺼짐입니다.",
         "mcp_setup_guide" => "설정 가이드",
         "mcp_copied" => "복사됨!",
         "mcp_info_title" => "MCP 서버 설정",

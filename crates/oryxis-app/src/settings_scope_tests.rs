@@ -29,7 +29,7 @@ const VAULT_KEYS: &[&str] = &[
     "host_monitoring_seeded", "host_view_mode", "hosts_sort", "inactive_tab_style",
     "install_presets_seeded", "keepalive_default_v2_applied", "keepalive_interval", "keys_sort",
     "keyword_highlight", "layout_mode", "logs_retention", "manual_lock_action",
-    "max_reconnect_attempts", "mcp_config_vault_pw", "mcp_server_allow_writes",
+    "max_reconnect_attempts", "mcp_config_vault_pw", "mcp_server_allow_transfers", "mcp_server_allow_writes",
     "mcp_server_enabled", "mcp_server_token", "monitor_all_hosts", "monitor_dash_list_view",
     "monitor_dash_live_only", "monitor_interval_seconds", "monitor_status_bar", "nav_orientation",
     "nav_rail_expanded", "network_tools_enabled", "open_tabs", "open_tabs_active", "os_detection",

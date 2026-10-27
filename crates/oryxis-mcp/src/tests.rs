@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn tool_definitions_lists_every_tool() {
         let tools = tool_definitions();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"list_vaults"));
         for tool in tools.iter().filter(|t| t["name"] != "list_vaults") {
@@ -98,8 +98,197 @@ mod tests {
         assert!(names.contains(&"list_hosts"));
         assert!(names.contains(&"get_host"));
         assert!(names.contains(&"ssh_execute"));
+        assert!(names.contains(&"sftp_upload"));
         assert!(names.contains(&"list_groups"));
         assert!(names.contains(&"list_keys"));
+    }
+
+    /// `sftp_upload` end to end against a real sshd, named the way
+    /// `oryxis-ssh`'s SFTP suite names one: `ORYXIS_TEST_SSH=user@host:port`
+    /// and `ORYXIS_TEST_SSH_KEY=<private key>` (a user-mode `sshd -f` on a
+    /// high port is enough). Ignored by default:
+    /// `cargo test -p oryxis-mcp sftp_upload_ -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn sftp_upload_sends_a_file_whole_and_replaces_one_only_when_asked() {
+        use oryxis_core::models::connection::AuthMethod;
+
+        let target = std::env::var("ORYXIS_TEST_SSH").expect("ORYXIS_TEST_SSH=user@host:port");
+        let key_path = std::env::var("ORYXIS_TEST_SSH_KEY").expect("ORYXIS_TEST_SSH_KEY=<private key>");
+        let (user, rest) = target.split_once('@').unwrap();
+        let (host, port) = rest.rsplit_once(':').unwrap();
+        let pem = std::fs::read_to_string(&key_path).unwrap();
+
+        let server = Server::new(test_vault());
+        server.vault().set_setting(crate::transfer::ALLOW_TRANSFERS_SETTING, "true").unwrap();
+        let key = SshKey::new("qa", KeyAlgorithm::Ed25519);
+        server.vault().save_key(&key, Some(&pem)).unwrap();
+        let mut conn = Connection::new("qa", host);
+        conn.port = port.parse().unwrap();
+        conn.username = Some(user.to_string());
+        conn.auth_method = AuthMethod::Key;
+        conn.key_id = Some(key.id);
+        conn.mcp_enabled = true;
+        server.vault().save_connection(&conn, None).unwrap();
+
+        async fn call(server: &Server, tool: &str, args: Value) -> (bool, String) {
+            let params = json!({ "name": tool, "arguments": args });
+            // Boxed: every call's state inline would overflow the test
+            // thread's stack in a debug build.
+            let resp = Box::pin(server.handle_request("tools/call", json!(1), Some(&params), no_cancel())).await;
+            let result = resp.result.unwrap();
+            (
+                result["isError"].as_bool().unwrap_or(false),
+                result["content"][0]["text"].as_str().unwrap().to_string(),
+            )
+        }
+
+        // 3 MiB plus a tail, so the windowed path and a partial last
+        // window both run.
+        let bytes: Vec<u8> = (0..(3 * 1024 * 1024 + 4099)).map(|i| (i % 251) as u8).collect();
+        let dir = tempfile::tempdir().unwrap();
+        let local = dir.path().join("payload.bin");
+        std::fs::write(&local, &bytes).unwrap();
+        let remote = format!("/tmp/oryxis-mcp-upload-{}.bin", uuid::Uuid::new_v4().simple());
+        let upload = |overwrite: bool| {
+            json!({
+                "id": conn.id.to_string(),
+                "local_path": local.to_string_lossy(),
+                "remote_path": remote,
+                "overwrite": overwrite,
+            })
+        };
+
+        // A server not yet trusted is refused with what to pin.
+        let (err, text) = call(&server, "sftp_upload", upload(false)).await;
+        if err {
+            assert!(text.contains("Host key not trusted"), "{text}");
+            let refusal = server.served()[0]
+                .refusals
+                .for_endpoints(&[(host.to_string(), conn.port)])
+                .pop()
+                .expect("the refusal was recorded");
+            let (err, text) = call(
+                &server,
+                "accept_host_key",
+                json!({
+                    "host": refusal.host, "port": refusal.port,
+                    "key_type": refusal.key_type, "fingerprint": refusal.fingerprint,
+                }),
+            )
+            .await;
+            assert!(!err, "{text}");
+            let (err, text) = call(&server, "sftp_upload", upload(false)).await;
+            assert!(!err, "{text}");
+        }
+
+        let (err, text) = call(
+            &server,
+            "ssh_execute",
+            json!({ "id": conn.id.to_string(), "command": format!("wc -c < {remote}; tail -c 3 {remote} | od -An -tu1") }),
+        )
+        .await;
+        assert!(!err, "{text}");
+        let out: Value = serde_json::from_str(&text).unwrap();
+        let stdout = out["stdout"].as_str().unwrap();
+        let tail: Vec<String> = bytes[bytes.len() - 3..].iter().map(u8::to_string).collect();
+        assert!(stdout.starts_with(&format!("{}\n", bytes.len())), "{stdout}");
+        assert_eq!(stdout.lines().nth(1).unwrap().split_whitespace().collect::<Vec<_>>(), tail);
+
+        // Already there: refused unless asked, and a replacement keeps the
+        // bits the file had.
+        let (err, text) = call(&server, "sftp_upload", upload(false)).await;
+        assert!(err && text.contains("overwrite: true"), "{text}");
+        let (err, text) = call(
+            &server,
+            "ssh_execute",
+            json!({ "id": conn.id.to_string(), "command": format!("chmod 640 {remote}") }),
+        )
+        .await;
+        assert!(!err, "{text}");
+        let (err, text) = call(&server, "sftp_upload", upload(true)).await;
+        assert!(!err, "{text}");
+        let answer: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(answer["replaced"], true);
+        assert_eq!(answer["mode"], "640");
+        assert_eq!(answer["bytes"], bytes.len());
+
+        // A directory as the destination keeps the local name.
+        let (err, text) = call(
+            &server,
+            "sftp_upload",
+            json!({ "id": conn.id.to_string(), "local_path": local.to_string_lossy(), "remote_path": "/tmp/" }),
+        )
+        .await;
+        let landed = serde_json::from_str::<Value>(&text).ok();
+        let _ = call(
+            &server,
+            "ssh_execute",
+            json!({ "id": conn.id.to_string(), "command": format!("rm -f {remote} /tmp/payload.bin") }),
+        )
+        .await;
+        assert!(!err, "{text}");
+        assert_eq!(landed.unwrap()["remote_path"], "/tmp/payload.bin");
+
+        // A directory that refuses new files over a target this login can
+        // write takes the bytes in place, and says so.
+        let locked = format!("/tmp/oryxis-mcp-locked-{}", uuid::Uuid::new_v4().simple());
+        let (err, text) = call(
+            &server,
+            "ssh_execute",
+            json!({ "id": conn.id.to_string(), "command": format!("mkdir {locked} && : > {locked}/f && chmod 666 {locked}/f && chmod 555 {locked}") }),
+        )
+        .await;
+        assert!(!err, "{text}");
+        let (err, text) = call(
+            &server,
+            "sftp_upload",
+            json!({ "id": conn.id.to_string(), "local_path": local.to_string_lossy(), "remote_path": format!("{locked}/f"), "overwrite": true }),
+        )
+        .await;
+        let in_place = serde_json::from_str::<Value>(&text).ok();
+        let (_, size) = call(
+            &server,
+            "ssh_execute",
+            json!({ "id": conn.id.to_string(), "command": format!("wc -c < {locked}/f; chmod 755 {locked}; rm -rf {locked}") }),
+        )
+        .await;
+        assert!(!err, "{text}");
+        let in_place = in_place.unwrap();
+        assert_eq!(in_place["in_place"], true, "{in_place}");
+        assert!(in_place.get("mode").is_none(), "a file written in place keeps its bits untouched");
+        let size: Value = serde_json::from_str(&size).unwrap();
+        assert!(size["stdout"].as_str().unwrap().starts_with(&bytes.len().to_string()), "{size}");
+
+        // Cancelled mid-flight: nothing under the name, no scratch left.
+        let big = dir.path().join("big.bin");
+        std::fs::File::create(&big).unwrap().set_len(1 << 30).unwrap();
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        let params = json!({ "name": "sftp_upload", "arguments": {
+            "id": conn.id.to_string(), "local_path": big.to_string_lossy(), "remote_path": remote,
+        }});
+        let flip = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let _ = cancel_tx.send(true);
+        });
+        let resp = Box::pin(server.handle_request("tools/call", json!(2), Some(&params), cancel_rx)).await;
+        flip.await.unwrap();
+        let text = resp.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("cancelled") && text.contains("nothing was written"), "{text}");
+        let (err, text) = call(
+            &server,
+            "ssh_execute",
+            json!({ "id": conn.id.to_string(), "command": format!("ls -a /tmp | grep -c oryxis-mcp-upload- ; ls {remote} 2>&1") }),
+        )
+        .await;
+        assert!(!err, "{text}");
+        let out: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(out["stdout"].as_str().unwrap().lines().next(), Some("0"), "{text}");
+
+        // Switched off, the tool refuses before touching anything.
+        server.vault().set_setting(crate::transfer::ALLOW_TRANSFERS_SETTING, "false").unwrap();
+        let (err, text) = call(&server, "sftp_upload", upload(true)).await;
+        assert!(err && text.contains("File transfers over MCP are off"), "{text}");
     }
 
     #[tokio::test]

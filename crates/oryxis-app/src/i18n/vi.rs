@@ -1069,6 +1069,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server_desc" => "Cho phép trợ lý AI truy cập máy chủ của bạn qua giao thức MCP",
         "mcp_allow_writes" => "Cho phép máy chủ MCP thêm và sửa host",
         "mcp_allow_writes_desc" => "Cho phép trợ lý AI tạo host và thay đổi các trường qua MCP (create_host, update_host). Không bao giờ tạo thư mục, không bao giờ đặt proxy, mật khẩu chỉ được ghi vào. Mặc định tắt.",
+        "mcp_allow_transfers" => "Cho phép máy chủ MCP gửi tệp đến host",
+        "mcp_allow_transfers_desc" => "Cho phép trợ lý AI gửi một tệp từ máy tính này đến host qua SFTP (sftp_upload). Nó đọc tệp được chỉ định, nên một client không có quyền truy cập đĩa riêng sẽ có được quyền đó. Tệp đã có trên host chỉ bị thay thế khi được yêu cầu. Mặc định tắt.",
         "mcp_setup_guide" => "Hướng dẫn thiết lập",
         "mcp_copied" => "Đã chép!",
         "mcp_info_title" => "Thiết lập máy chủ MCP",

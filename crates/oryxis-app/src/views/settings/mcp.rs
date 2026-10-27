@@ -53,6 +53,16 @@ impl Oryxis {
             ),
             text(crate::i18n::t("mcp_allow_writes_desc")).size(11).color(OryxisColors::t().text_muted),
             Space::new().height(12),
+            // The transfer opt-in, read per call like the write one: the
+            // tool reads this computer's disk, which a chat client may have
+            // no other way to do.
+            self.nav_toggle_row(
+                crate::i18n::t("mcp_allow_transfers"),
+                self.vaults.cur().mcp.allow_transfers,
+                Message::Mcp(McpMessage::ToggleMcpAllowTransfers),
+            ),
+            text(crate::i18n::t("mcp_allow_transfers_desc")).size(11).color(OryxisColors::t().text_muted),
+            Space::new().height(12),
             dir_row(vec![
                 text(crate::i18n::t("mcp_server_desc")).size(11).color(OryxisColors::t().text_muted).boxed(),
                 Space::new().width(Length::Fill).boxed(),

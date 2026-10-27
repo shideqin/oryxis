@@ -756,18 +756,24 @@ pub async fn handle_ssh_execute(
                 error = %e.error,
                 "ssh_execute failed"
             );
-            // A handshake that died on a refused host key says which key
-            // and what to do about it, instead of russh's "Unknown server
-            // key": the refusal was recorded by the check callback while
-            // this very dial ran.
-            if e.stage == "connect" {
-                if let Some(text) =
-                    crate::hostkey::describe_refusals(&served.refusals, &endpoints)
-                {
-                    return Err(format!("{}: {text}", e.stage_title()));
-                }
-            }
-            Err(format!("{}: {}", e.stage_title(), e.error))
+            Err(describe_pool_failure(served, &endpoints, &e))
         }
     }
+}
+
+/// The answer for a call whose connection or channel failed. A handshake
+/// that died on a refused host key says which key and what to do about
+/// it, instead of russh's "Unknown server key": the refusal was recorded
+/// by the check callback while this very dial ran.
+pub(crate) fn describe_pool_failure(
+    served: &crate::server::Served,
+    endpoints: &[(String, u16)],
+    e: &crate::pool::PoolFailure,
+) -> String {
+    if e.stage == "connect" {
+        if let Some(text) = crate::hostkey::describe_refusals(&served.refusals, endpoints) {
+            return format!("{}: {text}", e.stage_title());
+        }
+    }
+    format!("{}: {}", e.stage_title(), e.error)
 }

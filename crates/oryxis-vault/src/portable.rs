@@ -388,6 +388,7 @@ pub(crate) fn is_portable_setting(key: &str) -> bool {
         "sync_folder_path",
         "mcp_server_token",
         "mcp_server_allow_writes",
+        "mcp_server_allow_transfers",
         "sync_enabled",
         "sync_mode",
         "mcp_server_enabled",

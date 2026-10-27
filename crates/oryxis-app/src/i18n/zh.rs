@@ -868,6 +868,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server_desc" => "允许 AI 助手通过 MCP 协议访问您的主机",
         "mcp_allow_writes" => "允许 MCP 服务器添加和编辑主机",
         "mcp_allow_writes_desc" => "允许 AI 助手通过 MCP 创建主机并修改其字段（create_host、update_host）。不会创建分组，不会设置代理，密码只写不读。默认关闭。",
+        "mcp_allow_transfers" => "允许 MCP 服务器向主机发送文件",
+        "mcp_allow_transfers_desc" => "允许 AI 助手通过 SFTP 将本机文件发送到主机（sftp_upload）。它会读取指定的文件，因此本身无法访问磁盘的客户端也能借此读取。主机上已存在的文件只有在明确要求时才会被替换。默认关闭。",
         "mcp_setup_guide" => "配置指南",
         "mcp_copied" => "已复制！",
         "mcp_info_title" => "MCP 服务器配置",

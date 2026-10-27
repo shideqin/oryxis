@@ -272,33 +272,7 @@ impl SshSession {
     /// Wrapped in the engine-configured timeout to keep `open_sftp` from
     /// hanging the UI when a server doesn't speak the sftp subsystem.
     pub async fn open_sftp(&self) -> Result<crate::sftp::SftpClient, SshError> {
-        let timeout = self.sftp_open_timeout;
-        let handle_for_exec = Arc::clone(self.transport.handle());
-        let inner = async {
-            let channel = self
-                .transport
-                .handle()
-                .channel_open_session()
-                .await
-                .map_err(|e| SshError::Channel(format!("sftp channel open: {e}")))?;
-            channel
-                .request_subsystem(true, "sftp")
-                .await
-                .map_err(|e| SshError::Channel(format!("sftp subsystem: {e}")))?;
-            let session = russh_sftp::client::SftpSession::new(channel.into_stream())
-                .await
-                .map_err(|e| SshError::Channel(format!("sftp init: {e}")))?;
-            Ok::<_, SshError>(session)
-        };
-        let session = tokio::time::timeout(timeout, inner)
-            .await
-            .map_err(|_| {
-                SshError::Channel(format!(
-                    "sftp open timed out after {}s",
-                    timeout.as_secs()
-                ))
-            })??;
-        Ok(crate::sftp::SftpClient::new(session, handle_for_exec, timeout))
+        crate::sftp::SftpClient::open_on(self.transport.handle(), self.sftp_open_timeout, "sftp").await
     }
 
     /// Open a `-L` forward on THIS session's existing connection, bound

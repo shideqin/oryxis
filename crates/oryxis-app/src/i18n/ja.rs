@@ -868,6 +868,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server_desc" => "AIアシスタントがMCPプロトコルを通じてホストにアクセスできるようにします",
         "mcp_allow_writes" => "MCP サーバーにホストの追加と編集を許可",
         "mcp_allow_writes_desc" => "AI アシスタントが MCP 経由でホストを作成し、フィールドを変更できるようにします (create_host, update_host)。フォルダーは作成されず、プロキシは設定されず、パスワードは書き込みのみです。既定ではオフ。",
+        "mcp_allow_transfers" => "MCP サーバーによるホストへのファイル送信を許可",
+        "mcp_allow_transfers_desc" => "AI アシスタントがこのコンピューターのファイルを SFTP でホストへ送信できるようにします（sftp_upload）。指定されたファイルを読み取るため、自身でディスクにアクセスできないクライアントも読み取れるようになります。ホストに既にあるファイルは、求められた場合のみ置き換えます。既定ではオフ。",
         "mcp_setup_guide" => "セットアップガイド",
         "mcp_copied" => "コピーしました！",
         "mcp_info_title" => "MCPサーバー設定",

@@ -12,7 +12,7 @@ pub fn tool_definitions() -> Vec<Value> {
 fn list_vaults() -> Value {
     json!({
         "name": "list_vaults",
-        "description": "List the Oryxis vaults this server serves: `vault` (the slug every other answer carries and the `vault` parameter takes), `label`, and whether host writes are on in each. A vault whose MCP is off is not listed.",
+        "description": "List the Oryxis vaults this server serves: `vault` (the slug every other answer carries and the `vault` parameter takes), `label`, and whether host writes (`writes_enabled`) and file transfers (`transfers_enabled`) are on in each. A vault whose MCP is off is not listed.",
         "inputSchema": { "type": "object", "properties": {} }
     })
 }
@@ -92,6 +92,40 @@ fn base_tools() -> Vec<Value> {
                     }
                 },
                 "required": ["id", "command"]
+            }
+        }),
+        json!({
+            "name": "sftp_upload",
+            "description": "Send a file from the machine this MCP server runs on to a remote SSH host over SFTP, any size. Needs \"Allow the MCP server to send files to hosts\" switched on in Oryxis Settings > MCP Server. local_path is a path on the SERVER's machine: when the server is the Windows binary driven from WSL, /mnt/<drive>/... is that drive and any other absolute path is read inside the WSL distro. The bytes go to a scratch name renamed into place at the end, so a cancelled or failed upload leaves the remote name untouched. An existing remote file is replaced only with overwrite: true and keeps its permission bits. The answer gives the final remote_path and the byte count.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Connection UUID"
+                    },
+                    "local_path": {
+                        "type": "string",
+                        "description": "Absolute path of the local file to send"
+                    },
+                    "remote_path": {
+                        "type": "string",
+                        "description": "Destination on the host: a file path, or a directory (or a path ending in /) to keep the local file's name"
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "Replace a file already at the destination (default: false)"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "Permission bits for the uploaded file as octal digits, e.g. \"664\" (default: the replaced file's, or the server's default for a new one)"
+                    },
+                    "timeout_secs": {
+                        "type": "integer",
+                        "description": "Fail when no byte moved for this many seconds (default: 60, max: 600). Not a bound on the whole transfer."
+                    }
+                },
+                "required": ["id", "local_path", "remote_path"]
             }
         }),
         json!({

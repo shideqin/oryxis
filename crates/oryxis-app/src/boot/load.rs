@@ -358,6 +358,9 @@ impl Oryxis {
             if let Ok(Some(v)) = vault.get_setting("mcp_server_allow_writes") {
                 ov.mcp.allow_writes = v == "true";
             }
+            if let Ok(Some(v)) = vault.get_setting("mcp_server_allow_transfers") {
+                ov.mcp.allow_transfers = v == "true";
+            }
             if let Ok(Some(v)) = vault.get_setting("remote_desktop_enabled") {
                 ov.remote_desktop_enabled = v == "true";
             }

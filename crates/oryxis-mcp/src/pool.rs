@@ -71,6 +71,19 @@ pub struct PoolRun {
     pub result: ExecResult,
 }
 
+/// An SFTP client on a host's connection (`Pool::sftp`), with the
+/// figures the log line reports.
+pub struct PooledSftp {
+    pub client: oryxis_ssh::SftpClient,
+    pub label: String,
+    pub endpoint: String,
+    pub reused: bool,
+    pub dial_ms: u128,
+    /// A connection dialled for this transfer alone (the pooled one
+    /// refused a channel), closed when the transfer is done with it.
+    _own: Option<MonitorConn>,
+}
+
 /// A failed run, with the stage it failed in. Boxed on the way out:
 /// the Ok side is the common one and the error carries two strings.
 pub struct PoolFailure {
@@ -87,6 +100,7 @@ impl PoolFailure {
         match self.stage {
             "connect" => "Connection failed",
             "auth" => "Authentication failed",
+            "sftp" => "SFTP failed",
             _ => "Execution failed",
         }
     }
@@ -208,52 +222,13 @@ impl Pool {
                 error,
             })
         };
-        let slot = self.slot(plan.conn_id);
         // The pooled connection that refused a channel, if one did: it
         // is skipped on the retry, and ONLY it, so a fresh connection a
         // concurrent call dialled meanwhile is used rather than
         // replaced.
         let mut refused: Option<Arc<MonitorConn>> = None;
         loop {
-            let dial_started = Instant::now();
-            let (conn, reused) = {
-                let mut guard = tokio::select! {
-                    guard = slot.lock() => guard,
-                    () = cancelled(&mut cancel) => return Err(fail("connect", SshError::Cancelled)),
-                };
-                match guard.as_mut() {
-                    Some(live)
-                        if live.signature == plan.signature
-                            && live.conn.is_alive()
-                            && !refused
-                                .as_ref()
-                                .is_some_and(|r| Arc::ptr_eq(r, &live.conn)) =>
-                    {
-                        live.last_used = Instant::now();
-                        (Arc::clone(&live.conn), true)
-                    }
-                    _ => {
-                        // Whatever was there is stale: gone, changed
-                        // under the user, or just found dead. Its
-                        // disconnect goes out on the drop.
-                        guard.take();
-                        let conn = tokio::select! {
-                            dialled = dial(plan) => dialled?,
-                            () = cancelled(&mut cancel) => {
-                                return Err(fail("connect", SshError::Cancelled));
-                            }
-                        };
-                        let conn = Arc::new(conn);
-                        *guard = Some(Live {
-                            conn: Arc::clone(&conn),
-                            signature: plan.signature,
-                            last_used: Instant::now(),
-                        });
-                        (conn, false)
-                    }
-                }
-            };
-            let dial_ms = if reused { 0 } else { dial_started.elapsed().as_millis() };
+            let (conn, reused, dial_ms) = self.acquire(plan, refused.as_ref(), &mut cancel, &fail).await?;
 
             let exec_started = Instant::now();
             match conn
@@ -311,6 +286,131 @@ impl Pool {
                     }
                 }
                 Err(e) => return Err(fail("exec", e)),
+            }
+        }
+    }
+
+    /// The connection for `plan`: the pooled one when it still matches
+    /// and is alive (and is not `refused`, the one that just refused a
+    /// channel), else a fresh dial that takes its place. The slot is
+    /// held only while choosing or dialling, so concurrent calls to one
+    /// host multiplex channels on what this returns. Answers the
+    /// connection, whether it was reused, and the dial's milliseconds.
+    async fn acquire(
+        &self,
+        plan: &DialPlan,
+        refused: Option<&Arc<MonitorConn>>,
+        cancel: &mut watch::Receiver<bool>,
+        fail: &(impl Fn(&'static str, SshError) -> Box<PoolFailure> + ?Sized),
+    ) -> Result<(Arc<MonitorConn>, bool, u128), Box<PoolFailure>> {
+        let slot = self.slot(plan.conn_id);
+        let dial_started = Instant::now();
+        let mut guard = tokio::select! {
+            guard = slot.lock() => guard,
+            () = cancelled(cancel) => return Err(fail("connect", SshError::Cancelled)),
+        };
+        match guard.as_mut() {
+            Some(live)
+                if live.signature == plan.signature
+                    && live.conn.is_alive()
+                    && !refused.is_some_and(|r| Arc::ptr_eq(r, &live.conn)) =>
+            {
+                live.last_used = Instant::now();
+                Ok((Arc::clone(&live.conn), true, 0))
+            }
+            _ => {
+                // Whatever was there is stale: gone, changed under the
+                // user, or just found dead. Its disconnect goes out on
+                // the drop.
+                guard.take();
+                let conn = tokio::select! {
+                    dialled = dial(plan) => dialled?,
+                    () = cancelled(cancel) => return Err(fail("connect", SshError::Cancelled)),
+                };
+                let conn = Arc::new(conn);
+                *guard = Some(Live {
+                    conn: Arc::clone(&conn),
+                    signature: plan.signature,
+                    last_used: Instant::now(),
+                });
+                Ok((conn, false, dial_started.elapsed().as_millis()))
+            }
+        }
+    }
+
+    /// An SFTP client on `plan`'s connection, for a file transfer: the
+    /// pooled connection when it can carry one more channel, redialled
+    /// once when it turns out dead, and a connection of this call's own
+    /// when a live one refuses the channel (the same three readings
+    /// `exec` gives a channel failure). The returned [`PooledSftp`] keeps
+    /// that one-off connection open for as long as the client is used.
+    pub async fn sftp(
+        &self,
+        plan: &DialPlan,
+        mut cancel: watch::Receiver<bool>,
+    ) -> Result<PooledSftp, Box<PoolFailure>> {
+        let (label, endpoint) = (plan.label.clone(), plan.endpoint.clone());
+        let fail = move |stage: &'static str, error: SshError| {
+            Box::new(PoolFailure {
+                label: label.clone(),
+                endpoint: endpoint.clone(),
+                stage,
+                error,
+            })
+        };
+        let mut refused: Option<Arc<MonitorConn>> = None;
+        loop {
+            let (conn, reused, dial_ms) = self.acquire(plan, refused.as_ref(), &mut cancel, &fail).await?;
+            match conn.open_sftp(OPEN_TIMEOUT).await {
+                Ok(client) => {
+                    return Ok(PooledSftp {
+                        client,
+                        label: plan.label.clone(),
+                        endpoint: plan.endpoint.clone(),
+                        reused,
+                        dial_ms,
+                        _own: None,
+                    })
+                }
+                Err(SshError::Channel(why)) if reused && refused.is_none() => {
+                    match sftp_open_verdict(&why, conn.is_alive()) {
+                        ChannelVerdict::Dead => {
+                            tracing::info!(
+                                host = %plan.label,
+                                endpoint = %plan.endpoint,
+                                error = %why,
+                                "pool: pooled connection is gone, dialling fresh"
+                            );
+                            refused = Some(conn);
+                            continue;
+                        }
+                        ChannelVerdict::Refused => {
+                            tracing::info!(
+                                host = %plan.label,
+                                endpoint = %plan.endpoint,
+                                error = %why,
+                                "pool: pooled connection refused a channel, transferring on a one-off connection"
+                            );
+                            let dial_started = Instant::now();
+                            let own = tokio::select! {
+                                dialled = dial(plan) => dialled?,
+                                () = cancelled(&mut cancel) => return Err(fail("connect", SshError::Cancelled)),
+                            };
+                            let dial_ms = dial_started.elapsed().as_millis();
+                            let client = own.open_sftp(OPEN_TIMEOUT).await.map_err(|e| fail("sftp", e))?;
+                            return Ok(PooledSftp {
+                                client,
+                                label: plan.label.clone(),
+                                endpoint: plan.endpoint.clone(),
+                                reused: false,
+                                dial_ms,
+                                _own: Some(own),
+                            });
+                        }
+                        ChannelVerdict::Other => return Err(fail("sftp", SshError::Channel(why))),
+                    }
+                }
+                Err(e) => return Err(fail("sftp", e)),
             }
         }
     }
@@ -381,6 +481,24 @@ fn channel_verdict(why: &str, alive: bool) -> ChannelVerdict {
         } else {
             // A transport error on the open (send failed, disconnect):
             // nothing reached the host.
+            ChannelVerdict::Dead
+        }
+    } else {
+        ChannelVerdict::Other
+    }
+}
+
+/// [`channel_verdict`] for an SFTP open (`SftpClient::open_on`, prefix
+/// `sftp`): an open the server refused is `Refused`, a channel open that
+/// timed out or never reached the host is `Dead`, a subsystem or init
+/// failure is the server's answer about SFTP itself, never retried.
+fn sftp_open_verdict(why: &str, alive: bool) -> ChannelVerdict {
+    if !alive || why.starts_with("sftp open timed out") || why == "connection closed" {
+        ChannelVerdict::Dead
+    } else if let Some(open) = why.strip_prefix("sftp channel open: ") {
+        if open.contains("Failed to open channel") {
+            ChannelVerdict::Refused
+        } else {
             ChannelVerdict::Dead
         }
     } else {
@@ -466,6 +584,20 @@ mod tests {
         // Past the open the command may have run: never retried.
         assert_eq!(channel_verdict("exec: Send error", true), ChannelVerdict::Other);
         assert_eq!(channel_verdict("stdin: Send error", true), ChannelVerdict::Other);
+    }
+
+    #[test]
+    fn sftp_open_verdict_matches_the_engine_wording() {
+        // `SftpClient::open_on` with the `sftp` prefix `MonitorConn` uses.
+        let refused = "sftp channel open: Failed to open channel (AdministrativelyProhibited)";
+        assert_eq!(sftp_open_verdict(refused, true), ChannelVerdict::Refused);
+        assert_eq!(sftp_open_verdict(refused, false), ChannelVerdict::Dead);
+        assert_eq!(sftp_open_verdict("sftp open timed out after 10s", true), ChannelVerdict::Dead);
+        assert_eq!(sftp_open_verdict("connection closed", true), ChannelVerdict::Dead);
+        assert_eq!(sftp_open_verdict("sftp channel open: Disconnected", true), ChannelVerdict::Dead);
+        // The server took the channel and said no to SFTP: its answer.
+        assert_eq!(sftp_open_verdict("sftp subsystem: Failure", true), ChannelVerdict::Other);
+        assert_eq!(sftp_open_verdict("sftp init: unexpected EOF", true), ChannelVerdict::Other);
     }
 
     #[test]

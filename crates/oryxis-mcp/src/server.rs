@@ -252,36 +252,50 @@ impl Server {
     }
 
     /// `list_vaults`: the served vaults with MCP on (one switched off is
-    /// not exposed, its name included), and whether host writes are on.
+    /// not exposed, its name included), and whether host writes and file
+    /// transfers are on.
     fn list_vaults(&self) -> Value {
         Value::Array(
             self.vaults
                 .iter()
                 .filter(|v| v.enabled())
                 .map(|v| {
-                    let writes = v
-                        .vault()
-                        .get_setting(crate::writes::ALLOW_WRITES_SETTING)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|w| w == "true");
+                    let on = |key: &str| {
+                        v.vault().get_setting(key).ok().flatten().is_some_and(|w| w == "true")
+                    };
                     json!({
                         "vault": v.slug,
                         "id": v.id.to_string(),
                         "label": v.label,
-                        "writes_enabled": writes,
+                        "writes_enabled": on(crate::writes::ALLOW_WRITES_SETTING),
+                        "transfers_enabled": on(crate::transfer::ALLOW_TRANSFERS_SETTING),
                     })
                 })
                 .collect(),
         )
     }
 
+    /// A request with no progress pipe: the tests drive the server here.
+    #[cfg(test)]
     pub async fn handle_request(
         &self,
         method: &str,
         id: Value,
         params: Option<&Value>,
         cancel: watch::Receiver<bool>,
+    ) -> JsonRpcResponse {
+        self.handle_request_with(method, id, params, cancel, None).await
+    }
+
+    /// [`handle_request`](Self::handle_request) with the pipe a call's
+    /// `notifications/progress` go out on (the stdio writer).
+    pub async fn handle_request_with(
+        &self,
+        method: &str,
+        id: Value,
+        params: Option<&Value>,
+        cancel: watch::Receiver<bool>,
+        notify: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     ) -> JsonRpcResponse {
         match method {
             "initialize" => {
@@ -357,6 +371,10 @@ impl Server {
                     "list_groups" => self.listed(arguments, |v| Ok(handlers::handle_list_groups(v).unwrap_or(json!([])))),
                     "list_keys" => self.listed(arguments, |v| Ok(handlers::handle_list_keys(v).unwrap_or(json!([])))),
                     "ssh_execute" => handlers::handle_ssh_execute(self, arguments, cancel).await,
+                    "sftp_upload" => {
+                        let progress = crate::progress::Progress::for_call(params, notify);
+                        crate::transfer::handle_sftp_upload(self, arguments, cancel, &progress).await
+                    }
                     "accept_host_key" => crate::hostkey::handle_accept_host_key(self, arguments),
                     "create_host" => crate::writes::handle_create_host(self, arguments),
                     "update_host" => crate::writes::handle_update_host(self, arguments),

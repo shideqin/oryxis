@@ -1075,6 +1075,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server_desc" => "Umožňuje AI asistentům přistupovat k vašim hostitelům přes protokol MCP",
         "mcp_allow_writes" => "Povolit serveru MCP přidávat a upravovat hostitele",
         "mcp_allow_writes_desc" => "Umožní AI asistentovi vytvářet hostitele a měnit jejich pole přes MCP (create_host, update_host). Složky se nikdy nevytvářejí, proxy se nikdy nenastavují a hesla se pouze zapisují. Ve výchozím stavu vypnuto.",
+        "mcp_allow_transfers" => "Povolit serveru MCP odesílat soubory na hostitele",
+        "mcp_allow_transfers_desc" => "Umožní asistentovi AI odeslat soubor z tohoto počítače na hostitele přes SFTP (sftp_upload). Čte zadaný soubor, takže klient bez vlastního přístupu k disku jej tím získá. Soubor, který na hostiteli už existuje, se nahradí jen na požádání. Ve výchozím stavu vypnuto.",
         "mcp_setup_guide" => "Průvodce nastavením",
         "mcp_copied" => "Zkopírováno!",
         "mcp_info_title" => "Nastavení MCP serveru",

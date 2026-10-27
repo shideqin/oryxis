@@ -855,6 +855,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server_desc" => "Consente agli assistenti IA di accedere ai tuoi host tramite il protocollo MCP",
         "mcp_allow_writes" => "Consenti al server MCP di aggiungere e modificare host",
         "mcp_allow_writes_desc" => "Permette a un assistente IA di creare host e cambiarne i campi via MCP (create_host, update_host). Le cartelle non vengono mai create, i proxy mai impostati, le password solo scritte. Disattivato per impostazione predefinita.",
+        "mcp_allow_transfers" => "Consenti al server MCP di inviare file agli host",
+        "mcp_allow_transfers_desc" => "Consente a un assistente IA di inviare un file da questo computer a un host via SFTP (sftp_upload). Legge il file indicato, quindi un client senza accesso proprio al disco lo ottiene. Un file già presente sull'host viene sostituito solo su richiesta. Disattivato per impostazione predefinita.",
         "mcp_setup_guide" => "Guida alla Configurazione",
         "mcp_copied" => "Copiato!",
         "mcp_info_title" => "Configurazione Server MCP",

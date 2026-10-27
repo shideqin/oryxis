@@ -280,8 +280,35 @@ fn native_entry(vars: &[(String, String)]) -> serde_json::Value {
 /// [`oryxis_mcp_entry_wsl`] for the cmd.exe wrapper that carries the
 /// secrets across the boundary.
 fn wsl_entry(vars: &[(String, String)]) -> serde_json::Value {
-    oryxis_mcp_entry_wsl(&mcp_wsl_command(), &mcp_binary_command(), vars)
+    let vars = with_wsl_distro(vars.to_vec(), wsl_distro().as_deref());
+    oryxis_mcp_entry_wsl(&mcp_wsl_command(), &mcp_binary_command(), &vars)
 }
+
+/// `vars` naming the WSL distro the entry is for, when it is known
+/// ([`wsl_distro`]): `oryxis-mcp.exe` reads a Linux path the client hands
+/// it inside that distro. Unknown (no detection ran yet), whatever the
+/// entry already said stays.
+fn with_wsl_distro(mut vars: Vec<(String, String)>, distro: Option<&str>) -> Vec<(String, String)> {
+    if let Some(distro) = distro.map(str::trim).filter(|d| !d.is_empty()) {
+        vars.retain(|(name, _)| name != oryxis_core::paths::WSL_DISTRO_ENV);
+        vars.push((oryxis_core::paths::WSL_DISTRO_ENV.to_string(), distro.to_string()));
+    }
+    vars
+}
+
+/// The default WSL distro's name, as the last detection read it (the
+/// distro every WSL read and write here goes to). Kept for the process:
+/// the entry is built in `update`, which must not spawn `wsl.exe`.
+static WSL_DISTRO: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn wsl_distro() -> Option<String> {
+    WSL_DISTRO.lock().unwrap_or_else(|p| p.into_inner()).clone()
+}
+
+/// The line the detection script prints the distro's name on, ahead of
+/// the markers.
+#[cfg(target_os = "windows")]
+const DISTRO_LINE: &str = "@distro=";
 
 /// The snippet users copy for `client`, in that client's own shape
 /// (JSON under `mcpServers`, or Codex's TOML table). When `token` is
@@ -548,12 +575,19 @@ pub(crate) fn wsl_detect_markers() -> Result<Vec<String>, String> {
         .iter()
         .map(|m| format!("[ -e \"$HOME/{m}\" ] && echo \"{m}\";"))
         .collect();
-    let out = wsl_bash(&format!("{} true", checks.join(" ")))?;
-    Ok(out
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect())
+    let out = wsl_bash(&format!("echo \"{DISTRO_LINE}$WSL_DISTRO_NAME\"; {} true", checks.join(" ")))?;
+    let mut markers = Vec::new();
+    for line in out.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        match line.strip_prefix(DISTRO_LINE) {
+            Some(name) => {
+                let name = name.trim();
+                *WSL_DISTRO.lock().unwrap_or_else(|p| p.into_inner()) =
+                    (!name.is_empty()).then(|| name.to_string());
+            }
+            None => markers.push(line.to_string()),
+        }
+    }
+    Ok(markers)
 }
 
 /// Never-detected elsewhere: the WSL target only renders on Windows.
@@ -853,6 +887,20 @@ impl crate::app::Oryxis {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_known_wsl_distro_is_named_in_the_entry_and_an_unknown_one_keeps_the_old_name() {
+        let env = oryxis_core::paths::WSL_DISTRO_ENV;
+        let vars = vec![("ORYXIS_MCP_TOKEN".to_string(), "t".to_string()), (env.to_string(), "Old".to_string())];
+        let named = super::with_wsl_distro(vars.clone(), Some("Ubuntu-24.04"));
+        assert_eq!(named.iter().filter(|(k, _)| k == env).count(), 1);
+        assert!(named.contains(&(env.to_string(), "Ubuntu-24.04".to_string())));
+        assert_eq!(super::with_wsl_distro(vars.clone(), None), vars);
+        assert_eq!(super::with_wsl_distro(vars.clone(), Some("  ")), vars);
+        // Carried by the cmd.exe wrapper like every other variable.
+        let entry = super::oryxis_mcp_entry_wsl("/mnt/c/x/oryxis-mcp.exe", "C:\\x\\oryxis-mcp.exe", &named);
+        assert!(entry["args"][1].as_str().unwrap().contains("set ORYXIS_WSL_DISTRO=Ubuntu-24.04&& "));
+    }
+
     #[test]
     fn a_config_is_replaced_whole_and_a_symlink_survives() {
         let dir = tempfile::tempdir().unwrap();

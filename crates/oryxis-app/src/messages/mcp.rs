@@ -5,6 +5,8 @@ pub enum McpMessage {
     ToggleMcpServer,
     /// Flip the opt-in that lets the server add and edit hosts.
     ToggleMcpAllowWrites,
+    /// Flip the opt-in that lets the server send local files to hosts.
+    ToggleMcpAllowTransfers,
     ShowMcpInfo,
     HideMcpInfo,
     CopyMcpConfig,

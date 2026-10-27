@@ -69,6 +69,16 @@ impl MonitorConn {
         .await
     }
 
+    /// Open an SFTP client on this connection, a channel of its own
+    /// beside any exec, bounded by `timeout`. A closed connection answers
+    /// with the channel error a dead link gets, like `exec_capture`.
+    pub async fn open_sftp(&self, timeout: std::time::Duration) -> Result<crate::sftp::SftpClient, SshError> {
+        if self.closed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(SshError::Channel("connection closed".into()));
+        }
+        crate::sftp::SftpClient::open_on(&self.handle, timeout, "sftp").await
+    }
+
     /// Whether the transport can still carry a probe. Without reader /
     /// writer tasks the only signals are the close latch and the russh
     /// handle's own closed flag (set when the peer drops the TCP

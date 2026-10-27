@@ -1069,6 +1069,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server_desc" => "Yapay zeka asistanlarının MCP protokolü üzerinden sunucularınıza erişmesine izin verir",
         "mcp_allow_writes" => "MCP sunucusunun ana makine eklemesine ve düzenlemesine izin ver",
         "mcp_allow_writes_desc" => "Bir yapay zekâ asistanının MCP üzerinden ana makine oluşturup alanlarını değiştirmesine izin verir (create_host, update_host). Klasör hiç oluşturulmaz, vekil hiç ayarlanmaz, parolalar yalnızca yazılır. Varsayılan olarak kapalı.",
+        "mcp_allow_transfers" => "MCP sunucusunun ana makinelere dosya göndermesine izin ver",
+        "mcp_allow_transfers_desc" => "Bir yapay zekâ asistanının bu bilgisayardan bir ana makineye SFTP ile dosya göndermesine izin verir (sftp_upload). Verilen dosyayı okur, bu yüzden kendi disk erişimi olmayan bir istemci bu erişimi kazanır. Ana makinede zaten bulunan bir dosya yalnızca istenirse değiştirilir. Varsayılan olarak kapalı.",
         "mcp_setup_guide" => "Kurulum Kılavuzu",
         "mcp_copied" => "Kopyalandı!",
         "mcp_info_title" => "MCP Sunucusu Kurulumu",

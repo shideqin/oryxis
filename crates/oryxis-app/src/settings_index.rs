@@ -254,6 +254,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     // ── MCP ────────────────────────────────────────────────────────
     e(S::Mcp, "mcp_server", "mcp server enable model context protocol port"),
     e(S::Mcp, "mcp_allow_writes", "mcp allow writes create edit add hosts agent write"),
+    e(S::Mcp, "mcp_allow_transfers", "mcp allow transfers upload send files sftp agent"),
     e(S::Mcp, "mcp_setup_guide", "mcp setup guide help config claude cursor"),
     e(S::Mcp, "mcp_token_regenerate", "mcp token regenerate rotate reset auth"),
     e(S::Mcp, "mcp_clients_label", "mcp install client claude code desktop codex cursor gemini copilot windsurf config register"),

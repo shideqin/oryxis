@@ -2012,32 +2012,36 @@ impl SftpClient {
     /// transfer worker pool to actually move bytes in parallel instead
     /// of just queuing on a single channel's mutex.
     pub async fn open_sibling(&self) -> Result<SftpClient, SshError> {
-        let timeout = self.open_timeout;
-        let handle_for_new = self.handle.clone();
+        Self::open_on(&self.handle, self.open_timeout, "sftp sibling").await
+    }
+
+    /// Open an SFTP subsystem channel on `handle` and start a client on
+    /// it, the whole exchange bounded by `timeout` so a server that does
+    /// not speak the subsystem cannot hang the caller. `what` prefixes
+    /// every error (`"sftp"`, `"sftp sibling"`), saying which open failed.
+    pub(crate) async fn open_on(
+        handle: &SharedHandle,
+        timeout: std::time::Duration,
+        what: &str,
+    ) -> Result<SftpClient, SshError> {
         let inner = async {
-            let channel = self
-                .handle
+            let channel = handle
                 .channel_open_session()
                 .await
-                .map_err(|e| SshError::Channel(format!("sftp sibling channel: {e}")))?;
+                .map_err(|e| SshError::Channel(format!("{what} channel open: {e}")))?;
             channel
                 .request_subsystem(true, "sftp")
                 .await
-                .map_err(|e| SshError::Channel(format!("sftp sibling subsystem: {e}")))?;
+                .map_err(|e| SshError::Channel(format!("{what} subsystem: {e}")))?;
             let session = russh_sftp::client::SftpSession::new(channel.into_stream())
                 .await
-                .map_err(|e| SshError::Channel(format!("sftp sibling init: {e}")))?;
+                .map_err(|e| SshError::Channel(format!("{what} init: {e}")))?;
             Ok::<_, SshError>(session)
         };
         let session = tokio::time::timeout(timeout, inner)
             .await
-            .map_err(|_| {
-                SshError::Channel(format!(
-                    "sftp sibling open timed out after {}s",
-                    timeout.as_secs()
-                ))
-            })??;
-        Ok(SftpClient::new(session, handle_for_new, timeout))
+            .map_err(|_| SshError::Channel(format!("{what} open timed out after {}s", timeout.as_secs())))??;
+        Ok(SftpClient::new(session, Arc::clone(handle), timeout))
     }
 
     /// Open a low-level `RawSftpSession` on its own fresh channel, used

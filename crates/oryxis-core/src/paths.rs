@@ -38,6 +38,11 @@ use std::sync::OnceLock;
 /// The variable naming the data tree itself (source 1 above).
 pub const DATA_DIR_ENV: &str = "ORYXIS_DATA_DIR";
 
+/// The variable the app's WSL entry hands `oryxis-mcp.exe`: the distro the
+/// client runs in, so a Linux path the client names can be read from
+/// Windows (`\\wsl.localhost\<distro>\...`).
+pub const WSL_DISTRO_ENV: &str = "ORYXIS_WSL_DISTRO";
+
 /// The variable naming the home the `.oryxis` tree lives under
 /// (source 2 above).
 pub const HOME_ENV: &str = "ORYXIS_HOME";

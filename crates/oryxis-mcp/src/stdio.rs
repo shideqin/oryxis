@@ -154,7 +154,13 @@ async fn run_request(
     tracing::info!(id = %key, method = %request.method, tool = %tool, "request");
 
     let response = server
-        .handle_request(&request.method, id, request.params.as_ref(), cancel_rx.clone())
+        .handle_request_with(
+            &request.method,
+            id,
+            request.params.as_ref(),
+            cancel_rx.clone(),
+            Some(out_tx.clone()),
+        )
         .await;
 
     {

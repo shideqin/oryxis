@@ -50,6 +50,13 @@ impl Oryxis {
                     if self.vaults.cur().mcp.allow_writes { "true" } else { "false" },
                 );
             }
+            McpMessage::ToggleMcpAllowTransfers => {
+                self.vaults.cur_mut().mcp.allow_transfers = !self.vaults.cur_mut().mcp.allow_transfers;
+                self.persist_setting(
+                    "mcp_server_allow_transfers",
+                    if self.vaults.cur().mcp.allow_transfers { "true" } else { "false" },
+                );
+            }
             McpMessage::ShowMcpInfo => {
                 self.vaults.cur_mut().mcp.show_info = true;
                 self.vaults.cur_mut().mcp.config_copied = false;

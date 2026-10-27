@@ -14,6 +14,10 @@ pub(crate) struct McpState {
     /// `update_host`). Persisted as `mcp_server_allow_writes`, off by
     /// default; the server reads it per call.
     pub(crate) allow_writes: bool,
+    /// Whether the MCP server may send local files to hosts
+    /// (`sftp_upload`). Persisted as `mcp_server_allow_transfers`, off by
+    /// default; the server reads it per call.
+    pub(crate) allow_transfers: bool,
     /// Whether the "how to connect" info block is expanded.
     pub(crate) show_info: bool,
     /// Latched true briefly after the user copies the client config snippet.

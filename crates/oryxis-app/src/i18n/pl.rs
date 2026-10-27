@@ -1079,6 +1079,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "mcp_server_desc" => "Pozwala asystentom AI uzyskać dostęp do hostów za pomocą protokołu MCP",
         "mcp_allow_writes" => "Pozwól serwerowi MCP dodawać i edytować hosty",
         "mcp_allow_writes_desc" => "Pozwala asystentowi AI tworzyć hosty i zmieniać ich pola przez MCP (create_host, update_host). Foldery nigdy nie są tworzone, proxy nigdy nie są ustawiane, a hasła tylko zapisywane. Domyślnie wyłączone.",
+        "mcp_allow_transfers" => "Pozwól serwerowi MCP wysyłać pliki na hosty",
+        "mcp_allow_transfers_desc" => "Pozwala asystentowi AI wysłać plik z tego komputera na host przez SFTP (sftp_upload). Odczytuje wskazany plik, więc klient bez własnego dostępu do dysku go zyskuje. Plik istniejący już na hoście jest zastępowany tylko na żądanie. Domyślnie wyłączone.",
         "mcp_setup_guide" => "Przewodnik konfiguracji",
         "mcp_copied" => "Skopiowano!",
         "mcp_info_title" => "Konfiguracja serwera MCP",

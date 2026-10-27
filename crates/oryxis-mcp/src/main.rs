@@ -1,6 +1,7 @@
 mod handlers;
 mod hostkey;
 mod pool;
+mod progress;
 mod protocol;
 mod server;
 mod stdio;
@@ -8,6 +9,7 @@ mod sudo;
 #[cfg(test)]
 mod tests;
 mod tools;
+mod transfer;
 mod writes;
 
 use std::io;

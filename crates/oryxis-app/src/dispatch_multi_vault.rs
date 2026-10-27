@@ -45,6 +45,7 @@ pub(crate) fn copies_to_new_vault(key: &str) -> bool {
         // Exposing a vault to AI clients is that vault's own choice.
         "mcp_server_enabled",
         "mcp_server_allow_writes",
+        "mcp_server_allow_transfers",
         "shell_integration_nonce",
         "default_key_id",
         "default_identity_id",
@@ -966,6 +967,7 @@ mod tests {
             "mcp_server_token",
             "mcp_server_enabled",
             "mcp_server_allow_writes",
+            "mcp_server_allow_transfers",
             "default_key_id",
             "hint_privacy_mask",
             "port_forwards_migrated",
