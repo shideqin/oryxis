@@ -1131,6 +1131,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "वॉल्ट एक्सपोर्ट करें",
         "export_hosts_csv" => "होस्ट एक्सपोर्ट करें (CSV)",
+        "import_hosts_csv" => "होस्ट आयात करें (CSV)",
+        "import_csv_unrecognized" => "यह फ़ाइल होस्ट तालिका नहीं है: इसमें hostname, label या id कॉलम चाहिए।",
         "csv_export_done" => "{count} होस्ट {path} में एक्सपोर्ट किए गए",
         "import_vault" => "वॉल्ट इंपोर्ट करें",
         // Vault export/import categories + dialog

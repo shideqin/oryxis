@@ -1131,6 +1131,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "Exportovat trezor",
         "export_hosts_csv" => "Exportovat hostitele (CSV)",
+        "import_hosts_csv" => "Importovat hostitele (CSV)",
+        "import_csv_unrecognized" => "Tento soubor není tabulka hostitelů: potřebuje sloupec hostname, label nebo id.",
         "csv_export_done" => "Exportováno {count} hostitelů do {path}",
         "import_vault" => "Importovat trezor",
         // Vault export/import categories + dialog

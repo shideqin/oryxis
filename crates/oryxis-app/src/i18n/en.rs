@@ -1132,6 +1132,8 @@ pub(super) fn lookup(key: &str) -> &'static str {
         // Export / Import
         "export_vault" => "Export Vault",
         "export_hosts_csv" => "Export hosts (CSV)",
+        "import_hosts_csv" => "Import hosts (CSV)",
+        "import_csv_unrecognized" => "This file is not a host table: it needs a hostname, label or id column.",
         "csv_export_done" => "Exported {count} hosts to {path}",
         "import_vault" => "Import Vault",
         // Vault export/import categories + dialog

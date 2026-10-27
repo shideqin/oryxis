@@ -1135,6 +1135,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "Eksportuj sejf",
         "export_hosts_csv" => "Eksportuj hosty (CSV)",
+        "import_hosts_csv" => "Importuj hosty (CSV)",
+        "import_csv_unrecognized" => "Ten plik nie jest tabelą hostów: potrzebna jest kolumna hostname, label lub id.",
         "csv_export_done" => "Wyeksportowano {count} hostów do {path}",
         "import_vault" => "Importuj sejf",
         // Vault export/import categories + dialog

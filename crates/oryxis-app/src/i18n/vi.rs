@@ -1125,6 +1125,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "Xuất kho",
         "export_hosts_csv" => "Xuất máy chủ (CSV)",
+        "import_hosts_csv" => "Nhập máy chủ (CSV)",
+        "import_csv_unrecognized" => "Tệp này không phải bảng máy chủ: cần có cột hostname, label hoặc id.",
         "csv_export_done" => "Đã xuất {count} máy chủ sang {path}",
         "import_vault" => "Nhập kho",
         // Vault export/import categories + dialog

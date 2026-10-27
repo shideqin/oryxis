@@ -1125,6 +1125,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "Kasayı Dışa Aktar",
         "export_hosts_csv" => "Ana bilgisayarları dışa aktar (CSV)",
+        "import_hosts_csv" => "Sunucuları içe aktar (CSV)",
+        "import_csv_unrecognized" => "Bu dosya bir sunucu tablosu değil: hostname, label veya id sütunu gerekir.",
         "csv_export_done" => "{count} ana bilgisayar {path} konumuna aktarıldı",
         "import_vault" => "Kasayı İçe Aktar",
         // Vault export/import categories + dialog

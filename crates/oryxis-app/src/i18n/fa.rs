@@ -1127,6 +1127,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "خروجی گرفتن از صندوقچه",
         "export_hosts_csv" => "خروجی گرفتن از میزبان‌ها (CSV)",
+        "import_hosts_csv" => "درون‌ریزی میزبان‌ها (CSV)",
+        "import_csv_unrecognized" => "این فایل جدول میزبان نیست: به ستون hostname، label یا id نیاز دارد.",
         "csv_export_done" => "{count} میزبان به {path} صادر شد",
         "import_vault" => "وارد کردن صندوقچه",
         // Vault export/import categories + dialog

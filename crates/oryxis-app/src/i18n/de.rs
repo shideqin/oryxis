@@ -909,6 +909,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "agent_external_keys_held" => "Gehaltene externe Schlüssel",
         "export_vault" => "Tresor exportieren",
         "export_hosts_csv" => "Hosts exportieren (CSV)",
+        "import_hosts_csv" => "Hosts importieren (CSV)",
+        "import_csv_unrecognized" => "Diese Datei ist keine Host-Tabelle: Sie braucht eine Spalte hostname, label oder id.",
         "csv_export_done" => "{count} Hosts nach {path} exportiert",
         "import_vault" => "Tresor importieren",
         // Vault export/import categories + dialog

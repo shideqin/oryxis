@@ -922,6 +922,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "agent_external_keys_held" => "持有的外部金鑰",
         "export_vault" => "匯出保險庫",
         "export_hosts_csv" => "匯出主機 (CSV)",
+        "import_hosts_csv" => "匯入主機（CSV）",
+        "import_csv_unrecognized" => "此檔案不是主機表：需要 hostname、label 或 id 欄。",
         "csv_export_done" => "已匯出 {count} 個主機到 {path}",
         "import_vault" => "匯入保險庫",
         // Vault export/import categories + dialog

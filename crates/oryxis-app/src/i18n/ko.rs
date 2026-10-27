@@ -1125,6 +1125,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "볼트 내보내기",
         "export_hosts_csv" => "호스트 내보내기 (CSV)",
+        "import_hosts_csv" => "호스트 가져오기 (CSV)",
+        "import_csv_unrecognized" => "이 파일은 호스트 표가 아닙니다. hostname, label 또는 id 열이 필요합니다.",
         "csv_export_done" => "{count}개의 호스트를 {path}(으)로 내보냈습니다",
         "import_vault" => "볼트 가져오기",
         // Vault export/import categories + dialog

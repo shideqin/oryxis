@@ -909,6 +909,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "agent_external_keys_held" => "Chiavi esterne conservate",
         "export_vault" => "Esporta Cassaforte",
         "export_hosts_csv" => "Esporta host (CSV)",
+        "import_hosts_csv" => "Importa host (CSV)",
+        "import_csv_unrecognized" => "Questo file non è una tabella di host: serve una colonna hostname, label o id.",
         "csv_export_done" => "{count} host esportati in {path}",
         "import_vault" => "Importa Cassaforte",
         // Vault export/import categories + dialog

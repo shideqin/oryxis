@@ -216,6 +216,7 @@ pub(crate) static SETTINGS_INDEX: &[SettingsIndexEntry] = &[
     e(S::Security, "export_vault", "export vault backup save file portable"),
     e(S::Security, "export_hosts_csv", "export hosts csv spreadsheet list share secrets-free"),
     e(S::Security, "import_vault", "import vault restore load file portable"),
+    e(S::Security, "import_hosts_csv", "import hosts csv spreadsheet table update remove bulk incremental"),
     e(S::Security, "import_from_sftp", "import sftp remote restore backup"),
     e(S::Security, "import_ssh_config_btn", "import ssh config openssh hosts migrate"),
     // ── Sync ───────────────────────────────────────────────────────

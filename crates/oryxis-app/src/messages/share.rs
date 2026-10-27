@@ -16,6 +16,11 @@ pub enum ShareMessage {
     ExportHostsCsv,
     /// The CSV write finished; `Ok` carries the written path.
     ExportHostsCsvCompleted(Result<String, String>),
+    /// Settings > Security's CSV import, the mate of `ExportHostsCsv`:
+    /// pick a host table and open the shared import preview on it.
+    ImportHostsCsv,
+    /// The picked table's bytes (or why it could not be read).
+    ImportHostsCsvLoaded(Result<Vec<u8>, String>),
     ImportVault,
     /// The import dialog's "as a new vault" switch.
     ImportAsNewVaultToggled,

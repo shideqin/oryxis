@@ -915,6 +915,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "agent_external_keys_held" => "Claves externas retenidas",
         "export_vault" => "Exportar Bóveda",
         "export_hosts_csv" => "Exportar hosts (CSV)",
+        "import_hosts_csv" => "Importar hosts (CSV)",
+        "import_csv_unrecognized" => "Este archivo no es una tabla de hosts: necesita una columna hostname, label o id.",
         "csv_export_done" => "{count} hosts exportados a {path}",
         "import_vault" => "Importar Bóveda",
         // Vault export/import categories + dialog

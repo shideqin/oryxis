@@ -935,10 +935,23 @@ impl Oryxis {
             styled_button(crate::i18n::t("export_hosts_csv"), Message::Share(ShareMessage::ExportHostsCsv), OryxisColors::t().text_muted),
         );
 
+        // The host table back in: the shared import preview, where a
+        // row with an id updates its host and `remove` removes it.
+        let import_csv_btn = self.settings_nav_slot_labeled(
+            t("import_hosts_csv"),
+            crate::keynav::RowAction::activate(Message::Share(ShareMessage::ImportHostsCsv)),
+            6.0,
+            styled_button(crate::i18n::t("import_hosts_csv"), Message::Share(ShareMessage::ImportHostsCsv), OryxisColors::t().text_muted),
+        );
+
+        // Exports on one row, imports under them: each export sits
+        // above the import that reads it back.
         let mut export_import_section: iced::widget::Column<iced::Element<'_, Message>> = column![
             text(crate::i18n::t("export_import")).size(13).color(OryxisColors::t().text_primary),
             Space::new().height(8),
-            dir_row(vec![export_btn, Space::new().width(8).boxed(), export_csv_btn, Space::new().width(8).boxed(), import_btn, Space::new().width(8).boxed(), import_sftp_btn]),
+            dir_row(vec![export_btn, Space::new().width(8).boxed(), export_csv_btn]),
+            Space::new().height(8),
+            dir_row(vec![import_btn, Space::new().width(8).boxed(), import_csv_btn, Space::new().width(8).boxed(), import_sftp_btn]),
         ];
 
         // Show export dialog inline

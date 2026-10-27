@@ -1125,6 +1125,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "Експортувати сховище",
         "export_hosts_csv" => "Експортувати хости (CSV)",
+        "import_hosts_csv" => "Імпорт хостів (CSV)",
+        "import_csv_unrecognized" => "Цей файл не є таблицею хостів: потрібен стовпець hostname, label або id.",
         "csv_export_done" => "Експортовано хостів: {count}, до {path}",
         "import_vault" => "Імпортувати сховище",
         // Vault export/import categories + dialog

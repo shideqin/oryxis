@@ -922,6 +922,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "agent_external_keys_held" => "保持中の外部鍵",
         "export_vault" => "保管庫をエクスポート",
         "export_hosts_csv" => "ホストをエクスポート (CSV)",
+        "import_hosts_csv" => "ホストをインポート (CSV)",
+        "import_csv_unrecognized" => "このファイルはホストの表ではありません。hostname、label、id のいずれかの列が必要です。",
         "csv_export_done" => "{count} 件のホストを {path} にエクスポートしました",
         "import_vault" => "保管庫をインポート",
         // Vault export/import categories + dialog

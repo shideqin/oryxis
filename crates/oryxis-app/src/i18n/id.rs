@@ -1125,6 +1125,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "Ekspor Vault",
         "export_hosts_csv" => "Ekspor host (CSV)",
+        "import_hosts_csv" => "Impor host (CSV)",
+        "import_csv_unrecognized" => "Berkas ini bukan tabel host: perlu kolom hostname, label, atau id.",
         "csv_export_done" => "{count} host diekspor ke {path}",
         "import_vault" => "Impor Vault",
         // Vault export/import categories + dialog

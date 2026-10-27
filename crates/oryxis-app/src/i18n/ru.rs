@@ -909,6 +909,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "agent_external_keys_held" => "Удерживаемые внешние ключи",
         "export_vault" => "Экспорт хранилища",
         "export_hosts_csv" => "Экспорт хостов (CSV)",
+        "import_hosts_csv" => "Импорт хостов (CSV)",
+        "import_csv_unrecognized" => "Этот файл не таблица хостов: нужен столбец hostname, label или id.",
         "csv_export_done" => "Экспортировано хостов: {count}, в {path}",
         "import_vault" => "Импорт хранилища",
         // Vault export/import categories + dialog

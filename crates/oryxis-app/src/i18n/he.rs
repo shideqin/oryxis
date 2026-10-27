@@ -1131,6 +1131,8 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         // Export / Import
         "export_vault" => "ייצוא כספת",
         "export_hosts_csv" => "ייצוא מארחים (CSV)",
+        "import_hosts_csv" => "ייבוא מארחים (CSV)",
+        "import_csv_unrecognized" => "הקובץ אינו טבלת מארחים: נדרשת עמודת hostname, label או id.",
         "csv_export_done" => "{count} מארחים יוצאו אל {path}",
         "import_vault" => "ייבוא כספת",
         // Vault export/import categories + dialog

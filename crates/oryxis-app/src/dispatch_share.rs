@@ -187,6 +187,51 @@ impl Oryxis {
                 }
                 Err(e) => self.set_toast(e),
             },
+            ShareMessage::ImportHostsCsv => {
+                self.overlay = None;
+                self.vaults.cur_mut().ssh_config_import_status = None;
+                // Started from Settings > Security: no folder is open
+                // there, whatever `active_group` still remembers. A row
+                // that names a folder still goes there.
+                self.vaults.cur_mut().import_target_group = None;
+                return Task::perform(
+                    tokio::task::spawn_blocking(|| {
+                        let path = rfd::FileDialog::new()
+                            .set_title(crate::i18n::t("import_hosts_csv"))
+                            .add_filter("CSV", &["csv", "tsv", "txt"])
+                            .pick_file()?;
+                        // The hub's ceiling: a host table is kilobytes.
+                        if let Ok(meta) = std::fs::metadata(&path)
+                            && meta.len() > crate::importers::detect::MAX_FILE_BYTES
+                        {
+                            return Some(Err(crate::i18n::t("import_hub_file_too_large").to_string()));
+                        }
+                        Some(std::fs::read(&path).map_err(|e| format!("Read failed: {e}")))
+                    }),
+                    |res| match res {
+                        Ok(Some(loaded)) => Message::Share(ShareMessage::ImportHostsCsvLoaded(loaded)),
+                        _ => Message::NoOp,
+                    },
+                );
+            }
+            ShareMessage::ImportHostsCsvLoaded(loaded) => {
+                // Same reader and the same preview as the hub's CSV
+                // path, only without the format guess: this door was
+                // asked for a table. A spreadsheet saved as UTF-16 (an
+                // Excel "Unicode text") decodes the way the hub reads it.
+                let parsed = loaded.and_then(|bytes| {
+                    let text = crate::importers::regfile::decode_reg_bytes(&bytes);
+                    crate::importers::csv::parse(&text)
+                        .ok_or_else(|| crate::i18n::t("import_csv_unrecognized").to_string())
+                });
+                return match parsed {
+                    Ok(import) => self.open_direct_preview(import),
+                    Err(e) => {
+                        self.vaults.cur_mut().ssh_config_import_status = Some(Err(e.clone()));
+                        self.show_toast(e)
+                    }
+                };
+            }
             ShareMessage::ImportSshConfig => {
                 self.overlay = None;
                 self.vaults.cur_mut().ssh_config_import_status = None;

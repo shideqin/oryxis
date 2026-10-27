@@ -92,7 +92,8 @@ coming next, see the [Roadmap](../README.md#roadmap).
   its notes rather than guessing.
 - **Maintain the host list from a spreadsheet.** "Export hosts" writes
   a CSV with each host's id, folder path, identity and key (never a
-  password). Edit it and import it back: a row with an id updates
+  password). Edit it and import it back (Settings > Security & Privacy,
+  or Import on the Hosts screen): a row with an id updates
   that host, a row without one adds a host, and a row whose `action`
   column says `remove` removes the host it names. Folders that don't
   exist yet are created, and the preview says, row by row, what will
