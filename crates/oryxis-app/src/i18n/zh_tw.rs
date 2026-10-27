@@ -1090,6 +1090,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "正在執行 {name}（{step}/{total}）",
         "snippet_run_saved" => "已儲存至 {path}",
         "snippet_run_stop" => "停止片段",
+        "terminal_transfer_cancel" => "取消傳輸",
         "snippet_run_stopped" => "「{name}」在第 {step} 個動作停止：{why}",
         "snippet_run_timed_out" => "等待逾時",
         "snippet_run_too_long" => "「{name}」展開後的動作太多。",

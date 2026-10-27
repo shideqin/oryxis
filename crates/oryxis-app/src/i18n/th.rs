@@ -1300,6 +1300,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "กำลังรัน {name} ({step}/{total})",
         "snippet_run_saved" => "บันทึกไปที่ {path} แล้ว",
         "snippet_run_stop" => "หยุด Snippet",
+        "terminal_transfer_cancel" => "ยกเลิกการถ่ายโอน",
         "snippet_run_stopped" => "“{name}” หยุดที่การกระทำ {step}: {why}",
         "snippet_run_timed_out" => "การรอหมดเวลา",
         "snippet_run_too_long" => "“{name}” ขยายเป็นการกระทำมากเกินไป",

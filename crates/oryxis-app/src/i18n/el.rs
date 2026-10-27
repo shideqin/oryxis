@@ -1299,6 +1299,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "Εκτέλεση {name} ({step}/{total})",
         "snippet_run_saved" => "Αποθηκεύτηκε στο {path}",
         "snippet_run_stop" => "Διακοπή snippet",
+        "terminal_transfer_cancel" => "Ακύρωση μεταφοράς",
         "snippet_run_stopped" => "Το «{name}» σταμάτησε στην ενέργεια {step}: {why}",
         "snippet_run_timed_out" => "η αναμονή έληξε",
         "snippet_run_too_long" => "Το «{name}» αναπτύσσεται σε πάρα πολλές ενέργειες.",

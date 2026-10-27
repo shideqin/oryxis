@@ -1293,6 +1293,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "Đang chạy {name} ({step}/{total})",
         "snippet_run_saved" => "Đã lưu vào {path}",
         "snippet_run_stop" => "Dừng đoạn lệnh",
+        "terminal_transfer_cancel" => "Hủy truyền",
         "snippet_run_stopped" => "“{name}” dừng ở hành động {step}: {why}",
         "snippet_run_timed_out" => "hết thời gian chờ",
         "snippet_run_too_long" => "“{name}” mở rộng thành quá nhiều hành động.",

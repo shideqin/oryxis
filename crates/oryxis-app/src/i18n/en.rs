@@ -1300,6 +1300,7 @@ pub(super) fn lookup(key: &str) -> &'static str {
         "snippet_run_progress" => "Running {name} ({step}/{total})",
         "snippet_run_saved" => "Saved to {path}",
         "snippet_run_stop" => "Stop snippet",
+        "terminal_transfer_cancel" => "Cancel transfer",
         "snippet_run_stopped" => "\"{name}\" stopped at action {step}: {why}",
         "snippet_run_timed_out" => "the wait timed out",
         "snippet_run_too_long" => "\"{name}\" expands to too many actions.",

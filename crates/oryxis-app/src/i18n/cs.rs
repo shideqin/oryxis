@@ -1299,6 +1299,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "Běží {name} ({step}/{total})",
         "snippet_run_saved" => "Uloženo do {path}",
         "snippet_run_stop" => "Zastavit snippet",
+        "terminal_transfer_cancel" => "Zrušit přenos",
         "snippet_run_stopped" => "„{name}“ se zastavil u akce {step}: {why}",
         "snippet_run_timed_out" => "čekání vypršelo",
         "snippet_run_too_long" => "„{name}“ se rozvine do příliš mnoha akcí.",

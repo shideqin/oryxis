@@ -1090,6 +1090,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "{name} を実行中（{step}/{total}）",
         "snippet_run_saved" => "{path} に保存しました",
         "snippet_run_stop" => "スニペットを停止",
+        "terminal_transfer_cancel" => "転送をキャンセル",
         "snippet_run_stopped" => "「{name}」はアクション {step} で停止しました：{why}",
         "snippet_run_timed_out" => "待機がタイムアウトしました",
         "snippet_run_too_long" => "「{name}」は展開するとアクションが多すぎます。",

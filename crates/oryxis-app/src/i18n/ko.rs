@@ -1293,6 +1293,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "{name} 실행 중 ({step}/{total})",
         "snippet_run_saved" => "{path}에 저장됨",
         "snippet_run_stop" => "스니펫 중지",
+        "terminal_transfer_cancel" => "전송 취소",
         "snippet_run_stopped" => "“{name}”이(가) 동작 {step}에서 멈췄습니다: {why}",
         "snippet_run_timed_out" => "대기 시간이 초과되었습니다",
         "snippet_run_too_long" => "“{name}”을(를) 펼치면 동작이 너무 많습니다.",

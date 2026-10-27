@@ -237,7 +237,33 @@ impl Oryxis {
                 .boxed(),
             );
             items.push(Space::new().width(6).boxed());
-            items.push(snippet_run_stop_btn(run_id));
+            items.push(stop_btn(Message::Snippet(crate::messages::SnippetMessage::CancelSnippetRun(run_id))));
+            items.push(Space::new().width(10).boxed());
+        }
+        // The focused pane's own transfer (ZMODEM, a drop upload), here
+        // when no sidebar region is on screen to hold it
+        // (`pane_transfer_place`): name, bytes, a thin bar and Cancel.
+        if self.pane_transfer_place() == crate::views::terminal::PaneTransferPlace::StatusBar
+            && let Some(up) = self.pane_transfer()
+        {
+            items.push(text(middle_truncate(&up.title, 48)).size(11).color(OryxisColors::t().accent).boxed());
+            items.push(Space::new().width(6).boxed());
+            items.push(text(up.count).size(11).color(OryxisColors::t().text_muted).boxed());
+            if let Some(pct) = up.pct {
+                items.push(Space::new().width(8).boxed());
+                items.push(
+                    container(crate::widgets::progress_track(
+                        pct,
+                        3.0,
+                        OryxisColors::t().accent,
+                        Color::from_rgba(1.0, 1.0, 1.0, 0.08),
+                    ))
+                    .width(Length::Fixed(72.0))
+                    .boxed(),
+                );
+            }
+            items.push(Space::new().width(8).boxed());
+            items.push(stop_btn(up.cancel));
             items.push(Space::new().width(10).boxed());
         }
         // Host vitals (issue #83, the MobaXterm-style bar): the same
@@ -635,11 +661,12 @@ fn privacy_segment_btn(masking: bool, overridden: bool) -> Element<'static, Mess
         .boxed()
 }
 
-/// Stop the snippet run on the focused pane.
-fn snippet_run_stop_btn(run_id: u64) -> Element<'static, Message> {
+/// Cancel what a segment reports on the focused pane: a snippet run, a
+/// transfer.
+fn stop_btn(on_press: Message) -> Element<'static, Message> {
     button(text(crate::i18n::t("cancel")).size(11).color(OryxisColors::t().error))
         .padding(Padding { top: 1.0, right: 8.0, bottom: 1.0, left: 8.0 })
-        .on_press(Message::Snippet(crate::messages::SnippetMessage::CancelSnippetRun(run_id)))
+        .on_press(on_press)
         .style(|_, status| {
             let c = OryxisColors::t();
             let bg = match status {

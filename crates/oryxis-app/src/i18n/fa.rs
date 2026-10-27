@@ -1295,6 +1295,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "در حال اجرای {name} ({step}/{total})",
         "snippet_run_saved" => "در {path} ذخیره شد",
         "snippet_run_stop" => "توقف قطعه‌کد",
+        "terminal_transfer_cancel" => "لغو انتقال",
         "snippet_run_stopped" => "«{name}» در کنش {step} متوقف شد: {why}",
         "snippet_run_timed_out" => "زمان انتظار تمام شد",
         "snippet_run_too_long" => "«{name}» به کنش‌های بیش از حد باز می‌شود.",

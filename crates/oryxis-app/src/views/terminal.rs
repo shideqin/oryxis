@@ -31,11 +31,11 @@ impl Oryxis {
             && tab.files_mode
             && self.cur_hybrid_owner() == Some(tab._id)
         {
-            // The ZMODEM card still floats on top: the hidden PTY keeps
-            // processing output, so a remote `sz` can seize the pane
-            // while the files surface is up and must stay visible.
+            // A ZMODEM transfer stays visible here too: the hidden PTY
+            // keeps processing output, so a remote `sz` can seize the
+            // pane while the files surface is up.
             let mut stack = iced::widget::Stack::<iced::Element<'_, _>>::new().push(self.view_sftp());
-            if let Some(zm) = self.transfer_overlay() {
+            if let Some(zm) = self.transfer_edge_overlay() {
                 stack = stack.push(zm);
             }
             return stack.boxed();
@@ -301,13 +301,13 @@ impl Oryxis {
                 })),
                 ..Default::default()
             });
-        // Floating overlay over the terminal area (shown whether or not
-        // the chat sidebar is open): the ZMODEM transfer card. The toast
+        // The pane's transfer, over the terminal's bottom edge only when
+        // no sidebar and no status bar can hold it. The toast
         // chip is NOT layered here: it mounts at the window root
         // (`root_view.rs`), so notifications raised while the user sits
         // in the Dashboard / Settings views are visible too.
         let mut stack = iced::widget::Stack::<iced::Element<'_, _>>::new().push(base.boxed());
-        if let Some(zm) = self.transfer_overlay() {
+        if let Some(zm) = self.transfer_edge_overlay() {
             stack = stack.push(zm);
         }
         stack.boxed()
@@ -339,120 +339,111 @@ impl Oryxis {
         })
     }
 
-    /// Bottom-center transfer card over the terminal while the active
-    /// pane is moving files: a ZMODEM transfer (in-band, PTY diverted)
-    /// or an OS-drop SFTP upload (out-of-band, terminal stays live).
-    /// One card for both: direction verb, entry name, byte progress, a
-    /// bar (when the size is known) and Cancel. `None` when idle. The
-    /// two never coexist on a pane (the drop router refuses a second
-    /// transfer), so ZMODEM being checked first is not a preference.
-    fn transfer_overlay(&self) -> Option<Element<'_, Message>> {
+    /// The active pane's own transfer, a ZMODEM session (in-band, PTY
+    /// diverted) or an OS-drop SFTP upload (out-of-band, terminal stays
+    /// live), read for drawing: direction verb, entry name, byte progress
+    /// and the Cancel it answers to. `None` when idle. The two never
+    /// coexist on a pane (the drop router refuses a second transfer), so
+    /// ZMODEM being checked first is not a preference.
+    pub(crate) fn pane_transfer(&self) -> Option<PaneTransfer> {
         let pane = self.cur_active_tab().and_then(|i| self.tabs.get(i)).map(|t| t.active())?;
         let pane_id = pane.id;
-        // (verb, name, batch, transferred, total, cancel message)
-        let (verb, name, batch, transferred, total, cancel_msg) =
-            if let Some(zm) = pane.zmodem.as_ref() {
-                let verb = match zm.direction {
-                    oryxis_zmodem::Direction::Download => t("zmodem_downloading"),
-                    oryxis_zmodem::Direction::Upload => t("zmodem_uploading"),
-                };
-                (
-                    verb,
-                    zm.file_name.as_deref().unwrap_or("…"),
-                    zm.batch,
-                    zm.transferred,
-                    zm.total,
-                    Message::Zmodem(ZmodemMessage::ZmodemCancel(pane_id)),
-                )
-            } else {
-                let up = pane.drop_upload.as_ref()?;
-                (
-                    t("zmodem_uploading"),
-                    up.file_name.as_deref().unwrap_or("…"),
-                    up.batch,
-                    up.transferred,
-                    up.total,
-                    Message::Terminal(TerminalMessage::TerminalDropCancel(pane_id)),
-                )
+        let (verb, name, batch, transferred, total, cancel) = if let Some(zm) = pane.zmodem.as_ref() {
+            let verb = match zm.direction {
+                oryxis_zmodem::Direction::Download => t("zmodem_downloading"),
+                oryxis_zmodem::Direction::Upload => t("zmodem_uploading"),
             };
-
+            (
+                verb,
+                zm.file_name.as_deref().unwrap_or("…"),
+                zm.batch,
+                zm.transferred,
+                zm.total,
+                Message::Zmodem(ZmodemMessage::ZmodemCancel(pane_id)),
+            )
+        } else {
+            let up = pane.drop_upload.as_ref()?;
+            (
+                t("zmodem_uploading"),
+                up.file_name.as_deref().unwrap_or("…"),
+                up.batch,
+                up.transferred,
+                up.total,
+                Message::Terminal(TerminalMessage::TerminalDropCancel(pane_id)),
+            )
+        };
         // Multi-file position; numeric, so no i18n needed.
-        let batch = batch
-            .map(|(k, n)| format!(" ({k}/{n})"))
-            .unwrap_or_default();
-        let bytes_line = match total {
+        let batch = batch.map(|(k, n)| format!(" ({k}/{n})")).unwrap_or_default();
+        let count = match total {
             Some(total) => format!("{} / {}", fmt_bytes(transferred), fmt_bytes(total)),
             None => fmt_bytes(transferred),
         };
-        let header = dir_row(vec![
-            text(format!("{verb} {name}{batch}"))
-                .size(12)
-                .color(OryxisColors::t().text_primary)
-                .boxed(),
-            Space::new().width(Length::Fill).boxed(),
-            text(bytes_line).size(11).color(OryxisColors::t().text_muted).boxed(),
-        ])
-        .align_y(iced::Alignment::Center);
+        Some(PaneTransfer {
+            title: format!("{verb} {name}{batch}"),
+            count,
+            pct: total
+                .filter(|t| *t > 0)
+                .map(|total| (transferred as f32 / total as f32).clamp(0.0, 1.0)),
+            cancel,
+        })
+    }
 
-        let mut body = column![header].spacing(6).width(Length::Fixed(320.0));
-        if let Some(total) = total.filter(|t| *t > 0) {
-            let frac = (transferred as f32 / total as f32).clamp(0.0, 1.0);
-            body = body.push(iced::widget::progress_bar(0.0..=1.0, frac).boxed());
+    /// Where the active pane's transfer is drawn, so it never covers the
+    /// terminal while somewhere else can hold it: the foot of a sidebar
+    /// region (the one showing Files when both are up, else whichever
+    /// is), else the status bar, else, with neither on screen, a strip
+    /// along the terminal's bottom edge. A Files-mode tab draws no
+    /// sidebar, so it starts at the status bar.
+    pub(crate) fn pane_transfer_place(&self) -> PaneTransferPlace {
+        use crate::state::{SidebarSide, TerminalSidebarTab};
+        if let Some(tab) = self.cur_active_tab().and_then(|i| self.tabs.get(i))
+            && !tab.files_mode
+        {
+            let shown: Vec<SidebarSide> = [SidebarSide::Right, SidebarSide::Left]
+                .into_iter()
+                .filter(|side| self.sidebar_region_shown(tab, *side))
+                .collect();
+            let files = shown
+                .iter()
+                .copied()
+                .find(|side| self.sidebar_region_tab(*side) == Some(TerminalSidebarTab::Files));
+            if let Some(side) = files.or_else(|| shown.first().copied()) {
+                return PaneTransferPlace::Sidebar(side);
+            }
         }
-        let cancel = button(text(t("cancel")).size(11).color(OryxisColors::t().text_primary))
-            .on_press(cancel_msg)
-            .padding(Padding { top: 4.0, right: 10.0, bottom: 4.0, left: 10.0 })
-            .style(|_, status| {
-                let bg = match status {
-                    iced::widget::button::Status::Hovered
-                    | iced::widget::button::Status::Pressed => OryxisColors::t().bg_hover,
-                    _ => OryxisColors::t().bg_surface,
-                };
-                iced::widget::button::Style {
-                    background: Some(Background::Color(bg)),
-                    border: Border {
-                        radius: Radius::from(6.0),
-                        color: OryxisColors::t().border,
-                        width: 1.0,
-                    },
-                    ..Default::default()
-                }
-            });
-        body = body.push(
-            container(cancel)
-                .width(Length::Fill)
-                .align_x(iced::alignment::Horizontal::Right).boxed(),
-        );
+        if self.vaults.cur().prefs.show_status_bar && !self.immersive_fullscreen() {
+            PaneTransferPlace::StatusBar
+        } else {
+            PaneTransferPlace::TerminalEdge
+        }
+    }
 
-        let card = container(body)
-            .padding(Padding { top: 10.0, right: 12.0, bottom: 10.0, left: 12.0 })
-            .style(|_| container::Style {
-                background: Some(Background::Color(Color {
-                    a: 0.97,
-                    ..OryxisColors::t().bg_selected
-                })),
-                border: Border {
-                    radius: Radius::from(8.0),
-                    color: OryxisColors::t().accent,
-                    width: 1.0,
-                },
-                ..Default::default()
-            });
+    /// The active pane's transfer as the strip the sidebar Files tab
+    /// draws for its own transfers (`progress_strip`), stacked for a
+    /// sidebar's width when `narrow`.
+    pub(crate) fn pane_transfer_strip(&self, narrow: bool) -> Option<(Message, Element<'_, Message>)> {
+        let up = self.pane_transfer()?;
+        let cancel = up.cancel.clone();
+        Some((
+            cancel,
+            crate::views::sftp::progress_strip(up.title, up.count, None, up.pct, up.cancel, narrow),
+        ))
+    }
+
+    /// The strip along the terminal's bottom edge, for the one case with
+    /// no sidebar and no status bar to hold it (`TerminalEdge`): laid
+    /// over the terminal rather than beside it, because taking rows from
+    /// the grid would resize the PTY for the length of a transfer.
+    fn transfer_edge_overlay(&self) -> Option<Element<'_, Message>> {
+        if self.pane_transfer_place() != PaneTransferPlace::TerminalEdge {
+            return None;
+        }
+        let (_, strip) = self.pane_transfer_strip(false)?;
         Some(
-            container(
-                column![
-                    Space::new().height(Length::Fill),
-                    container(card)
-                        .width(Length::Fill)
-                        .align_x(iced::alignment::Horizontal::Center),
-                    Space::new().height(Length::Fixed(84.0)),
-                ]
+            column![Space::new().height(Length::Fill), strip]
                 .width(Length::Fill)
-                .height(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .boxed(),
+                .height(Length::Fill)
+                .boxed(),
         )
     }
 
@@ -1462,9 +1453,23 @@ impl Oryxis {
             STab::HostConfig => self.host_config_tab_content(tab),
             STab::HostsTree => self.hosts_tree_tab_content(),
         };
-        let panel_column = column![header, header_separator, content]
+        let mut panel_column = column![header, header_separator, content]
             .width(Length::Fill)
             .height(Length::Fill);
+        // The pane's own transfer (ZMODEM, a drop upload) at the foot of
+        // the region chosen to hold it, whichever tab it shows. Pushed
+        // LAST, after every widget whose state matters, and recorded last
+        // on the sidebar ring, which is where it is drawn.
+        if self.pane_transfer_place() == PaneTransferPlace::Sidebar(side)
+            && let Some((cancel, strip)) = self.pane_transfer_strip(true)
+        {
+            panel_column = panel_column.push(self.sidebar_nav_slot(
+                crate::keynav::SidebarRow::button(cancel),
+                active,
+                0.0,
+                strip,
+            ));
+        }
 
         // The toast now floats over the whole terminal view (see
         // `view_terminal` / `toast_overlay`), not just this sidebar, so it
@@ -1907,4 +1912,21 @@ pub(crate) fn chat_header_btn<'a>(
         }
     })
     .boxed()
+}
+
+/// A pane's own transfer, ready to draw (`Oryxis::pane_transfer`).
+pub(crate) struct PaneTransfer {
+    pub(crate) title: String,
+    pub(crate) count: String,
+    /// `None` while the size is unknown: no bar is drawn.
+    pub(crate) pct: Option<f32>,
+    pub(crate) cancel: Message,
+}
+
+/// Where `Oryxis::pane_transfer_place` puts a pane's transfer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PaneTransferPlace {
+    Sidebar(crate::state::SidebarSide),
+    StatusBar,
+    TerminalEdge,
 }

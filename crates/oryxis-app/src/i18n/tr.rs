@@ -1293,6 +1293,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "{name} çalışıyor ({step}/{total})",
         "snippet_run_saved" => "{path} konumuna kaydedildi",
         "snippet_run_stop" => "Snippet'i durdur",
+        "terminal_transfer_cancel" => "Aktarımı iptal et",
         "snippet_run_stopped" => "“{name}” {step}. eylemde durdu: {why}",
         "snippet_run_timed_out" => "bekleme zaman aşımına uğradı",
         "snippet_run_too_long" => "“{name}” çok fazla eyleme açılıyor.",

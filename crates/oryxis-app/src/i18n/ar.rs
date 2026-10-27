@@ -1325,6 +1325,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "جارٍ تشغيل {name} ({step}/{total})",
         "snippet_run_saved" => "حُفظ في {path}",
         "snippet_run_stop" => "إيقاف المقتطف",
+        "terminal_transfer_cancel" => "إلغاء النقل",
         "snippet_run_stopped" => "توقف «{name}» عند الإجراء {step}: {why}",
         "snippet_run_timed_out" => "انتهت مهلة الانتظار",
         "snippet_run_too_long" => "«{name}» يتوسع إلى إجراءات كثيرة جدًا.",

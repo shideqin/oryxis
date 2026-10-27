@@ -1376,6 +1376,26 @@ impl Oryxis {
                 OryxisColors::t().error,
             ));
         }
+        // So is the pane's own transfer (ZMODEM, a drop upload): the
+        // keyboard door to the Cancel its strip carries, which may sit on
+        // the mouse-only status bar.
+        let transfer_cancel = self.pane_by_id(pane_id).and_then(|p| {
+            if p.zmodem.is_some() {
+                Some(Message::Zmodem(crate::app::ZmodemMessage::ZmodemCancel(pane_id)))
+            } else {
+                p.drop_upload
+                    .is_some()
+                    .then_some(Message::Terminal(TerminalMessage::TerminalDropCancel(pane_id)))
+            }
+        });
+        if let Some(cancel) = transfer_cancel {
+            items.push(self.menu_item(
+                iced_fonts::lucide::circle_stop(),
+                crate::i18n::t("terminal_transfer_cancel"),
+                cancel,
+                OryxisColors::t().error,
+            ));
+        }
         // Close this pane: only offered on split tabs (on a single
         // pane it would just be "close tab", which the tab menu owns).
         // The message carries the right-clicked pane's id: focus and

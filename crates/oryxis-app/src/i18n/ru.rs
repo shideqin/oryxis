@@ -1077,6 +1077,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "Выполняется {name} ({step}/{total})",
         "snippet_run_saved" => "Сохранено в {path}",
         "snippet_run_stop" => "Остановить сниппет",
+        "terminal_transfer_cancel" => "Отменить передачу",
         "snippet_run_stopped" => "«{name}» остановлен на действии {step}: {why}",
         "snippet_run_timed_out" => "время ожидания истекло",
         "snippet_run_too_long" => "«{name}» разворачивается в слишком много действий.",

@@ -1299,6 +1299,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "מריץ את {name} ({step}/{total})",
         "snippet_run_saved" => "נשמר ב-{path}",
         "snippet_run_stop" => "עצירת הסניפט",
+        "terminal_transfer_cancel" => "בטל העברה",
         "snippet_run_stopped" => "״{name}״ נעצר בפעולה {step}: {why}",
         "snippet_run_timed_out" => "זמן ההמתנה תם",
         "snippet_run_too_long" => "״{name}״ מתרחב ליותר מדי פעולות.",

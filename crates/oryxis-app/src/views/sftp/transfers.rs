@@ -104,30 +104,53 @@ pub(crate) fn transfer_progress_strip<'a>(
             (transfer.completed as f32 / transfer.total as f32).clamp(0.0, 1.0),
         )
     };
-    let bar = crate::widgets::progress_track(
-        pct,
-        4.0,
-        OryxisColors::t().accent,
-        Color::from_rgba(1.0, 1.0, 1.0, 0.05),
-    );
+    progress_strip(
+        format!("{} {}", label, transfer.root_label),
+        count,
+        Some(current),
+        Some(pct),
+        cancel,
+        narrow,
+    )
+}
 
-    let info = column![
-        row![
-            text(format!("{} {}", label, transfer.root_label))
-                .size(11)
-                .color(OryxisColors::t().text_secondary),
-            Space::new().width(Length::Fill),
-            text(count).size(11).color(OryxisColors::t().text_muted),
-        ]
-        .align_y(iced::Alignment::Center),
-        Space::new().height(2),
-        text(current)
-            .size(10)
-            .color(OryxisColors::t().text_muted),
-        Space::new().height(6),
-        bar,
-    ]
-    .width(Length::Fill);
+/// The transfer strip itself, for anything that moves bytes: the SFTP
+/// queue (`transfer_progress_strip`) and a pane's own transfer, a ZMODEM
+/// session or a file dropped on the terminal (`pane_transfer_strip`).
+/// `title` leads the first line and `count` closes it; `detail` is the
+/// muted line under it; `pct` draws the 4 px bar (`None` when the size
+/// is not known, so no bar claims a progress it cannot measure).
+pub(crate) fn progress_strip<'a>(
+    title: String,
+    count: String,
+    detail: Option<String>,
+    pct: Option<f32>,
+    cancel: Message,
+    narrow: bool,
+) -> Element<'a, Message> {
+    let mut info = iced::widget::Column::<Element<'a, Message>>::new().width(Length::Fill);
+    info = info.push(
+        crate::widgets::dir_row(vec![
+            text(title).size(11).color(OryxisColors::t().text_secondary).boxed(),
+            Space::new().width(Length::Fill).boxed(),
+            text(count).size(11).color(OryxisColors::t().text_muted).boxed(),
+        ])
+        .align_y(iced::Alignment::Center)
+        .boxed(),
+    );
+    if let Some(detail) = detail {
+        info = info.push(Space::new().height(2).boxed());
+        info = info.push(text(detail).size(10).color(OryxisColors::t().text_muted).boxed());
+    }
+    if let Some(pct) = pct {
+        info = info.push(Space::new().height(6).boxed());
+        info = info.push(crate::widgets::progress_track(
+            pct,
+            4.0,
+            OryxisColors::t().accent,
+            Color::from_rgba(1.0, 1.0, 1.0, 0.05),
+        ));
+    }
 
     let cancel_btn = button(
         text(t("cancel")).size(11).color(OryxisColors::t().text_secondary),

@@ -1299,6 +1299,7 @@ pub(super) fn lookup(key: &str) -> Option<&'static str> {
         "snippet_run_progress" => "{name} चल रहा है ({step}/{total})",
         "snippet_run_saved" => "{path} में सेव किया गया",
         "snippet_run_stop" => "स्निपेट रोकें",
+        "terminal_transfer_cancel" => "स्थानांतरण रद्द करें",
         "snippet_run_stopped" => "“{name}” क्रिया {step} पर रुक गया: {why}",
         "snippet_run_timed_out" => "इंतज़ार का समय खत्म हो गया",
         "snippet_run_too_long" => "“{name}” बहुत ज़्यादा क्रियाओं में फैल जाता है।",
