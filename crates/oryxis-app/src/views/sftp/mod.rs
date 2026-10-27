@@ -28,6 +28,7 @@ enum PanePopover {
 mod breadcrumb;
 mod columns;
 mod formatting;
+mod link_modal;
 mod menus;
 mod modals;
 mod rows;
@@ -36,6 +37,7 @@ mod transfers;
 pub(crate) use breadcrumb::*;
 pub(crate) use columns::*;
 pub(crate) use formatting::*;
+pub(crate) use link_modal::*;
 pub(crate) use menus::*;
 pub(crate) use modals::*;
 pub(crate) use rows::*;
@@ -301,6 +303,8 @@ impl Oryxis {
             Some(delete_confirm_modal(&self.cur_sftp().delete_confirm))
         } else if let Some(entry) = &self.cur_sftp().new_entry {
             Some(new_entry_modal(entry))
+        } else if let Some(link) = &self.cur_sftp().new_link {
+            Some(new_link_modal(link))
         } else if let Some(prompt) = &self.sftp_edit_reopen {
             Some(edit_reopen_modal(self, prompt))
         } else if let Some(watch) = self.pending_edit_save() {
@@ -764,6 +768,7 @@ impl Oryxis {
                         side,
                         entry.name.clone(),
                         entry.is_dir,
+                        entry.is_symlink,
                         if entry.is_dir { String::new() } else { format_size(entry.size) },
                         entry.modified,
                         entry.mode,

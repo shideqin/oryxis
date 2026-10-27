@@ -209,6 +209,26 @@ pub enum SftpMessage {
     SftpNewEntryInput(String),
     SftpNewEntryCommit,
     SftpNewEntryCancel,
+    /// Open the "New symbolic link" dialog for a pane; the string, when
+    /// given, prefills the target (the row the menu was raised on).
+    SftpStartNewLink(crate::state::SftpPaneSide, Option<String>),
+    SftpNewLinkName(String),
+    SftpNewLinkTarget(String),
+    SftpNewLinkCommit,
+    SftpNewLinkCancel,
+    /// A symbolic link row was opened: ask the server where it points
+    /// before acting on it.
+    SftpOpenLink(crate::state::SftpPaneSide, String, crate::state::SftpLinkIntent),
+    /// The answer to [`Self::SftpOpenLink`]: the pane's listing seq at the
+    /// ask (a navigation since makes it stale), the link, the intent, and
+    /// whether it points at a folder or, failing that, what to say.
+    SftpLinkResolved(
+        crate::state::SftpPaneSide,
+        u64,
+        String,
+        crate::state::SftpLinkIntent,
+        Result<bool, String>,
+    ),
     /// Async local-directory listing landed (side, pane listing seq,
     /// listed path, rows or error). Emitted by `spawn_local_listing`;
     /// stale seqs are dropped.

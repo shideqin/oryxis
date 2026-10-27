@@ -78,6 +78,9 @@ pub(crate) enum Modal {
     SshImport,
     SftpRename,
     SftpNewEntry,
+    /// "New symbolic link": owns its own dismissal like `SftpNewEntry`
+    /// (Esc through the SFTP key router).
+    SftpNewLink,
     SftpProperties,
     SftpOverwrite,
     /// Save-confirmation for an "Open with" edit watch (issue #84): a
@@ -204,6 +207,7 @@ impl Modal {
         Modal::SshImport,
         Modal::SftpRename,
         Modal::SftpNewEntry,
+        Modal::SftpNewLink,
         Modal::SftpProperties,
         Modal::SftpOverwrite,
         Modal::SftpEditPrompt,
@@ -227,7 +231,7 @@ impl Modal {
     /// Modals Esc dismisses, in topmost-first priority order (the order
     /// `close_topmost_modal` walks). Modals absent here own their own
     /// dismissal and are not Esc-closeable: the kbi prompt and the SFTP
-    /// rename / new-entry / properties / overwrite dialogs.
+    /// rename / new-entry / new-link / properties / overwrite dialogs.
     pub(crate) const ESC_ORDER: &'static [Modal] = &[
         // The update offer is the first branch of the root overlay
         // chain (`root_view`), drawn over everything below, so it is
@@ -350,6 +354,7 @@ impl Modal {
             | Modal::SshImport
             | Modal::SftpRename
             | Modal::SftpNewEntry
+            | Modal::SftpNewLink
             | Modal::SftpProperties
             | Modal::SftpOverwrite
             | Modal::SftpEditPrompt
@@ -410,6 +415,7 @@ mod tests {
                 | Modal::SshImport
                 | Modal::SftpRename
                 | Modal::SftpNewEntry
+                | Modal::SftpNewLink
                 | Modal::SftpProperties
                 | Modal::SftpOverwrite
                 | Modal::SftpEditPrompt
@@ -430,7 +436,7 @@ mod tests {
                 | Modal::VaultDialog => {}
             }
         }
-        assert_eq!(Modal::ALL.len(), 46, "add the new variant to Modal::ALL");
+        assert_eq!(Modal::ALL.len(), 47, "add the new variant to Modal::ALL");
         // Every Esc-closeable modal must also be a known modal.
         for m in Modal::ESC_ORDER {
             assert!(Modal::ALL.contains(m));

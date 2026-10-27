@@ -441,6 +441,15 @@ impl Oryxis {
         };
         let opens_as_folder = self.row_opens_as_folder(side, &path);
         if !open_files {
+            if self.is_remote_link_row(side, &path) {
+                // Whether there is a folder to descend into is the
+                // server's answer, asked first.
+                return Task::done(Message::Sftp(SftpMessage::SftpOpenLink(
+                    side,
+                    path,
+                    crate::state::SftpLinkIntent::Descend { focus_parent: true },
+                )));
+            }
             if !opens_as_folder {
                 // Right arrow on a file: nothing to descend into.
                 return Task::none();
@@ -464,15 +473,38 @@ impl Oryxis {
     /// FileZilla's activation of one row, shared by a double click and
     /// Enter: the double-click setting for its kind decides. A zip the
     /// browser can open counts as a folder (its "open" is browsing it);
-    /// `opens_as_folder` is the row's own answer (a remote symlink opens
-    /// like a folder, as its icon does). `from_keyboard` lands the cursor
-    /// on the opened folder's `..` row, the keyboard descent's rule.
+    /// `opens_as_folder` is the row's own answer. A remote symlink is
+    /// neither yet: the server is asked where it points
+    /// (`SftpOpenLink`) and the answer comes back through
+    /// [`Self::sftp_activate_known`]. `from_keyboard` lands the cursor on
+    /// the opened folder's `..` row, the keyboard descent's rule.
     pub(crate) fn sftp_activate_entry(
         &mut self,
         side: crate::state::SftpPaneSide,
         path: String,
         opens_as_folder: bool,
         from_keyboard: bool,
+    ) -> Task<Message> {
+        if self.is_remote_link_row(side, &path) {
+            return Task::done(Message::Sftp(SftpMessage::SftpOpenLink(
+                side,
+                path,
+                crate::state::SftpLinkIntent::Activate { from_keyboard },
+            )));
+        }
+        self.sftp_activate_known(side, path, opens_as_folder, from_keyboard, None)
+    }
+
+    /// The activation once what the row is, is known. `resolved_dir` is
+    /// a symbolic link's answer from the server, which a transfer then
+    /// follows instead of the listing (where a link is not a folder).
+    pub(crate) fn sftp_activate_known(
+        &mut self,
+        side: crate::state::SftpPaneSide,
+        path: String,
+        opens_as_folder: bool,
+        from_keyboard: bool,
+        resolved_dir: Option<bool>,
     ) -> Task<Message> {
         use crate::state::{SftpDirDoubleClick, SftpFileDoubleClick, SftpPendingFocus};
         let browsable_zip = !opens_as_folder && self.sftp_zip_browsable(side, &path);
@@ -490,12 +522,12 @@ impl Oryxis {
                     }
                     self.sftp_navigate_into(side, path)
                 }
-                SftpDirDoubleClick::Transfer => self.sftp_transfer_entry(side, path),
+                SftpDirDoubleClick::Transfer => self.sftp_transfer_entry(side, path, resolved_dir),
                 SftpDirDoubleClick::Nothing => Task::none(),
             };
         }
         match self.vaults.cur().prefs.sftp_file_double_click {
-            SftpFileDoubleClick::Transfer => self.sftp_transfer_entry(side, path),
+            SftpFileDoubleClick::Transfer => self.sftp_transfer_entry(side, path, resolved_dir),
             // A file inside a browsed archive has no "open": the listing is
             // virtual, and copying it out is the transfer.
             SftpFileDoubleClick::Open if self.cur_sftp().pane(side).zip.is_some() => Task::none(),
@@ -534,9 +566,41 @@ impl Oryxis {
             )
     }
 
+    /// Whether a row is a symbolic link on a remote pane's real listing
+    /// (a browsed archive's rows are never links), matched by the full
+    /// path the rows were built with.
+    pub(crate) fn is_remote_link_row(&self, side: crate::state::SftpPaneSide, path: &str) -> bool {
+        let pane = self.cur_sftp().pane(side);
+        if !pane.is_remote || pane.zip.is_some() {
+            return false;
+        }
+        let base = pane.remote_path.trim_end_matches('/');
+        pane.remote_entries.iter().any(|e| {
+            e.is_symlink
+                && if base.is_empty() {
+                    path.strip_prefix('/') == Some(e.name.as_str())
+                } else {
+                    path.strip_prefix(base).and_then(|rest| rest.strip_prefix('/')) == Some(e.name.as_str())
+                }
+        })
+    }
+
+    /// Whether a row is a symbolic link on a Local pane, matched by the
+    /// full path the rows were built with.
+    pub(crate) fn is_local_link_row(&self, side: crate::state::SftpPaneSide, path: &str) -> bool {
+        let pane = self.cur_sftp().pane(side);
+        !pane.is_remote
+            && pane.zip.is_none()
+            && pane
+                .local_entries
+                .iter()
+                .any(|e| e.is_symlink && pane.local_path.join(&e.name).to_string_lossy() == path)
+    }
+
     /// Whether a row opens like a folder: a folder, or a remote symlink
     /// (the listing cannot tell where it points, so it is offered as a
-    /// way in, the same answer its row and icon give).
+    /// way in, the same answer its row and icon give; opening one asks
+    /// the server first, `SftpOpenLink`).
     fn row_opens_as_folder(&self, side: crate::state::SftpPaneSide, path: &str) -> bool {
         let pane = self.cur_sftp().pane(side);
         if pane.is_remote {
@@ -575,16 +639,17 @@ impl Oryxis {
         &mut self,
         side: crate::state::SftpPaneSide,
         path: String,
+        resolved_dir: Option<bool>,
     ) -> Task<Message> {
         let cross = self.sftp_cross_pane(side);
         let source_is_remote = self.cur_sftp().pane(side).is_remote;
         if !cross.ready {
             return self.show_toast(crate::i18n::t("sftp_not_connected").to_string());
         }
-        // The listing's own answer, not the row's "opens as folder": a
-        // remote symlink is transferred as what the server says it is,
-        // which is what the menu's Download does.
-        let is_dir = self.row_is_dir_in_pane(side, &path);
+        // The listing's own answer, not the row's "opens as folder",
+        // unless the row is a symbolic link the server was asked about:
+        // then it goes as what it points at.
+        let is_dir = resolved_dir.unwrap_or_else(|| self.row_is_dir_in_pane(side, &path));
         if self.cur_sftp().pane(side).zip.is_some() {
             // Out of a browsed archive, into a pane that is not browsing
             // one itself (the menu's copy-out gate).
@@ -1807,6 +1872,7 @@ pub(crate) fn list_local_dir_blocking(
             .map(|distro| crate::state::LocalEntry {
                 name: distro,
                 is_dir: true,
+                is_symlink: false,
                 size: 0,
                 modified: None,
                 mode: None,
@@ -1818,9 +1884,18 @@ pub(crate) fn list_local_dir_blocking(
     let read = std::fs::read_dir(local_path).map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
     for entry in read.flatten() {
+        // The entry's own metadata: a symbolic link reports on itself.
         let metadata = match entry.metadata() {
             Ok(m) => m,
             Err(_) => continue,
+        };
+        let is_symlink = metadata.file_type().is_symlink();
+        // Whether it opens as a folder is the TARGET's answer, so a link
+        // to a folder is entered like one; a dangling link is a file.
+        let is_dir = if is_symlink {
+            std::fs::metadata(entry.path()).is_ok_and(|m| m.is_dir())
+        } else {
+            metadata.is_dir()
         };
         let name = entry.file_name().to_string_lossy().into_owned();
         // POSIX mode / owner are Unix-only; on Windows these stay
@@ -1834,7 +1909,8 @@ pub(crate) fn list_local_dir_blocking(
         let (mode, uid, gid) = (None, None, None);
         entries.push(crate::state::LocalEntry {
             name,
-            is_dir: metadata.is_dir(),
+            is_dir,
+            is_symlink,
             size: metadata.len(),
             modified: metadata.modified().ok(),
             mode,

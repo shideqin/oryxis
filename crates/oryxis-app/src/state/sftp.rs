@@ -340,6 +340,8 @@ pub(crate) struct SftpState {
     pub delete_confirm: Vec<SftpDeleteTarget>,
     /// New file / new folder modal, kind + in-progress name input.
     pub new_entry: Option<SftpNewEntry>,
+    /// New symbolic link modal: the link's name and what it points at.
+    pub new_link: Option<SftpNewLink>,
     /// True while OS files are being dragged over the window. Drives the
     /// remote-pane drop highlight; cleared on `FilesHoveredLeft` or
     /// `FileDropped`.
@@ -531,6 +533,7 @@ impl Default for SftpState {
             rename: None,
             delete_confirm: Vec::new(),
             new_entry: None,
+            new_link: None,
             drop_active: false,
             pending_drops: Vec::new(),
             hovered_row: None,
@@ -1204,6 +1207,44 @@ pub(crate) struct SftpNewEntry {
     pub input: String,
 }
 
+/// The "New symbolic link" dialog. The link is made in the pane's
+/// current folder under `name`; `target` is stored VERBATIM, the way
+/// `ln -s` stores it, so a relative target stays relative to the link's
+/// folder and an absolute one stays absolute.
+#[derive(Debug, Clone)]
+pub(crate) struct SftpNewLink {
+    pub side: SftpPaneSide,
+    pub name: String,
+    pub target: String,
+}
+
+impl SftpNewLink {
+    /// The two fields as they will be used, or `None` while either is
+    /// unusable: the name is one plain path component (the new-entry and
+    /// rename guard), the target anything non-blank. Both trimmed.
+    pub(crate) fn fields(&self) -> Option<(String, String)> {
+        let name = self.name.trim();
+        let target = self.target.trim();
+        (crate::sftp_helpers::is_safe_remote_entry_name(name) && !target.is_empty())
+            .then(|| (name.to_string(), target.to_string()))
+    }
+}
+
+/// What opening a symbolic link row was for, carried across the `stat`
+/// that decides whether it is a folder. The listing reports a link as a
+/// link (the server's `lstat`), so where it points is a second question
+/// asked only when the row is opened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SftpLinkIntent {
+    /// The folder doors (the row's icon, Right): go in when it is a
+    /// folder, nothing when it is a file. `focus_parent` lands the
+    /// cursor on the opened folder's `..` row.
+    Descend { focus_parent: bool },
+    /// A double click or Enter: the double-click setting for what the
+    /// link turned out to be decides.
+    Activate { from_keyboard: bool },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SftpSortColumn {
     Name,
@@ -1298,7 +1339,12 @@ impl ListSort {
 #[derive(Debug, Clone)]
 pub(crate) struct LocalEntry {
     pub name: String,
+    /// What the entry leads to: a symbolic link to a folder is a folder
+    /// here (it opens like one), a dangling link is not.
     pub is_dir: bool,
+    /// The entry itself is a symbolic link. Size, times, mode and owner
+    /// are the link's own, as `ls -l` shows them.
+    pub is_symlink: bool,
     pub size: u64,
     pub modified: Option<std::time::SystemTime>,
     /// Unix mode bits (`st_mode`), populated only on Unix; `None` on
@@ -1830,4 +1876,27 @@ pub(crate) struct SftpLogEntry {
     pub time: String,
     pub level: SftpLogLevel,
     pub text: String,
+}
+
+#[cfg(test)]
+mod new_link_tests {
+    use super::*;
+
+    fn link(name: &str, target: &str) -> SftpNewLink {
+        SftpNewLink { side: SftpPaneSide::Right, name: name.into(), target: target.into() }
+    }
+
+    #[test]
+    fn a_link_needs_a_plain_name_and_a_target() {
+        assert_eq!(
+            link(" example.link ", " /opt/example ").fields(),
+            Some(("example.link".into(), "/opt/example".into()))
+        );
+        // A relative target is kept as written, for the link's own folder.
+        assert_eq!(link("l", "../shared").fields(), Some(("l".into(), "../shared".into())));
+        assert_eq!(link("", "/opt/example").fields(), None);
+        assert_eq!(link("a/b", "/opt/example").fields(), None);
+        assert_eq!(link("..", "/opt/example").fields(), None);
+        assert_eq!(link("l", "   ").fields(), None);
+    }
 }

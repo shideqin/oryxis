@@ -311,6 +311,7 @@ pub(crate) fn file_row_local<'a>(
     side: SftpPaneSide,
     name: String,
     is_dir: bool,
+    is_symlink: bool,
     size_str: String,
     modified: Option<std::time::SystemTime>,
     mode: Option<u32>,
@@ -326,7 +327,7 @@ pub(crate) fn file_row_local<'a>(
     layout: ColLayout,
 ) -> Element<'a, Message> {
     use crate::state::SftpColumn;
-    let icon = file_icon(&name, is_dir, false);
+    let icon = file_icon(&name, is_dir, is_symlink);
     // Folder icons open on a single click (see `icon_slot`); disabled
     // mid-rename so a click near the input can't navigate away.
     let icon = icon_slot(
@@ -334,9 +335,9 @@ pub(crate) fn file_row_local<'a>(
         (is_dir && rename_input.is_none())
             .then(|| Message::Sftp(SftpMessage::SftpNavigateLocal(side, path.clone()))),
     );
-    let kind = format_kind(&name, is_dir, false);
+    let kind = format_kind(&name, is_dir, is_symlink);
     let modified_s = format_modified_local(modified);
-    let perms_s = format_perms(mode, is_dir, false);
+    let perms_s = format_perms(mode, is_dir, is_symlink);
     let owner_s = format_owner(uid, gid);
 
     // Inline rename mode swaps the row's label for a text input; the
@@ -439,11 +440,20 @@ pub(crate) fn file_row_remote<'a>(
     use crate::state::SftpColumn;
     let icon = file_icon(&name, is_dir, is_symlink);
     // Folder (and symlink, treated as nav target) icons open on a single
-    // click, mirroring the local rows.
+    // click, mirroring the local rows. A link is entered only once the
+    // server says it leads to a folder.
+    let open_icon = if is_symlink {
+        SftpMessage::SftpOpenLink(
+            side,
+            full_path.clone(),
+            crate::state::SftpLinkIntent::Descend { focus_parent: false },
+        )
+    } else {
+        SftpMessage::SftpNavigateRemote(side, full_path.clone())
+    };
     let icon = icon_slot(
         icon,
-        ((is_dir || is_symlink) && rename_input.is_none())
-            .then(|| Message::Sftp(SftpMessage::SftpNavigateRemote(side, full_path.clone()))),
+        ((is_dir || is_symlink) && rename_input.is_none()).then(|| Message::Sftp(open_icon)),
     );
     let kind = format_kind(&name, is_dir, is_symlink);
     let modified_s = format_modified_remote(mtime);
@@ -563,6 +573,13 @@ pub(crate) fn icon_slot<'a>(
 }
 
 pub(crate) fn file_icon<'a>(name: &str, is_dir: bool, is_symlink: bool) -> iced::widget::Text<'a> {
+    // A link that leads to a folder (a Local pane follows it to know)
+    // still says it is a link.
+    if is_dir && is_symlink {
+        return iced_fonts::lucide::folder_symlink()
+            .size(13)
+            .color(OryxisColors::t().accent);
+    }
     if is_dir {
         return iced_fonts::lucide::folder()
             .size(13)

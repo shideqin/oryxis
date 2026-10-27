@@ -578,6 +578,7 @@ impl Oryxis {
             self.sftp.row_menu = None;
             self.sftp.picker_open = false;
             self.sftp.new_entry = None;
+            self.sftp.new_link = None;
             self.sftp.delete_confirm.clear();
             self.sftp.overwrite_prompt = None;
             self.sftp.properties = None;

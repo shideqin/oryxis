@@ -512,6 +512,14 @@ pub(crate) fn row_context_menu_box<'a>(
             duplicate_msg,
             secondary,
         ));
+        // A link to this entry, made in the folder the pane shows: the
+        // dialog opens with the entry as its target.
+        items = items.push(slot(
+            iced_fonts::lucide::link(),
+            t("sftp_link_to_this").to_string(),
+            Message::Sftp(SftpMessage::SftpStartNewLink(menu.side, Some(menu.path.clone()))),
+            secondary,
+        ));
         items = items.push(slot(
             iced_fonts::lucide::pencil(),
             t("rename").to_string(),
@@ -779,6 +787,7 @@ pub(crate) fn dir_action_items<'a>(
     };
     let new_folder = Message::Sftp(SftpMessage::SftpStartNewEntry(side, SftpEntryKind::Folder));
     let new_file = Message::Sftp(SftpMessage::SftpStartNewEntry(side, SftpEntryKind::File));
+    let new_link = Message::Sftp(SftpMessage::SftpStartNewLink(side, None));
     let mut items: Vec<(Option<Message>, Element<'a, Message>)> = vec![
         (
             Some(new_folder.clone()),
@@ -787,6 +796,10 @@ pub(crate) fn dir_action_items<'a>(
         (
             Some(new_file.clone()),
             menu_item(iced_fonts::lucide::file_plus(), t("new_file"), new_file),
+        ),
+        (
+            Some(new_link.clone()),
+            menu_item(iced_fonts::lucide::link(), t("new_symlink"), new_link),
         ),
     ];
     if full {
@@ -876,10 +889,10 @@ pub(crate) fn row_context_menu_height(
         return items * 30.0 + 8.0;
     }
     // Background menu: directory actions only. New folder + New file +
-    // Refresh + Copy path + Show hidden (5), plus Open in File Manager
-    // on a local pane (6), plus ~2 thin separators.
+    // New symbolic link + Refresh + Copy path + Show hidden (6), plus
+    // Open in File Manager on a local pane (7), plus ~2 thin separators.
     if menu.is_background {
-        let items = if source_is_remote { 5.0 } else { 6.0 };
+        let items = if source_is_remote { 6.0 } else { 7.0 };
         let separators = if source_is_remote { 1.0 } else { 2.0 };
         // Landing-folder rows (+ their own separator) when the pane's host
         // can carry one; counted from the same helper that builds them.
@@ -889,9 +902,10 @@ pub(crate) fn row_context_menu_height(
         return (items + extra_rows) * 30.0 + (separators + extra_seps) * 4.0 + 8.0;
     }
     let multi = selection_count_same_pane > 1;
-    // Always present: Copy path + Duplicate + Rename + Properties +
-    // Delete (single), or Copy N paths + Duplicate + Delete (multi).
-    let mut count = if multi { 3.0 } else { 5.0 };
+    // Always present: Copy path + Duplicate + Link to this + Rename +
+    // Properties + Delete (single), or Copy N paths + Duplicate + Delete
+    // (multi).
+    let mut count = if multi { 3.0 } else { 6.0 };
     // Cross-pane action (Upload / Download / Relay) when the other pane
     // is a ready destination.
     if cross_pane_ready {
@@ -923,9 +937,9 @@ pub(crate) fn row_context_menu_height(
     if !source_is_remote && !multi {
         count += 1.0;
     }
-    // Appended directory actions (New folder + New file + Refresh) plus
-    // their leading separator.
-    count += 3.0;
+    // Appended directory actions (New folder + New file + New symbolic
+    // link + Refresh) plus their leading separator.
+    count += 4.0;
     // Landing-folder rows on a folder target, same helper as the builder.
     let mut extra_seps = 0.0;
     if menu.is_dir && !multi {

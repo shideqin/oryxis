@@ -59,6 +59,9 @@ impl Oryxis {
                     return Ok(Task::none());
                 }
                 self.sftp.row_menu = None;
+                // A local link to a folder opens like one, but deleting it
+                // removes the link alone, and the dialog says so.
+                let is_dir = is_dir && !self.is_local_link_row(side, &path);
                 self.sftp.delete_confirm = vec![crate::state::SftpDeleteTarget {
                     side,
                     path,
@@ -81,7 +84,8 @@ impl Oryxis {
                     .map(|(side, path)| crate::state::SftpDeleteTarget {
                         side: *side,
                         path: path.clone(),
-                        is_dir: self.row_is_dir_in_pane(*side, path),
+                        is_dir: self.row_is_dir_in_pane(*side, path)
+                            && !self.is_local_link_row(*side, path),
                     })
                     .collect();
                 if !targets.is_empty() {
@@ -108,7 +112,7 @@ impl Oryxis {
                         let result = if t.is_dir {
                             std::fs::remove_dir_all(&path)
                         } else {
-                            std::fs::remove_file(&path)
+                            remove_local_file_or_link(&path)
                         };
                         match result {
                             Ok(()) => local_deleted += 1,
@@ -327,4 +331,17 @@ impl Oryxis {
         }
         Ok(Task::none())
     }
+}
+
+/// Remove a file or a symbolic link (never what the link points at).
+/// Windows keeps a link to a folder as a folder entry, removed as one.
+fn remove_local_file_or_link(path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        if path.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink_dir()) {
+            return std::fs::remove_dir(path);
+        }
+    }
+    std::fs::remove_file(path)
 }

@@ -57,6 +57,7 @@ impl Oryxis {
             Modal::SshImport => self.vaults.cur().panels.ssh_import_dialog,
             Modal::SftpRename => self.cur_sftp().rename.is_some(),
             Modal::SftpNewEntry => self.cur_sftp().new_entry.is_some(),
+            Modal::SftpNewLink => self.cur_sftp().new_link.is_some(),
             Modal::SftpProperties => self.cur_sftp().properties.is_some(),
             Modal::SftpOverwrite => self.cur_sftp().overwrite_prompt.is_some(),
             // Any surface's watch: the dialog layers globally, so a save
@@ -211,6 +212,7 @@ impl Oryxis {
             Modal::SshImport => self.close_ssh_import(),
             Modal::SftpRename => self.sftp.rename = None,
             Modal::SftpNewEntry => self.sftp.new_entry = None,
+            Modal::SftpNewLink => self.sftp.new_link = None,
             Modal::SftpProperties => self.sftp.properties = None,
             // Raw dismissal only: dropping the prompt without an answer
             // leaves a queue-raised conflict parked (paused, item taken).

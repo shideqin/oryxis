@@ -1082,3 +1082,83 @@ async fn console_changes_one_half_of_the_ownership() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A symbolic link to a folder made through the client lists as a link,
+/// lists the folder's contents when opened, and `stat`s as a folder,
+/// whether its target is absolute or relative (issue #272). The relative
+/// one is the proof the link is stored as written, read from its own
+/// folder, and not resolved against the session's working directory.
+#[tokio::test]
+#[ignore = "needs an sshd (Docker, or ORYXIS_TEST_SSH), run with --ignored"]
+async fn sftp_lists_through_a_symlink_to_a_folder() {
+    let (conn, auth, _server) = start_sshd().await;
+    let engine = engine();
+    let (session, _rx) = engine
+        .connect(&conn, auth.password(), auth.key(), 80, 24)
+        .await
+        .expect("connect");
+    let session = Arc::new(session);
+    let client = session.open_sftp().await.expect("open sftp");
+    let home = test_home(&client).await;
+    let base = format!("{}/oryxis-links-{}", home.trim_end_matches('/'), uuid::Uuid::new_v4());
+    client.create_dir(&base).await.expect("scratch dir");
+    let real = format!("{base}/example");
+    client.create_dir(&real).await.expect("target dir");
+    client.write_file(&format!("{real}/inside.txt"), b"x").await.expect("file inside");
+    let absolute = format!("{base}/example.link");
+    let relative = format!("{base}/rel.link");
+    client.symlink(&real, &absolute).await.expect("absolute symlink");
+    client.symlink("example", &relative).await.expect("relative symlink");
+
+    let listing = client.list_dir(&base).await.expect("list the scratch dir");
+    for name in ["example.link", "rel.link"] {
+        let entry = listing.iter().find(|e| e.name == name).expect("link in the listing");
+        assert!(entry.is_symlink, "{name} lists as a link");
+        assert!(!entry.is_dir, "{name} lists as the link itself, not its target");
+    }
+    for link in [&absolute, &relative] {
+        let names: Vec<String> = client
+            .list_dir(link)
+            .await
+            .expect("list through the link")
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names, vec!["inside.txt".to_string()], "listing through {link}");
+        let mode = client.stat(link).await.expect("stat follows the link").permissions;
+        assert_eq!(mode.map(|m| m & 0o170000), Some(0o040000), "{link} stats as a folder");
+    }
+    assert_eq!(client.read_link(&relative).await.expect("readlink"), "example");
+
+    for path in [&relative, &absolute] {
+        client.remove_file(path).await.expect("remove link");
+    }
+    client.remove_file(&format!("{real}/inside.txt")).await.expect("remove file");
+    client.remove_dir(&real).await.expect("remove target");
+    client.remove_dir(&base).await.expect("remove scratch dir");
+}
+
+/// A link whose target is gone still occupies its name (`lstat` sees it)
+/// while `stat` fails, and `readlink` says where it points: what the
+/// browser shows when such a link is opened.
+#[tokio::test]
+#[ignore = "needs an sshd (Docker, or ORYXIS_TEST_SSH), run with --ignored"]
+async fn sftp_dangling_symlink_reads_its_target() {
+    let (conn, auth, _server) = start_sshd().await;
+    let engine = engine();
+    let (session, _rx) = engine
+        .connect(&conn, auth.password(), auth.key(), 80, 24)
+        .await
+        .expect("connect");
+    let session = Arc::new(session);
+    let client = session.open_sftp().await.expect("open sftp");
+    let home = test_home(&client).await;
+    let link = format!("{}/oryxis-dangling-{}", home.trim_end_matches('/'), uuid::Uuid::new_v4());
+    let target = "/nonexistent/oryxis-target";
+    client.symlink(target, &link).await.expect("dangling symlink");
+    assert!(client.lstat(&link).await.is_ok(), "the name is taken");
+    assert!(client.stat(&link).await.is_err(), "nothing to follow");
+    assert!(client.list_dir(&link).await.is_err(), "nothing to list");
+    assert_eq!(client.read_link(&link).await.expect("readlink"), target);
+    client.remove_file(&link).await.expect("remove link");
+}

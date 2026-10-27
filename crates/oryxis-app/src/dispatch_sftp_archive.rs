@@ -748,6 +748,7 @@ pub(crate) fn zip_relist(pane: &mut PaneState) {
             .map(|e| crate::state::LocalEntry {
                 name: e.name,
                 is_dir: e.is_dir,
+                is_symlink: false,
                 size: e.size,
                 modified: e
                     .mtime_unix

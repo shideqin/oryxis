@@ -20,6 +20,8 @@
 //! - `layout`   : pane menus, column toggles / resize / auto-fit,
 //!   split and log resizes.
 //! - `entries`  : rename / delete / new-entry flows.
+//! - `links`    : opening a symbolic link row (resolved before acting)
+//!   and the "New symbolic link" dialog.
 //! - `selection`: row clicks / selection, drag arming, type-ahead and
 //!   the SFTP keyboard handling.
 
@@ -28,6 +30,7 @@
 mod entries;
 mod hosts;
 mod layout;
+mod links;
 mod listing;
 mod selection;
 mod tabs;
@@ -305,6 +308,15 @@ impl Oryxis {
             | SftpMessage::SftpNewEntryCancel
             | SftpMessage::SftpOpResult(..)) => self
                 .handle_sftp_entries(m)
+                .unwrap_or_else(crate::dispatch::unrouted),
+            m @ (SftpMessage::SftpOpenLink(..)
+            | SftpMessage::SftpLinkResolved(..)
+            | SftpMessage::SftpStartNewLink(..)
+            | SftpMessage::SftpNewLinkName(..)
+            | SftpMessage::SftpNewLinkTarget(..)
+            | SftpMessage::SftpNewLinkCommit
+            | SftpMessage::SftpNewLinkCancel) => self
+                .handle_sftp_links(m)
                 .unwrap_or_else(crate::dispatch::unrouted),
             m @ (SftpMessage::SftpRowRightClick(..)
             | SftpMessage::SftpBackgroundRightClick(..)

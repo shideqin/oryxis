@@ -20,6 +20,82 @@ pub(crate) fn focus_input<T: Send + 'static>(id: impl Into<iced::widget::Id>) ->
     ])
 }
 
+/// Tab inside a dialog with exactly two fields: focus the one of `first`
+/// / `second` that does not have focus, or, when neither has it, `first`
+/// going forward and `second` going back. Its cursor lands at the end.
+///
+/// One widget operation, chained, rather than a `find_focused` answered
+/// by a message that then focuses: that is two round trips, and a key
+/// typed right after the Tab lands in the field being left.
+pub(crate) fn focus_other_of_pair<T: Send + 'static>(
+    first: &'static str,
+    second: &'static str,
+    forward: bool,
+) -> iced::Task<T> {
+    use iced::advanced::widget::operation::{Focusable, Outcome, TextInput};
+    use iced::advanced::widget::{Id, Operation};
+    use iced::Rectangle;
+
+    struct Pick {
+        first: Id,
+        second: Id,
+        forward: bool,
+        on_first: bool,
+        on_second: bool,
+    }
+    impl Operation for Pick {
+        fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation)) {
+            operate(self);
+        }
+        fn focusable(&mut self, id: Option<&Id>, _bounds: Rectangle, state: &mut dyn Focusable) {
+            if state.is_focused() {
+                self.on_first |= id == Some(&self.first);
+                self.on_second |= id == Some(&self.second);
+            }
+        }
+        fn finish(&self) -> Outcome<()> {
+            let next = match (self.on_first, self.on_second) {
+                (true, _) => self.second.clone(),
+                (_, true) => self.first.clone(),
+                _ if self.forward => self.first.clone(),
+                _ => self.second.clone(),
+            };
+            Outcome::Chain(Box::new(FocusAtEnd { target: next }))
+        }
+    }
+
+    /// `focus_input`'s pair (focus, then cursor to the end) as one pass.
+    struct FocusAtEnd {
+        target: Id,
+    }
+    impl Operation for FocusAtEnd {
+        fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation)) {
+            operate(self);
+        }
+        fn focusable(&mut self, id: Option<&Id>, _bounds: Rectangle, state: &mut dyn Focusable) {
+            if id == Some(&self.target) {
+                state.focus();
+            } else {
+                state.unfocus();
+            }
+        }
+        fn text_input(&mut self, id: Option<&Id>, _bounds: Rectangle, state: &mut dyn TextInput) {
+            if id == Some(&self.target) {
+                state.move_cursor_to_end();
+            }
+        }
+    }
+
+    iced::advanced::widget::operate(Pick {
+        first: Id::new(first),
+        second: Id::new(second),
+        forward,
+        on_first: false,
+        on_second: false,
+    })
+    .discard()
+}
+
 /// Shared style closure for `text_input`. Apply via `.style(rounded_input_style)`
 /// to get the app's accent-focused look with the consistent 10 px radius.
 pub fn rounded_input_style(_theme: &Theme, status: text_input::Status) -> text_input::Style {

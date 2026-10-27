@@ -777,6 +777,9 @@ impl Oryxis {
                         if self.sftp.new_entry.take().is_some() {
                             return Ok(Task::none());
                         }
+                        if self.sftp.new_link.take().is_some() {
+                            return Ok(Task::none());
+                        }
                         // Path-bar editing: Esc reverts to the breadcrumb
                         // discarding the typed text (Enter, via on_submit,
                         // is the only commit path).
@@ -789,6 +792,20 @@ impl Oryxis {
                         }
                     }
                 }
+                // The new-link dialog's two fields: Tab and Shift+Tab move
+                // between them, from whichever one iced has focused (a
+                // click moves focus without telling us).
+                if self.cur_sftp().new_link.is_some()
+                    && let iced::keyboard::Event::KeyPressed { key, modifiers, .. } = &ke
+                    && matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab))
+                    && !modifiers.control()
+                {
+                    return Ok(crate::widgets::focus_other_of_pair(
+                        crate::views::sftp::NEW_LINK_NAME_ID,
+                        crate::views::sftp::NEW_LINK_TARGET_ID,
+                        !modifiers.shift(),
+                    ));
+                }
                 // Past the inline edits' own Esc: a modal over the view
                 // owns the rest of the keyboard (a close-session confirm,
                 // a host-key or proxy prompt raised by the other pane's
@@ -800,6 +817,7 @@ impl Oryxis {
                 }
                 let editing = self.cur_sftp().rename.is_some()
                     || self.cur_sftp().new_entry.is_some()
+                    || self.cur_sftp().new_link.is_some()
                     || self.cur_sftp().overwrite_prompt.is_some()
                     || !self.cur_sftp().delete_confirm.is_empty()
                     || self.cur_sftp().properties.is_some()
