@@ -3480,7 +3480,7 @@ dependencies = [
 [[package]]
 name = "iced"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "iced_core",
  "iced_debug",
@@ -3498,7 +3498,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -3517,7 +3517,7 @@ dependencies = [
 [[package]]
 name = "iced_debug"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -3548,7 +3548,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "futures",
  "iced_core",
@@ -3562,7 +3562,7 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
@@ -3582,7 +3582,7 @@ dependencies = [
 [[package]]
 name = "iced_highlighter"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "iced_core",
  "two-face",
@@ -3591,7 +3591,7 @@ dependencies = [
 [[package]]
 name = "iced_program"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "iced_graphics",
  "iced_runtime",
@@ -3600,7 +3600,7 @@ dependencies = [
 [[package]]
 name = "iced_renderer"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "iced_graphics",
  "iced_tiny_skia",
@@ -3612,7 +3612,7 @@ dependencies = [
 [[package]]
 name = "iced_runtime"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "bytes",
  "iced_core",
@@ -3623,7 +3623,7 @@ dependencies = [
 [[package]]
 name = "iced_selector"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "iced_core",
 ]
@@ -3631,7 +3631,7 @@ dependencies = [
 [[package]]
 name = "iced_test"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "iced_futures",
  "iced_program",
@@ -3647,7 +3647,7 @@ dependencies = [
 [[package]]
 name = "iced_tester"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "iced_test",
  "iced_widget",
@@ -3658,7 +3658,7 @@ dependencies = [
 [[package]]
 name = "iced_tiny_skia"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "bytemuck",
  "cosmic-text",
@@ -3675,7 +3675,7 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
@@ -3695,7 +3695,7 @@ dependencies = [
 [[package]]
 name = "iced_widget"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "iced_highlighter",
  "iced_renderer",
@@ -3711,7 +3711,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.15.0-dev"
-source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#c55ab2ec051ab2625b160839043ae221c260a9c9"
+source = "git+https://github.com/wilsonglasser/iced?branch=oryxis#89f7b00cff19b5b737efa7790923656f7168a146"
 dependencies = [
  "arboard",
  "iced_debug",

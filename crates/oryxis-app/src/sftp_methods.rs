@@ -837,12 +837,14 @@ impl Oryxis {
         }
     }
 
-    /// Rough hit-test for "is the cursor inside the remote pane?". Used
-    /// at file-drop time to decide whether the OS drop targets the remote
-    /// upload path. The panes split the content area 50/50 so we just
-    /// check the right half, accounting for the left nav rail and the
-    /// chat sidebar (when visible).
-    pub(crate) fn is_cursor_over_remote_pane(&self) -> bool {
+    /// The dual-pane half the cursor is over, by geometry: `Left` from
+    /// the content's left edge to the split, `Right` from the split to
+    /// the content's right edge, `None` outside that band (the rail, a
+    /// sidebar region, a docked strip, outside the window). The halves
+    /// are PHYSICAL (the pane row is not mirrored under RTL), and which
+    /// one is remote is the panes' business, not this test's: the
+    /// remote pane can sit on either side.
+    pub(crate) fn cursor_pane_side(&self) -> Option<crate::state::SftpPaneSide> {
         // Side-docked tab strip (issue #87): a left dock shifts the
         // content's left edge, a right dock pulls its right edge in.
         let strip_left = self.side_strip_left_offset();
@@ -851,13 +853,8 @@ impl Oryxis {
         // (issue #85), so the content band shrinks from that side.
         let (chat_left, chat_right) = self.sidebar_reserve();
         let left_edge = self.vault_rail_width() + strip_left + chat_left;
-        let content_w =
-            (self.cur_window_size().width - left_edge - chat_right - strip_right).max(0.0);
-        // Honor the user's resizable split, not a fixed 50/50, so the
-        // boundary matches the actual divider position.
-        let split = left_edge + content_w * self.sftp_chrome.split_ratio;
-        self.cur_mouse().x > split
-            && self.cur_mouse().x < self.cur_window_size().width - chat_right - strip_right
+        let right_edge = self.cur_window_size().width - chat_right - strip_right;
+        pane_side_at(self.cur_mouse().x, left_edge, right_edge, self.sftp_chrome.split_ratio)
     }
 
     /// Sidebar-region widths as a `(left, right)` reserve (issue
@@ -876,19 +873,6 @@ impl Oryxis {
             }
         };
         (width(SidebarSide::Left), width(SidebarSide::Right))
-    }
-
-    /// Mirror helper for the left pane, checks the cursor sits in the
-    /// half between the sidebar and the pane split.
-    pub(crate) fn is_cursor_over_local_pane(&self) -> bool {
-        let strip_left = self.side_strip_left_offset();
-        let strip_right = self.side_strip_reserve() - strip_left;
-        let (chat_left, chat_right) = self.sidebar_reserve();
-        let left_edge = self.vault_rail_width() + strip_left + chat_left;
-        let content_w =
-            (self.cur_window_size().width - left_edge - chat_right - strip_right).max(0.0);
-        let split = left_edge + content_w * self.sftp_chrome.split_ratio;
-        self.cur_mouse().x > left_edge && self.cur_mouse().x < split
     }
 
     /// Look up whether a path in the given pane points at a directory,
@@ -954,10 +938,7 @@ impl Oryxis {
             .is_some_and(|(s, _, _)| *s == dest_side);
         let over_dest = hovered_dest
             || target_folder.is_some()
-            || match dest_side {
-                Left => self.is_cursor_over_local_pane(),
-                Right => self.is_cursor_over_remote_pane(),
-            };
+            || self.cursor_pane_side() == Some(dest_side);
         if !over_dest {
             return Task::none();
         }
@@ -1986,4 +1967,38 @@ pub(crate) struct SftpCrossPane {
     pub(crate) other_side: crate::state::SftpPaneSide,
     pub(crate) other_is_remote: bool,
     pub(crate) ready: bool,
+}
+
+/// The dual-pane half `x` falls in, for a content band from `left_edge`
+/// to `right_edge` split at `split_ratio` of its width (the user's
+/// resizable divider, not a fixed 50/50). `None` outside the band.
+fn pane_side_at(x: f32, left_edge: f32, right_edge: f32, split_ratio: f32) -> Option<crate::state::SftpPaneSide> {
+    let split = left_edge + (right_edge - left_edge).max(0.0) * split_ratio;
+    if x > left_edge && x < split {
+        Some(crate::state::SftpPaneSide::Left)
+    } else if x > split && x < right_edge {
+        Some(crate::state::SftpPaneSide::Right)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod pane_side_tests {
+    use super::pane_side_at;
+    use crate::state::SftpPaneSide::{Left, Right};
+
+    #[test]
+    fn each_half_answers_for_itself_whichever_pane_is_remote() {
+        // Band 100..900 split at 30%: the divider sits at 340.
+        assert_eq!(pane_side_at(200.0, 100.0, 900.0, 0.3), Some(Left));
+        assert_eq!(pane_side_at(600.0, 100.0, 900.0, 0.3), Some(Right));
+    }
+
+    #[test]
+    fn outside_the_band_is_no_pane() {
+        assert_eq!(pane_side_at(50.0, 100.0, 900.0, 0.5), None);
+        assert_eq!(pane_side_at(950.0, 100.0, 900.0, 0.5), None);
+        assert_eq!(pane_side_at(-1.0, 100.0, 900.0, 0.5), None);
+    }
 }

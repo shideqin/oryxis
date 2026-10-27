@@ -96,10 +96,10 @@ impl Oryxis {
             let dx = pos.x - drag.press_pos.x;
             let dy = pos.y - drag.press_pos.y;
             let moved = (dx * dx + dy * dy).sqrt() > 6.0;
-            let over_opposite = match drag.origin_side {
-                Left => self.is_cursor_over_remote_pane(),
-                Right => self.is_cursor_over_local_pane(),
-            };
+            let over_opposite = self.cursor_pane_side() == Some(match drag.origin_side {
+                Left => Right,
+                Right => Left,
+            });
             if moved && over_opposite && let Some(d) = self.sftp.drag.as_mut() {
                 d.active = true;
             }

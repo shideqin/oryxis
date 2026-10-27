@@ -57,9 +57,17 @@ impl Oryxis {
                     // router (#106) instead of swallowing it.
                     return Ok(self.buffer_terminal_drop(path));
                 }
-                let in_remote_pane =
-                    target_folder.is_some() || self.is_cursor_over_remote_pane();
-                if !in_remote_pane {
+                // A drop on the LOCAL pane has nothing to do (the file is
+                // already on this machine), so that is the one place it is
+                // declined. Anywhere else lands on the remote pane: over it,
+                // and also outside the dual-pane band altogether, because
+                // the drop carries no position and the cursor is only as
+                // fresh as the last pointer event: a platform that reports
+                // no move during the drag leaves it wherever the pointer
+                // was before.
+                let on_local_pane = target_folder.is_none()
+                    && self.cursor_pane_side().is_some_and(|side| side != remote_side);
+                if on_local_pane {
                     return Ok(Task::none());
                 }
                 if self.cur_sftp().pane(remote_side).client.is_none() {
