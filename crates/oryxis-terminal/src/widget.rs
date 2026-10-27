@@ -1063,6 +1063,7 @@ where
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Option<CanvasAction<Message>> {
+        let _phase = crate::diag::enter(crate::diag::Phase::Event);
         self.on_event(widget_state, event, bounds, cursor)
     }
 
@@ -1083,6 +1084,7 @@ where
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
+        let _phase = crate::diag::enter(crate::diag::Phase::Draw);
         self.render(widget_state, renderer, theme, bounds, cursor)
     }
 }

@@ -13,8 +13,9 @@ impl Oryxis {
     pub fn view(&self) -> Element<'_, Message> {
         // Stall watchdog (#104): proves iced is still drawing. A live
         // update heartbeat with this one dead means the freeze sits in
-        // presentation, not in our handlers.
-        crate::stall_watchdog::beat_view();
+        // presentation, not in our handlers. Held for the whole pass, so
+        // a loop stuck inside the view says so (#273).
+        let _view_guard = crate::stall_watchdog::view_guard();
         let base = match self.vaults.cur().vault_ui.state {
             // The start picker comes before any vault's own screen.
             _ if self.start_picker_here() => self.view_start_picker(),

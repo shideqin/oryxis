@@ -10,6 +10,7 @@ pub mod trigger;
 pub mod widget;
 pub mod pty;
 pub mod colors;
+pub mod diag;
 pub mod mouse;
 
 pub use backend::{set_clipboard_access, set_default_scrollback, TerminalBackend, DEFAULT_WORD_DELIMITERS};
