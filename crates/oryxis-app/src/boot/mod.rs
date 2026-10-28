@@ -822,6 +822,41 @@ impl Oryxis {
             ));
         }
 
+        // winit asks for the restored maximize as a client message to the
+        // root window right after it maps the window. A WM that has not
+        // taken the window over yet ignores it (Openbox, issue #274), and
+        // the window reopens at its floating size. Ask again once the WM
+        // has placed it; where the first request already held, this is a
+        // no-op. Fullscreen is not touched: it is a separate request.
+        // The answer is read back and reconciled with the flag: when the
+        // WM refuses the maximize, the restored flag would otherwise say
+        // "maximized" over a floating window, and the edge handles (absent
+        // while the flag is set) would never come back until a resize.
+        if app.window_maximized && !app.window_fullscreen {
+            let size = app.window_size;
+            tasks.push(
+                Task::perform(
+                    async {
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    },
+                    |_| (),
+                )
+                .then(|_| crate::app::resident_window())
+                .then(move |id_opt| match id_opt {
+                    Some(id) => iced::window::maximize::<Message>(id, true).then(move |_| {
+                        iced::window::is_maximized(id).map(move |maximized| {
+                            Message::Tabs(TabsMessage::WindowStateSynced {
+                                maximized,
+                                fullscreen: None,
+                                size,
+                            })
+                        })
+                    }),
+                    None => Task::none(),
+                }),
+            );
+        }
+
         // The boot constructor set the F11 hint visible when restoring
         // into fullscreen; schedule the same 3 s auto-hide the F11
         // toggle handler uses.
