@@ -731,7 +731,9 @@ pub(crate) fn detect_highlights(
                                 kind: HighlightKind::Path,
                             });
                         }
-                        i = j;
+                        // A `~/` span can trim back to `j == i` (`~/.`,
+                        // `~//`): always step past the slash.
+                        i = j.max(i + 1);
                         continue;
                     }
                 }
@@ -2317,5 +2319,35 @@ not-part-of-it");
             scan_row(1, "/x http://b.co", None),
         ];
         assert_eq!(url_spans(&rows), vec![(0, 0, 10), (1, 0, 1), (1, 3, 13)]);
+    }
+
+    /// `(start, end)` column spans of the Path highlights detected in `s`,
+    /// computed on a worker so a scan that never ends fails the test
+    /// instead of hanging the suite.
+    fn path_spans(s: &str) -> Vec<(u16, u16)> {
+        let rows = rows_from(s);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let spans: Vec<(u16, u16)> =
+                detect_highlights(&rows, &TerminalPalette::default(), false, &[], PrivacyClasses::default())
+                    .into_iter()
+                    .filter(|h| h.kind == HighlightKind::Path)
+                    .map(|h| (h.start_col, h.end_col))
+                    .collect();
+            let _ = tx.send(spans);
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap_or_else(|_| panic!("path scan did not finish on {s:?}"))
+    }
+
+    #[test]
+    fn a_home_marker_trimmed_back_to_the_tilde_ends_the_scan() {
+        // The trailing `.` / `/` trim can walk a `~/` span back to the
+        // slash it started on; the scan still has to move past it.
+        for s in ["~/.", "~/..", "~/...", "~//", "~/./", "cd ~/.. && ls", "看 ~/. 吧", "~/. ~/bin"] {
+            path_spans(s);
+        }
+        assert_eq!(path_spans("~/. ~/bin"), vec![(4, 8)]);
+        assert_eq!(path_spans("ls ~/bin/"), vec![(3, 7)]);
     }
 }
