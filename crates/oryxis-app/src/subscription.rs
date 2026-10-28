@@ -228,7 +228,11 @@ impl Oryxis {
                 // unrelated message came along.
                 iced::event::Event::Mouse(iced::mouse::Event::ButtonPressed(
                     iced::mouse::Button::Right,
-                )) => Some(Message::NoOp),
+                )) => {
+                    // DIAG (issue #276): temporary, remove with the tab-menu fix.
+                    tracing::info!("diag: right press reached the app");
+                    Some(Message::NoOp)
+                }
                 // Bindable mouse buttons (middle / back / forward / any
                 // extra): the Shortcuts editor RECORDS one here, and a
                 // bound SIDE button FIRES from here, which is what makes

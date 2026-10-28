@@ -103,6 +103,17 @@ impl Oryxis {
                 // the frame that opened it, and the auto-reconnect tick
                 // can remove + re-append a tab while it is up (see
                 // `OverlayContent::TabActions`).
+                // DIAG (issue #276): temporary, remove with the tab-menu fix.
+                tracing::info!(
+                    "diag: ShowTabMenu idx={idx} tabs={} anchor=({:.1}, {:.1}) cursor=({:.1}, {:.1}) window=({:.1}, {:.1})",
+                    self.tabs.len(),
+                    anchor.0,
+                    anchor.1,
+                    self.cur_mouse().x,
+                    self.cur_mouse().y,
+                    self.cur_window_size().width,
+                    self.cur_window_size().height,
+                );
                 let Some(tab_id) = self.tabs.get(idx).map(|t| t._id) else {
                     return Task::none();
                 };
