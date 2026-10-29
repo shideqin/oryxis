@@ -10,6 +10,8 @@ mod sftp_harness;
 #[cfg(test)]
 mod legacy_cipher_tests;
 #[cfg(test)]
+mod none_auth_tests;
+#[cfg(test)]
 mod partial_auth_tests;
 
 pub use engine::{agent_key_census, AutoClose, ConnectionResolver, ExecResult, ForwardConn, ForwardSession, HostKeyAskSender, HostKeyCheckCallback, HostKeyQuery, HostKeyStatus, KbiAskSender, KbiPromptField, KbiQuery, KeyMaterial, MonitorConn, NegCategory, NegotiationFailure, NetQualitySnapshot, ProxyCommandAskSender, ProxyCommandQuery, ProxyOutputLine, ProxyOutputSource, sanitize_proxy_line, trusted_only_proxy_command_ask, SshEngine, SshError, SshHandle, SshSession, SshTransport, TermFallback};

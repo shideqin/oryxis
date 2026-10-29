@@ -87,6 +87,39 @@ impl SshEngine {
             AuthMethod::Auto => {
                 let mut tried: Vec<&str> = Vec::new();
 
+                // 0. The `none` request (RFC 4252 §5.2), sent first the way
+                // OpenSSH does: it carries no credential, and a server that
+                // grants access on it alone (dropbear left open on an
+                // embedded device, issue #279) is reachable by nothing
+                // else. A refusal names the methods the server takes,
+                // logged for the next failure report. Auto only: every
+                // explicit method is "exactly this credential", and a
+                // `SecurityKey` host let in by `none` is the weakening that
+                // mode exists to prevent.
+                tried.push("none");
+                tracing::info!("Auto: trying none auth for {}", username);
+                match handle.authenticate_none(username).await {
+                    Ok(client::AuthResult::Success) => return Ok(true),
+                    Ok(client::AuthResult::Failure { remaining_methods, partial_success: true }) => {
+                        return self
+                            .finish_partial_auth(
+                                handle, username, remaining_methods, key_material, password,
+                                password,
+                            )
+                            .await;
+                    }
+                    Ok(client::AuthResult::Failure { remaining_methods, .. }) => tracing::info!(
+                        "Auto: none rejected, server offers: {:?}",
+                        remaining_methods.iter().map(<&str>::from).collect::<Vec<_>>(),
+                    ),
+                    Err(e) => {
+                        if handle.is_closed() {
+                            return Err(e.into());
+                        }
+                        tracing::info!("Auto: none error: {}", e);
+                    }
+                }
+
                 // 1. Try publickey if a key is provided
                 if let Some(km) = key_material {
                     tried.push("publickey");
