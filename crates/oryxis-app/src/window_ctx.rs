@@ -531,6 +531,17 @@ impl Oryxis {
         }
     }
 
+    /// The dual-pane SFTP surface the current window shows, by tab id: its
+    /// terminal tab in Files mode, else its SFTP tab. The view's
+    /// counterpart of `current_sftp_owner`, which reads the FIELDS (the
+    /// window whose update runs, or the resident one while a view is
+    /// built) and so names another window's surface in a second window.
+    pub(crate) fn cur_sftp_owner(&self) -> Option<Uuid> {
+        self.cur_hybrid_owner()
+            .filter(|id| self.tabs.iter().any(|t| t._id == *id))
+            .or_else(|| self.cur_active_sftp().and_then(|i| self.sftp_tabs.get(i)).map(|t| t.id))
+    }
+
     /// Whether the SFTP tab at `idx` is in the strip of the current
     /// window. Reads through `cur_tab_order`, so a menu being drawn and
     /// the handler it fires agree. Always true with a single window.
@@ -1636,6 +1647,44 @@ mod tests {
         assert_eq!(storage_index(&order, true, 0), 1);
         assert_eq!(storage_index(&order, true, 1), 3);
         assert_eq!(storage_index(&order, true, 3), 4);
+    }
+
+    /// A view is built for one window while the fields hold another's
+    /// (the resident's), so the helpers that read the SFTP owner out of
+    /// the fields name the wrong surface in a second window: a view goes
+    /// through `cur_sftp_owner` / `cur_hybrid_owner` / `cur_active_sftp`.
+    #[test]
+    fn views_read_the_sftp_owner_of_the_window_they_draw() {
+        // Split so this test's own source does not match itself.
+        let needles = [
+            ["current_sftp_", "owner("].concat(),
+            ["active_sftp_", "id("].concat(),
+            [".hybrid_sftp_", "owner"].concat(),
+            [".routing_", "sftp"].concat(),
+        ];
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join("views");
+        let mut stack = vec![root.clone()];
+        let mut found: Vec<String> = Vec::new();
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).expect("read views dir") {
+                let path = entry.expect("dir entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|e| e != "rs") {
+                    continue;
+                }
+                let src = std::fs::read_to_string(&path).expect("read source");
+                for (idx, line) in src.lines().enumerate() {
+                    if needles.iter().any(|n| line.contains(n.as_str())) {
+                        let rel = path.strip_prefix(&root).expect("under views");
+                        found.push(format!("views/{}:{}", rel.display(), idx + 1));
+                    }
+                }
+            }
+        }
+        assert!(found.is_empty(), "a view reads the SFTP owner from the fields at {found:?}; use cur_sftp_owner()");
     }
 
     #[test]
