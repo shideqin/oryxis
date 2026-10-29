@@ -357,6 +357,15 @@ impl Oryxis {
                 self.vaults.cur_mut().prefs.tab_number_style = normalized.into();
                 self.persist_setting("tab_number_style", normalized);
             }
+            SettingsMessage::SettingTabDoubleClickChanged(val) => {
+                let normalized = match val.as_str() {
+                    "duplicate" => "duplicate",
+                    "rename" => "rename",
+                    _ => "off",
+                };
+                self.vaults.cur_mut().prefs.tab_double_click = normalized.into();
+                self.persist_setting("tab_double_click", normalized);
+            }
             SettingsMessage::SettingToggleTabSlotIncludesHome => {
                 self.vaults.cur_mut().prefs.tab_slot_includes_home = !self.vaults.cur_mut().prefs.tab_slot_includes_home;
                 self.persist_setting(

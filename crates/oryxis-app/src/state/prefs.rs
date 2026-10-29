@@ -313,6 +313,12 @@ pub(crate) struct AppPrefs {
     /// The number is the tab's position in the STRIP, which is what
     /// `ActivateStripSlot` (Ctrl+N) counts, and it is not capped at 9.
     pub(crate) tab_number_style: String,
+    /// What a double click on a terminal tab chip does (issue #277):
+    /// `"off"` (default, nothing beyond the select the first click made),
+    /// `"duplicate"` or `"rename"`. A setting rather than a binding: the
+    /// left button never enters the hotkey table, and the gesture is the
+    /// chip's, judged by `double_click` on the OS's own terms.
+    pub(crate) tab_double_click: String,
     /// When on, each tab paints a small colored dot over its OS badge:
     /// green for an active SSH session, orange while connecting, red
     /// for a tab that lost its session. Defaults on; the user can hide
@@ -667,6 +673,7 @@ impl Default for AppPrefs {
             duplicate_tab_position: "next".into(),
             tab_slot_includes_home: false,
             tab_number_style: "off".into(),
+            tab_double_click: "off".into(),
             show_tab_status_dot: true,
             tab_accent_line: true,
             tab_accent_wash: true,

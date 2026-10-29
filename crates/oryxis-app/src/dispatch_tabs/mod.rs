@@ -112,6 +112,8 @@ impl Oryxis {
             ) => self.handle_tabs_hover(m),
             m @ (
                 TabsMessage::SelectTab(..)
+                | TabsMessage::TabChipPressed(..)
+                | TabsMessage::TabChipClicked(..)
                 | TabsMessage::CloseTab(..)
                 | TabsMessage::CloseTabFromStrip(..)
                 | TabsMessage::ConfirmCloseGroupedTab(..)

@@ -15,6 +15,54 @@ impl Oryxis {
     pub(super) fn handle_tabs_strip(&mut self, message: TabsMessage) -> Task<Message> {
         match message {
             TabsMessage::SelectTab(idx) => return self.handle_select_tab(idx),
+            TabsMessage::TabChipPressed(idx, at) => {
+                // Off: no press is half of anything, and no stamp is left
+                // for the moment the setting goes on.
+                let Some(id) = self.tabs.get(idx).map(|t| t._id).filter(|_| {
+                    self.vaults.cur().prefs.tab_double_click != "off"
+                }) else {
+                    self.nav.tab_click.reset();
+                    self.nav.tab_press_verdict = None;
+                    return Task::none();
+                };
+                // A modified press is never half of a double click, and must
+                // not turn the next plain press into one.
+                if self.modifiers.control()
+                    || self.modifiers.command()
+                    || self.modifiers.shift()
+                    || self.modifiers.alt()
+                {
+                    self.nav.tab_click.reset();
+                    self.nav.tab_press_verdict = None;
+                    return Task::none();
+                }
+                let rule = crate::double_click::DoubleClickRule::os();
+                let report = self.nav.tab_click.press(id, at, std::time::Instant::now(), &rule);
+                self.nav.tab_press_verdict = Some((id, report));
+            }
+            TabsMessage::TabChipClicked(idx) => {
+                // Taken whatever happens below: a verdict belongs to the one
+                // release its press began.
+                let id = self.tabs.get(idx).map(|t| t._id);
+                let double = self
+                    .nav
+                    .tab_press_verdict
+                    .take()
+                    .filter(|(key, _)| Some(*key) == id)
+                    .is_some_and(|(_, report)| report.double);
+                // The first click of the pair already selected the tab, so
+                // the second one only acts.
+                if double {
+                    match self.vaults.cur().prefs.tab_double_click.as_str() {
+                        "duplicate" => return self.handle_duplicate_tab(idx),
+                        "rename" => {
+                            return Task::done(Message::Tabs(TabsMessage::StartRenameTab(idx)));
+                        }
+                        _ => {}
+                    }
+                }
+                return self.handle_select_tab(idx);
+            }
             TabsMessage::CloseTab(idx) => return self.handle_close_tab(idx),
             // The strip's X, which is the only close the mouse performs
             // in a row: stamp the streak so the chip that slides under

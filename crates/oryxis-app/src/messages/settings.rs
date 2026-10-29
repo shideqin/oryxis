@@ -428,6 +428,9 @@ pub enum SettingsMessage {
     SettingDuplicateTabPositionChanged(String),
     /// Tab numbering: "off" / "prefix" / "icon".
     SettingTabNumberStyleChanged(String),
+    /// What a double click on a terminal tab does: "off" / "duplicate" /
+    /// "rename".
+    SettingTabDoubleClickChanged(String),
     /// Flip whether the Home area tab owns the first Ctrl+digit slot.
     SettingToggleTabSlotIncludesHome,
     SettingTabFillStyleChanged(String),

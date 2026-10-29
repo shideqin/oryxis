@@ -1010,7 +1010,7 @@ pub(crate) fn session_tab<'a>(
     )
     .width(Length::Fixed(width))
     .clip(true)
-    .on_press(Message::Tabs(TabsMessage::SelectTab(idx)))
+    .on_press(Message::Tabs(TabsMessage::TabChipClicked(idx)))
     .style(move |_, status| {
         let hover_bg: Background = match status {
             BtnStatus::Hovered if !is_active => {
@@ -1041,6 +1041,11 @@ pub(crate) fn session_tab<'a>(
     // OSC 9;4 progress: a border that grows clockwise around the tab,
     // proportional to 0..100%. Layered over the button via a Stack; the canvas
     // doesn't handle input, so clicks still reach the button underneath.
+    // The press half of the click, judged when it lands (`double_click`):
+    // the button above only publishes on release.
+    let tab_btn = crate::widgets::press_publisher(tab_btn.boxed(), move |at| {
+        Message::Tabs(TabsMessage::TabChipPressed(idx, at))
+    });
     let tab_el: Element<'_, Message> = match progress {
         Some(p) if p.value > 0 => {
             let color = match p.state {
@@ -1057,11 +1062,11 @@ pub(crate) fn session_tab<'a>(
             iced::widget::Stack::<iced::Element<'_, _>>::new()
                 .width(Length::Fixed(width))
                 .height(Length::Fixed(TAB_ROW_HEIGHT))
-                .push(tab_btn.boxed())
+                .push(tab_btn)
                 .push(bar.boxed())
                 .boxed()
         }
-        _ => tab_btn.boxed(),
+        _ => tab_btn,
     };
 
     // Underline style: a neutral hairline on the chip's edge, laid over
@@ -1445,7 +1450,7 @@ pub(crate) fn pinned_tab_chip<'a>(
             .center_y(Length::Fixed(TAB_HEIGHT)),
     )
     .width(Length::Fixed(chip_w))
-    .on_press(Message::Tabs(TabsMessage::SelectTab(idx)))
+    .on_press(Message::Tabs(TabsMessage::TabChipClicked(idx)))
     .style(move |_, status| {
         // Active chip paints the same "lit from above" gradient as the
         // other tabs (one visual language for "active" in the strip);
@@ -1459,6 +1464,9 @@ pub(crate) fn pinned_tab_chip<'a>(
         };
         let border = Border { radius: Radius::from(6.0), ..Default::default() };
         button::Style { background: Some(bg), border, ..Default::default() }
+    });
+    let btn = crate::widgets::press_publisher(btn.boxed(), move |at| {
+        Message::Tabs(TabsMessage::TabChipPressed(idx, at))
     });
     MouseArea::new(btn)
         .on_enter(Message::Tabs(TabsMessage::TabHovered(idx)))

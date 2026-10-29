@@ -242,6 +242,7 @@ impl Oryxis {
             | SettingsMessage::SettingPinnedTabStyleChanged(..)
             | SettingsMessage::SettingDuplicateTabPositionChanged(..)
             | SettingsMessage::SettingTabNumberStyleChanged(..)
+            | SettingsMessage::SettingTabDoubleClickChanged(..)
             | SettingsMessage::SettingToggleTabSlotIncludesHome
             | SettingsMessage::SettingTabFillStyleChanged(..)
             | SettingsMessage::SettingTabAccentColorChanged(..)

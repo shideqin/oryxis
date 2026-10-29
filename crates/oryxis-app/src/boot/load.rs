@@ -991,6 +991,11 @@ impl Oryxis {
             {
                 ov.prefs.tab_number_style = v;
             }
+            if let Ok(Some(v)) = vault.get_setting("tab_double_click")
+                && (v == "off" || v == "duplicate" || v == "rename")
+            {
+                ov.prefs.tab_double_click = v;
+            }
             if let Ok(Some(v)) = vault.get_setting("restore_tabs_on_launch") {
                 ov.prefs.restore_tabs_on_launch = v == "true";
             }

@@ -164,6 +164,13 @@ pub(crate) struct WindowNav {
     /// tags of each row's connection), mirroring `host_filter_tags`;
     /// empty = off.
     pub(crate) history_filter_tags: Vec<String>,
+    /// Judges each left press on a terminal tab chip against the previous
+    /// one, keyed by the tab's id (`tab_double_click`, issue #277). Per
+    /// window like the strip it watches.
+    pub(crate) tab_click: crate::double_click::ClickTracker<Uuid>,
+    /// What the last chip press turned out to be, waiting for that chip's
+    /// own release message (`TabChipClicked`), which takes it.
+    pub(crate) tab_press_verdict: Option<(Uuid, crate::double_click::ClickReport)>,
 }
 
 /// What a window keeps of a vault it is not working on right now: the

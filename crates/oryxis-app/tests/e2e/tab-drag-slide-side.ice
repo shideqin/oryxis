@@ -7,8 +7,9 @@ mode: Zen
 # under it jumped up on pickup).
 #
 # Three local shells, then Settings > Interface > Tab bar position =
-# Left (the pick sits at y 388 once the Ctrl+Tab order row above it is
-# counted, and its menu opens upward there: Left is at y 307). Rows
+# Left (the pick sits at y 437 once the tab double-click and Ctrl+Tab
+# order rows above it are counted, and its menu opens upward there: Left
+# is at y 356). Rows
 # (each ~37 px): alpha, beta, gamma, Settings. alpha dragged
 # onto gamma's lower half lands after gamma; beta (now first) dragged
 # onto alpha's lower half lands last. Each release selects the tab.
@@ -59,9 +60,9 @@ scroll (0, 60) (600, 400)
 settle 200
 scroll pixels (0, -950) (600, 400)
 settle 300
-click (1068, 388)
+click (1068, 437)
 settle 300
-click (1068, 307)
+click (1068, 356)
 settle 500
 click "alpha"
 settle 500

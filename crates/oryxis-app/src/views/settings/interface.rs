@@ -310,6 +310,22 @@ impl Oryxis {
                 |v| Message::Settings(SettingsMessage::SettingDuplicateTabPositionChanged(v)),
             ),
             Space::new().height(8),
+            self.nav_pick_row(
+                crate::i18n::t("tab_double_click"),
+                vec!["off".to_string(), "duplicate".to_string(), "rename".to_string()],
+                self.vaults.cur().prefs.tab_double_click.clone(),
+                |s: &String| {
+                    crate::i18n::t(match s.as_str() {
+                        "duplicate" => "tab_double_click_duplicate",
+                        "rename" => "tab_double_click_rename",
+                        _ => "tab_double_click_off",
+                    })
+                    .to_string()
+                },
+                200.0,
+                |v| Message::Settings(SettingsMessage::SettingTabDoubleClickChanged(v)),
+            ),
+            Space::new().height(8),
             // What Ctrl+Tab walks. Token-as-value like the rows above: the
             // option list is the enum's codes, the display closure resolves
             // each to its label, and the handler parses the code back.

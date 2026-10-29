@@ -7,6 +7,15 @@ use super::Message;
 #[derive(Debug, Clone)]
 pub enum TabsMessage {
     SelectTab(usize),
+    /// A left press landed on a terminal tab chip, at this point in the
+    /// chip's content space. Published ahead of the chip's own release
+    /// message so the press is judged (`double_click`) when it landed.
+    TabChipPressed(usize, Point),
+    /// The chip's own click (a button publishes on release). Selects the
+    /// tab, or does what `tab_double_click` says when the press it began
+    /// with was the second half of a double click (issue #277). Kept apart
+    /// from `SelectTab`, which every keyboard and programmatic door sends.
+    TabChipClicked(usize),
     CloseTab(usize),
     /// The strip's own close X, as opposed to `Ctrl+W`, the tab context
     /// menu or the terminal's close handling. Delegates to `CloseTab`
