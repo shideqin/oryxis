@@ -20,7 +20,8 @@
 //!    that folder, and a tree that cannot be used there is reported by
 //!    whatever fails to open in it, never swapped in silence for the
 //!    profile's. The app's own start may CREATE it ([`settle_portable`]:
-//!    the Windows portable zip, when the profile holds no tree yet).
+//!    the Windows portable zip, when the profile holds no tree yet and
+//!    no package manager owns the folder).
 //!    Decided ONCE per process, so a folder created while the app runs
 //!    does not move the tree under it.
 //! 4. `.oryxis` under the OS home.
@@ -164,7 +165,8 @@ pub enum PortableStart {
 /// tree. With `create_by_default` (the Windows portable zip: no
 /// installer beside it) a copy with no `data` folder MAKES one, unless
 /// the profile already holds a tree, which a zip copy older than this
-/// mode wrote there and keeps using. Every other process only looks
+/// mode wrote there and keeps using, or a package manager owns the
+/// folder (Scoop: [`PortableStart::PackageManaged`]). Every other process only looks
 /// ([`portable_dir`]). A second call answers what the first decided.
 pub fn settle_portable(create_by_default: bool) -> PortableStart {
     let set = |v: Option<OsString>| v.is_some_and(|v| !v.is_empty());
