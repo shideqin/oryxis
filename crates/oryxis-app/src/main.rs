@@ -684,6 +684,9 @@ fn main() -> iced::Result {
         oryxis_core::paths::PortableStart::Translocated => {
             tracing::warn!("macOS runs this copy translocated (quarantined, not moved by Finder): a data folder beside it cannot be seen; using the profile's tree");
         }
+        oryxis_core::paths::PortableStart::PackageManaged(dir) => {
+            tracing::info!(dir = %dir.display(), "a package manager owns the program's folder (Scoop): using the profile's tree");
+        }
         oryxis_core::paths::PortableStart::Off | oryxis_core::paths::PortableStart::Overridden => {}
     }
     if let Some(e) = &early_vault_error {

@@ -151,6 +151,12 @@ pub enum PortableStart {
     /// Translocation, a quarantined app not yet moved by Finder): the
     /// folder beside the bundle cannot be seen from here.
     Translocated,
+    /// No `data` folder, and a package manager owns the folder (Scoop
+    /// unpacks the same zip into one folder PER VERSION and removes the
+    /// old ones): a tree made there would be left behind by the next
+    /// update and deleted by the cleanup after it. The profile's tree is
+    /// used, as an installed build's is.
+    PackageManaged(PathBuf),
 }
 
 /// The app's start settles portable mode before anything touches the
@@ -196,6 +202,9 @@ fn decide_portable(
     if !create_by_default {
         return (None, PortableStart::Off);
     }
+    if is_package_managed(&dir) {
+        return (None, PortableStart::PackageManaged(dir));
+    }
     if let Some(profile) = profile_tree.filter(|p| p.symlink_metadata().is_ok()) {
         return (None, PortableStart::ProfileKept(profile));
     }
@@ -213,6 +222,15 @@ fn decide_portable(
 fn existing_data_entry(dir: &Path) -> Option<PathBuf> {
     let data = dir.join(PORTABLE_DIR_NAME);
     data.symlink_metadata().is_ok().then_some(data)
+}
+
+/// Whether a package manager owns `dir` and replaces it on update.
+/// Scoop installs every version into `apps\<app>\<version>` (reached
+/// through the `current` junction) and writes its `manifest.json` and
+/// `install.json` there; a user's own unpacked copy has neither. Both
+/// are asked for, so a stray `manifest.json` beside a copy is not enough.
+fn is_package_managed(dir: &Path) -> bool {
+    dir.join("install.json").is_file() && dir.join("manifest.json").is_file()
 }
 
 /// Where "beside the program" is.
@@ -546,6 +564,35 @@ mod tests {
         let missing = || Some(Anchor::Dir(root.join("gone")));
         assert!(matches!(decide_portable(missing(), true, None), (None, PortableStart::CreateFailed { .. })));
         assert!(matches!(decide_portable(Some(Anchor::Translocated), true, None), (None, PortableStart::Translocated)));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A Scoop install unpacks the portable zip into a folder per version
+    /// and deletes the old ones on cleanup: a fresh user's first start
+    /// must not put the tree there, or the next update strands it and
+    /// the cleanup after it deletes the vault. A `data` folder the user
+    /// made there is still theirs to use.
+    #[test]
+    fn a_package_managed_copy_never_makes_the_portable_folder() {
+        let root = tempdir("scoop");
+        let profile = root.join("home").join(".oryxis");
+        let app = root.join("scoop").join("apps").join("oryxis").join("0.23.0");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(app.join("manifest.json"), b"{}").unwrap();
+        std::fs::write(app.join("install.json"), b"{}").unwrap();
+        let anchor = || Some(Anchor::Dir(app.clone()));
+
+        let (made, outcome) = decide_portable(anchor(), true, Some(profile.clone()));
+        assert_eq!(made, None);
+        assert!(matches!(outcome, PortableStart::PackageManaged(_)), "{outcome:?}");
+        assert!(!app.join(PORTABLE_DIR_NAME).exists());
+
+        // One of the two files alone is not Scoop's folder.
+        std::fs::remove_file(app.join("install.json")).unwrap();
+        assert!(matches!(decide_portable(anchor(), true, Some(profile.clone())), (Some(_), PortableStart::Created(_))));
+        std::fs::write(app.join("install.json"), b"{}").unwrap();
+        // The folder the user made (or the one just made) is found.
+        assert!(matches!(decide_portable(anchor(), true, Some(profile.clone())), (Some(_), PortableStart::Found(_))));
         let _ = std::fs::remove_dir_all(&root);
     }
 
