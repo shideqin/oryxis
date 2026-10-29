@@ -751,6 +751,32 @@ impl SftpClient {
         let _ = tokio::fs::remove_file(part_path(local)).await;
     }
 
+    /// Make the scratch file a download of `local` writes into, empty and
+    /// readable by its owner alone (0600 on Unix), BEFORE the download
+    /// starts. For a copy whose bytes are nobody else's business (an Open
+    /// / Edit copy in the shared temp folder): the pump only creates or
+    /// truncates the scratch, which keeps an existing file's mode, so the
+    /// bytes are never readable by another account while they arrive, and
+    /// the rename carries the mode onto the finished file. An ordinary
+    /// download keeps the umask's mode, as any program's file does.
+    pub async fn reserve_private_download_scratch(local: &std::path::Path) -> std::io::Result<()> {
+        let part = part_path(local);
+        let mut open = tokio::fs::OpenOptions::new();
+        open.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        open.mode(0o600);
+        let file = open.open(&part).await?;
+        // `mode` applies only to a file this call creates: one already
+        // there keeps its own until it is narrowed here.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600)).await?;
+        }
+        drop(file);
+        Ok(())
+    }
+
     /// The upload mirror of [`discard_download_scratch`], for a cancel that
     /// used [`UploadOptions::temp_name`]. A cancelled upload writing under
     /// the real name is not swept here: it has already destroyed whatever
@@ -2900,6 +2926,30 @@ mod tests {
         windowed_relay_copy, windowed_upload_copy, AttrUpdate, FsInfo, SshError,
     };
     use std::sync::{Arc, Mutex};
+
+    /// A private download's scratch is 0600 before the first byte and
+    /// stays so through the pump's own create-or-truncate, so the copy is
+    /// never readable by another account while it arrives.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_private_scratch_is_owner_only_before_the_download_writes_it() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let local = dir.path().join("secret.conf");
+        let part = super::part_path(&local);
+        // A scratch some earlier run left world-readable is narrowed too.
+        std::fs::write(&part, b"stale").unwrap();
+        std::fs::set_permissions(&part, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        super::SftpClient::reserve_private_download_scratch(&local).await.unwrap();
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&part), 0o600);
+        assert_eq!(std::fs::metadata(&part).unwrap().len(), 0);
+        // What both download paths do with a from-zero scratch.
+        drop(tokio::fs::File::create(&part).await.unwrap());
+        drop(std::fs::File::create(&part).unwrap());
+        assert_eq!(mode(&part), 0o600);
+    }
 
     /// The line OpenSSH's server sends, and the two fields worth reading
     /// out of it.

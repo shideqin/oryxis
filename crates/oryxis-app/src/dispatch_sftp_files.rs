@@ -683,7 +683,13 @@ impl Oryxis {
                 // renamed into place only once complete, and a scratch
                 // left by a failure is removed here: an edit copy is never
                 // resumed.
+                // The scratch is made owner-only before the first byte:
+                // the copy sits in the shared temp folder for as long as
+                // the download takes, and the rename keeps its mode.
                 let fetched = async {
+                    oryxis_ssh::SftpClient::reserve_private_download_scratch(&temp)
+                        .await
+                        .map_err(|e| oryxis_ssh::SshError::Channel(format!("create {}: {e}", temp.display())))?;
                     let size = client.stat(&remote_path).await?.size;
                     total.store(size, std::sync::atomic::Ordering::Relaxed);
                     client.download_to_progress(&remote_path, &temp, Some(size), Some(done)).await
@@ -694,18 +700,6 @@ impl Oryxis {
                     return Err(e.to_string());
                 }
                 let temp_path = temp;
-                // Tighten temp file perms to 0600: the file holds plaintext
-                // remote contents and shouldn't be world-readable on a
-                // shared system. Default umask often leaves files at 0644.
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt as _;
-                    let _ = tokio::fs::set_permissions(
-                        &temp_path,
-                        std::fs::Permissions::from_mode(0o600),
-                    )
-                    .await;
-                }
                 spawn_edit_opener(&temp_path, opener.clone(), editor.as_deref())?;
                 let initial_mtime = tokio::fs::metadata(&temp_path)
                     .await
