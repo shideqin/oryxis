@@ -6,8 +6,8 @@ coming next, see the [Roadmap](../README.md#roadmap).
 
 ## SSH & connectivity
 
-- **Auto-authentication.** Tries key, agent, password, and
-  keyboard-interactive in order. A "Password prompt" method asks at every
+- **Auto-authentication.** Sends the `none` request first, as OpenSSH
+  does, then tries key, agent, password, and keyboard-interactive in order. A "Password prompt" method asks at every
   connection and never writes anything to the vault.
 - **Multi-factor servers.** RFC 4252 partial success is a first-class
   step: sshd `AuthenticationMethods` chains and Bitvise-style compound
