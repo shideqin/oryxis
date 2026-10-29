@@ -208,6 +208,43 @@ fn tokio_stays_at_or_above_the_advisory_floor() {
     );
 }
 
+/// Advisory floors of the RustCrypto arithmetic under the vault's RSA
+/// signing (`rsa` -> `crypto-bigint`) and the FIDO2 curves (`p256` ->
+/// `elliptic-curve` -> `crypto-bigint`): (crate, release line the floor
+/// governs, oldest allowed, why). Both advisories are timing side
+/// channels in operations meant to be constant-time on secret integers.
+/// A vulnerable version already in the lock still builds under
+/// `--locked`, so no other gate sees it. Raise a floor, never lower it.
+const CRYPTO_FLOORS: &[(&str, &str, &str, &str)] = &[
+    // RUSTSEC-2026-0387: secret-dependent branches in subtraction,
+    // division, Montgomery multiplication, `BoxedMontyForm::invert`.
+    // Patched in 0.7.6; 0.7.6 to 0.7.8 are yanked, so the floor is the
+    // first release that is neither.
+    ("crypto-bigint", "0.7.", "0.7.9", "RUSTSEC-2026-0387"),
+    // RUSTSEC-2026-0385: branching mask generation in `ctutils::Choice`.
+    ("ctutils", "0.4.", "0.4.4", "RUSTSEC-2026-0385"),
+];
+
+#[test]
+fn crypto_arithmetic_stays_at_or_above_the_advisory_floors() {
+    let lock_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.lock");
+    let lock = std::fs::read_to_string(&lock_path).expect("read workspace Cargo.lock");
+
+    for (name, line, floor, advisory) in CRYPTO_FLOORS {
+        let floor_key = version_key(floor);
+        let below: Vec<String> = package_versions(&lock, name)
+            .into_iter()
+            .filter(|v| v.starts_with(line) && version_key(v) < floor_key)
+            .collect();
+        assert!(
+            below.is_empty(),
+            "Cargo.lock carries {name} {below:?}, below {floor} ({advisory}). Rewrite the \
+             {name} block's version and checksum by hand to a release at or above the \
+             floor and validate with `--locked`."
+        );
+    }
+}
+
 /// One `[[package]]` block of Cargo.lock.
 struct LockPackage {
     name: String,
