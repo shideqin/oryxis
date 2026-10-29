@@ -8,7 +8,12 @@ mode: Zen
 #
 # The harness bash marks nothing, so the test gives it marks: D and A in
 # front of the prompt and B after it (PS1), C right before each command
-# runs (a DEBUG trap): the four marks a shell integration emits.
+# runs (a DEBUG trap): the four marks a shell integration emits. The trap
+# marks C ONCE per command line, reset from PROMPT_COMMAND, as a real
+# integration does: the trap also runs before every PROMPT_COMMAND entry
+# the system put there (a login shell on Ubuntu 26.04 carries systemd's
+# OSC 3008 hook), and a C there would open an empty command after the
+# real one.
 settle 250
 click "Skip"
 settle 250
@@ -30,7 +35,7 @@ settle 400
 type "PS1='\\[\\e]133;D;0\\a\\e]133;A\\a\\]$ \\[\\e]133;B\\a\\]'"
 type enter
 settle 400
-type "trap 'printf \"\\e]133;C\\a\"' DEBUG"
+type "trap '[[ -n $__oc ]] || { __oc=1; printf \"\\e]133;C\\a\"; }' DEBUG; PROMPT_COMMAND+=('__oc=')"
 type enter
 settle 400
 type "echo oryxis-out"

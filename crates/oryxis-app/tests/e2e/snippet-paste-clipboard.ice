@@ -120,7 +120,7 @@ settle 1200
 type "PS1='\\[\\e]133;D;0\\a\\e]133;A\\a\\]$ \\[\\e]133;B\\a\\]'"
 type enter
 settle 400
-type "trap 'printf \"\\e]133;C\\a\"' DEBUG"
+type "trap '[[ -n $__oc ]] || { __oc=1; printf \"\\e]133;C\\a\"; }' DEBUG; PROMPT_COMMAND+=('__oc=')"
 type enter
 settle 400
 # Sidebar, Snippets tab; rows: paste it, paste late, (installs), waits.
