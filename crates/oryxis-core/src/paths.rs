@@ -14,7 +14,8 @@
 //! 3. A `data` entry beside the program (portable mode, issue #271): the
 //!    whole tree lives there and travels with it. "Beside the program" is
 //!    the folder of the executable, of the `.AppImage` file, or of the
-//!    `Oryxis.app` bundle ([`anchor_for`]). ANY entry by that name
+//!    `Oryxis.app` bundle ([`anchor_for`]), never the home folder itself
+//!    (`~/data` is the user's own). ANY entry by that name
 //!    counts, a dangling junction or a file included: the user asked for
 //!    that folder, and a tree that cannot be used there is reported by
 //!    whatever fails to open in it, never swapped in silence for the
@@ -248,7 +249,23 @@ fn program_anchor() -> Option<Anchor> {
     let exe = std::env::current_exe().ok()?;
     let var = |name| std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from);
     let appimage = var("APPIMAGE").zip(var("APPDIR"));
-    anchor_for(&exe, appimage.as_ref().map(|(image, dir)| (image.as_path(), dir.as_path())))
+    let anchor = anchor_for(&exe, appimage.as_ref().map(|(image, dir)| (image.as_path(), dir.as_path())));
+    outside_home(anchor, dirs::home_dir().as_deref())
+}
+
+/// A program kept straight in the home folder (an `.AppImage` in `~`,
+/// `Oryxis.app` in `~`) has no portable folder: `~/data` is the user's
+/// own, and taking it would move the whole tree there in silence. The
+/// comparison follows links, so `/home/me` and a symlinked home agree.
+fn outside_home(anchor: Option<Anchor>, home: Option<&Path>) -> Option<Anchor> {
+    let same = |a: &Path, b: &Path| match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    };
+    match (anchor, home) {
+        (Some(Anchor::Dir(dir)), Some(home)) if same(&dir, home) => None,
+        (anchor, _) => anchor,
+    }
 }
 
 /// Pure core of [`program_anchor`]:
@@ -492,6 +509,34 @@ mod tests {
         {
             std::os::unix::fs::symlink(root.join("unmounted"), root.join(PORTABLE_DIR_NAME)).unwrap();
             assert_eq!(existing_data_entry(&root), Some(root.join(PORTABLE_DIR_NAME)));
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A program kept straight in the home folder never reads `~/data`
+    /// as its tree (it is the user's own folder); one in a folder below
+    /// the home, or elsewhere, keeps its anchor. A link to the home is
+    /// the home.
+    #[test]
+    fn a_program_in_the_home_folder_has_no_portable_folder() {
+        let root = tempdir("home");
+        let home = root.join("me");
+        let apps = home.join("Applications");
+        std::fs::create_dir_all(&apps).unwrap();
+        std::fs::create_dir(home.join(PORTABLE_DIR_NAME)).unwrap();
+        let at = |d: &Path| Some(Anchor::Dir(d.to_path_buf()));
+
+        assert_eq!(outside_home(at(&home), Some(&home)), None);
+        assert_eq!(outside_home(at(&apps), Some(&home)), at(&apps));
+        assert_eq!(outside_home(at(&home), None), at(&home));
+        assert_eq!(outside_home(Some(Anchor::Translocated), Some(&home)), Some(Anchor::Translocated));
+        assert_eq!(outside_home(None, Some(&home)), None);
+        #[cfg(unix)]
+        {
+            let link = root.join("home-link");
+            std::os::unix::fs::symlink(&home, &link).unwrap();
+            assert_eq!(outside_home(at(&link), Some(&home)), None);
+            assert_eq!(outside_home(at(&home), Some(&link)), None);
         }
         let _ = std::fs::remove_dir_all(&root);
     }
