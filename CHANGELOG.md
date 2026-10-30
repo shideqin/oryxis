@@ -4,6 +4,39 @@ All notable changes to Oryxis are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-10-29
+
+A portable copy keeps its whole configuration in a `data` folder beside the program, and the Windows zip does it by default. A host CSV now maintains the vault (update, remove, place in folders), the SFTP browser follows and makes symbolic links, and transfers stop covering the terminal.
+
+### Added
+- A folder named `data` beside the executable, the `.AppImage` or `Oryxis.app` holds the settings, vaults, plugins and logs (#271, requested by @xenon2333).
+- The Windows zip creates its `data` folder on first start, unless the profile already holds an Oryxis tree (#271).
+- A portable copy keeps working under another drive letter or mount point: paths on its own drive are stored relative (#271).
+- A host CSV maintains the vault: a row with a known `id` updates that host, `action` = `remove` removes it, `group` places it (creating missing folders).
+- "Export hosts (CSV)" writes each host's id, folder path, identity and key labels, never a password; importing it back changes nothing.
+- Settings > Security & Privacy gains "Import hosts (CSV)" beside the export.
+- SFTP: a symbolic link opens as what it points at, a broken one names its target, and "New symbolic link" creates one (#272, requested by @xenon2333).
+- Settings > Interface > "Double-click on a tab": nothing (default), duplicate, or rename (#277, requested by @MmYyF).
+- The terminal context menu gains "Cancel transfer".
+- MCP plugin 0.1.15: `sftp_upload` sends a local file of any size to a host, behind its own switch in Settings > MCP Server (off by default).
+- With debug logging on, a UI stall report says where the UI thread is and which messages flood the loop (#273).
+
+### Changed
+- ZMODEM and a file dropped on the terminal show their progress at the foot of the sidebar or in the status bar, no longer over the terminal.
+- SFTP Open / Edit streams the file and shows a progress strip with Cancel once the download runs past a second.
+- A file dropped on the dual-pane SFTP view lands on the remote pane, whichever side it is on.
+- Auto authentication sends the SSH `none` request first, as OpenSSH does, so a server that grants access on it connects (#279, reported by @GeekGold).
+- MCP plugin 0.1.16 carries the `none`-first Auto authentication and the dependency fixes below.
+
+### Fixed
+- The UI no longer freezes when the screen shows `~/.` or `~//` (#273, reported by @AuriSolCorues).
+- Clicking a tab whose panes were merged no longer panics (#278, reported by @cesszlr).
+- A window restored maximized under a slow window manager (Openbox) is maximized again and resizable by its borders (#274, reported by @kibear).
+- Shortcuts and the terminal's Ctrl bytes work under Russian, Greek, Hebrew, Arabic and other non-Latin layouts (#270, by @dgorpinchuk).
+
+### Security
+- crypto-bigint 0.7.10 and ctutils 0.4.7 replace versions under RUSTSEC-2026-0387 and RUSTSEC-2026-0385 (constant-time arithmetic), in the app and MCP plugin 0.1.16.
+
 ## [0.22.0] - 2026-10-24
 
 Several encrypted vaults can be open at once, each with its own master password, settings, sync and MCP exposure, and every window works on one of them. The terminal suggests the host's past commands as you type, Ctrl+Tab can walk the tab bar's own order, the caret takes a shape, and the MCP plugin runs a command as root only after you approve it on screen.

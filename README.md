@@ -122,7 +122,8 @@ matching installer. Windows binaries are Authenticode-signed (see
 - **Bring your hosts along.** One import reads what you already have:
   `~/.ssh/config`, PuTTY, KiTTY, WinSCP, mRemoteNG, MobaXterm,
   SecureCRT, Xshell, FinalShell, Termius or any CSV. Pick the file
-  (or the sessions folder) and the format is detected for you.
+  (or the sessions folder) and the format is detected for you; an
+  edited host CSV export comes back as updates, removals and folders.
 - **Offline when you say so.** One switch, offered at first run and in
   Settings, and Oryxis makes no request of its own: no update checks,
   no font or plugin downloads. What you configured yourself still
@@ -154,9 +155,10 @@ matching installer. Windows binaries are Authenticode-signed (see
   each with its own tabs, hosts screen and search. Drag a tab past the
   edge to tear it off, drop it on another window's tab bar to dock it,
   or connect a host straight into a new window.
-- **Files everywhere.** Dual-pane SFTP with drag-and-drop, edit-in-place
-  and server-to-server copy; every SSH tab also carries a Files sidebar
-  that follows your shell's working directory. Prefer typing? An
+- **Files everywhere.** Dual-pane SFTP with drag-and-drop, symbolic
+  links, edit-in-place and server-to-server copy; every SSH tab also
+  carries a Files sidebar that follows your shell's working directory.
+  Prefer typing? An
   interactive SFTP console speaks `sftp(1)`'s commands (`get`, `put`,
   `mget`, `lcd`, globs, Tab completion, inline progress), opening as a
   pane of the session you are already in (stacked, beside or zoomed,
@@ -277,7 +279,7 @@ The full security model and the vulnerability disclosure policy live in
 
 Oryxis ships small and often (roughly weekly). This section is
 forward-looking: items land incrementally as they are ready rather than
-being tied to a specific version. Latest stable is **v0.22.0**;
+being tied to a specific version. Latest stable is **v0.23.0**;
 [CHANGELOG.md](CHANGELOG.md) has the full history, and the
 [roadmap discussion](https://github.com/wilsonglasser/oryxis/discussions/67)
 tracks it interactively.

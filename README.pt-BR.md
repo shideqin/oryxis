@@ -23,8 +23,8 @@
   <img src="resources/screen_1.gif" width="720" alt="Oryxis em ação: conectando, executando snippets, navegando por SFTP">
 </p>
 
-> Este documento é uma tradução do README em inglês posterior à v0.22.0
-> (sincronizado em 2026-10-24). A documentação detalhada
+> Este documento é uma tradução do README em inglês posterior à v0.23.0
+> (sincronizado em 2026-10-29). A documentação detalhada
 > ([tour de funcionalidades](docs/FEATURES.md),
 > [arquitetura](docs/ARCHITECTURE.md)) permanece em inglês.
 
@@ -67,7 +67,12 @@ yay -S oryxis-bin
 com builds para Linux (`.tar.gz` / `.deb` / `.AppImage`, x86_64 e
 ARM64), macOS (`.dmg` para Apple Silicon) e Windows (instaladores de
 sistema e por usuário, além do `.zip` portátil, x86_64 e ARM64). Os
-binários de Windows são assinados com Authenticode.
+binários de Windows são assinados com Authenticode. O `.zip` portátil
+guarda tudo (configurações, cofres, plugins, logs) numa pasta `data`
+que ele cria ao lado do `oryxis.exe`, a menos que o computador já
+tenha um perfil do Oryxis; no Linux e no macOS, crie uma pasta `data`
+ao lado do binário, do arquivo `.AppImage` ou do `Oryxis.app` para o
+mesmo efeito.
 
 ## Destaques
 
@@ -96,7 +101,9 @@ binários de Windows são assinados com Authenticode.
 - **Traga seus hosts junto**: uma importação lê o que você já tem:
   `~/.ssh/config`, PuTTY, KiTTY, WinSCP, mRemoteNG, MobaXterm,
   SecureCRT, Xshell, FinalShell, Termius ou qualquer CSV. Escolha o
-  arquivo (ou a pasta de sessões) e o formato é detectado para você.
+  arquivo (ou a pasta de sessões) e o formato é detectado para você;
+  um CSV de hosts exportado e editado volta como atualizações,
+  remoções e pastas.
 - **Offline quando você mandar**: um interruptor, oferecido na primeira
   execução e nas Configurações, e o Oryxis não faz nenhuma requisição
   por conta própria: sem checagem de atualização, sem download de fontes
@@ -133,8 +140,8 @@ binários de Windows são assinados com Authenticode.
   para fora da borda para destacá-la, solte-a na barra de abas de outra
   janela para encaixá-la, ou conecte um host direto numa janela nova.
 - **Arquivos em todo lugar**: SFTP de painel duplo com arrastar e
-  soltar, edição no lugar e cópia servidor a servidor; toda aba SSH
-  ainda traz uma barra lateral de arquivos que segue o diretório do
+  soltar, links simbólicos, edição no lugar e cópia servidor a
+  servidor; toda aba SSH ainda traz uma barra lateral de arquivos que segue o diretório do
   shell. Prefere digitar? Um console SFTP interativo fala os comandos
   do `sftp(1)` (`get`, `put`, `mget`, `lcd`, globs, completação com
   Tab, progresso em linha), abrindo como um painel da sessão em que
@@ -221,7 +228,7 @@ vulnerabilidades por canal privado.
 
 O Oryxis lança pequeno e com frequência (aproximadamente semanal), e
 as funcionalidades entram assim que ficam prontas. A última versão
-estável é a **v0.22.0**; o histórico completo está no
+estável é a **v0.23.0**; o histórico completo está no
 [CHANGELOG.md](CHANGELOG.md) e o roadmap interativo na
 [discussão de roadmap](https://github.com/wilsonglasser/oryxis/discussions/67).
 Entregues desde a 0.15.0: painéis divididos e o console SFTP, o modo
@@ -232,8 +239,9 @@ uma sequência de ações, predefinições de atalhos de outros terminais,
 a reconstrução de um cofre danificado, vários cofres abertos ao mesmo
 tempo, o Ctrl+Tab na ordem da própria barra de abas, o histórico de
 comandos sugerido enquanto você digita, a barra de snippets, o formato
-do cursor e o `sudo` pelo plugin MCP com aprovação na tela. Em
-andamento: o kit de operações com IA.
+do cursor e o `sudo` pelo plugin MCP com aprovação na tela, o modo portátil
+com sua pasta `data`, o CSV de hosts que mantém o cofre e os links
+simbólicos no SFTP. Em andamento: o kit de operações com IA.
 
 ## Contribuindo
 

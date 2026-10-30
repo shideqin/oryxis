@@ -23,7 +23,7 @@
   <img src="resources/screen_1.gif" width="720" alt="Oryxis 實際操作：連線主機、執行程式碼片段、瀏覽 SFTP">
 </p>
 
-> 本文件譯自 v0.22.0 之後的英文 README（2026-10-24 同步），採用台灣慣用詞彙。
+> 本文件譯自 v0.23.0 之後的英文 README（2026-10-29 同步），採用台灣慣用詞彙。
 > 詳細文件（[功能總覽](docs/FEATURES.md)、[架構說明](docs/ARCHITECTURE.md)）為英文。
 
 ## Oryxis 是什麼？
@@ -64,7 +64,10 @@ yay -S oryxis-bin
 提供 Linux（`.tar.gz` / `.deb` / `.AppImage`，x86_64 與 ARM64）、
 macOS（Apple Silicon `.dmg`）和 Windows（系統層級與使用者層級安裝程式、
 可攜版 `.zip`，x86_64 與 ARM64）。Windows 二進位檔已完成 Authenticode
-簽章。
+簽章。可攜版 `.zip` 會把一切（設定、保險庫、外掛、記錄）放進它在
+`oryxis.exe` 旁建立的 `data` 資料夾，除非電腦上已有 Oryxis 設定檔；
+在 Linux 和 macOS 上，於執行檔、`.AppImage` 檔或 `Oryxis.app` 旁自行
+建立 `data` 資料夾即可。
 
 ### 字型與編碼
 
@@ -98,7 +101,8 @@ macOS（Apple Silicon `.dmg`）和 Windows（系統層級與使用者層級安�
 - **把你的主機帶過來**：一次匯入就能讀取你手上現有的設定：
   `~/.ssh/config`、PuTTY、KiTTY、WinSCP、mRemoteNG、MobaXterm、
   SecureCRT、Xshell、FinalShell、Termius 或任何 CSV。選好檔案
-  （或工作階段資料夾），格式會自動偵測。
+  （或工作階段資料夾），格式會自動偵測，編輯過的主機 CSV 匯出檔
+  會以更新、移除與資料夾的形式匯回。
 - **離線由你決定**：一個開關，首次啟動與設定中都有，開啟後
   Oryxis 不會自行發出任何請求：不檢查更新，不下載字型或外掛。
   你自己設定的內容照常運作。給從未連上網路的機器，每個版本都
@@ -123,7 +127,7 @@ macOS（Apple Silicon `.dmg`）和 Windows（系統層級與使用者層級安�
 - **視窗要幾個有幾個**：單一程序、任意數量的視窗，每個視窗都有
   自己的分頁、主機畫面與搜尋。把分頁拖出邊緣即可撕離、放到另一個
   視窗的分頁列即可停靠，或直接把主機連線到新視窗。
-- **檔案無所不在**：雙欄 SFTP 支援拖放、就地編輯、伺服器對伺服器
+- **檔案無所不在**：雙欄 SFTP 支援拖放、符號連結、就地編輯、伺服器對伺服器
   複製；每個 SSH 分頁還有跟隨 Shell 工作目錄的檔案側欄。偏好打字？
   互動式 SFTP 主控台說的是 `sftp(1)` 的指令（`get`、`put`、`mget`、
   `lcd`、萬用字元、Tab 鍵自動完成、行內進度），以你所在工作階段的
@@ -189,14 +193,15 @@ macOS（Apple Silicon `.dmg`）和 Windows（系統層級與使用者層級安�
 ## 開發藍圖
 
 Oryxis 以大約每週一次的節奏持續發布，功能就緒即上線。最新穩定版為
-**v0.22.0**；完整歷史見 [CHANGELOG.md](CHANGELOG.md)，互動式藍圖見
+**v0.23.0**；完整歷史見 [CHANGELOG.md](CHANGELOG.md)，互動式藍圖見
 [藍圖討論](https://github.com/wilsonglasser/oryxis/discussions/67)。
 自 0.15.0 以來已推出：分割窗格與 SFTP 主控台、離線模式及其離線套件、
 阿里雲與騰訊雲、網路工具面板、一鍵部署中繼、原生安全金鑰、單一程序
 內的多個視窗、能依序執行一連串動作的程式碼片段、取自其他終端機的
 快速鍵預設組、損毀保險庫的重建、多個保險庫、可依分頁列本身順序切換的
 Ctrl+Tab、在輸入時提供建議的指令歷史、片段列、游標形狀與閃爍，以及
-經畫面核准後透過 MCP 外掛執行的 sudo。正在推進的方向是 AI 維運工具組。
+經畫面核准後透過 MCP 外掛執行的 sudo、帶有 `data` 資料夾的可攜模式、
+能維護保險庫的主機 CSV，以及 SFTP 中的符號連結。正在推進的方向是 AI 維運工具組。
 
 ## 參與貢獻
 

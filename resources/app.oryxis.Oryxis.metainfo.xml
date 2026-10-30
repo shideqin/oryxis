@@ -69,6 +69,17 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.23.0" date="2026-10-29">
+      <description>
+        <p>
+          A portable copy keeps its whole configuration in a data folder
+          beside the program, and the Windows zip does it by default. A host
+          CSV can maintain the vault, the SFTP browser follows and makes
+          symbolic links, and transfers no longer cover the terminal.
+        </p>
+      </description>
+      <url>https://github.com/wilsonglasser/oryxis/releases/tag/v0.23.0</url>
+    </release>
     <release version="0.22.0" date="2026-10-24">
       <description>
         <p>
