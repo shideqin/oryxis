@@ -2,7 +2,7 @@
   "provider_id": "mcp",
   "versions": [
     {
-      "version": "0.1.15",
+      "version": "0.1.16",
       "protocol_versions": [
         1
       ],
@@ -11,42 +11,42 @@
         {
           "os": "linux",
           "arch": "aarch64",
-          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.15/oryxis-mcp-linux-aarch64",
-          "sha256": "c56566c0062c7e89dc6479ba2ad20b88cdfa1da4a4c33a0506eb45bff965b4aa",
-          "signature": "H+QiRrg2Gsk2qTZGAfHgyQ0ZSLzwN0G6/8KWAYB9iF20NUOj7o5iJPNxitho3/SnmzkmJ9RLSMqN2bz9QQfmBQ==",
-          "size": 11101504
+          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.16/oryxis-mcp-linux-aarch64",
+          "sha256": "325ec62e158e91549852ea8430a64f4d8799a8f69306d8aa8da5daf611802dc9",
+          "signature": "6qOVzxgIut9D6qmzheNtM4z1Cn237LHF71wIl3Cqizl6xstVqpNkU9ZXAcCSxC66D/cmgsT1ihD1AlCtQgJeBw==",
+          "size": 11089256
         },
         {
           "os": "linux",
           "arch": "x86_64",
-          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.15/oryxis-mcp-linux-x86_64",
-          "sha256": "899dc9790d23ca8cd54906ae687b6a79065a69338d86ca84aa336806c9423476",
-          "signature": "403q43oohf6fJvMpyceb7WbpTRcphG/YrHl41MnjhBuucR4vps2q57FMsMGTkeXBIsMAGd51zEkwcEIIbva7Dg==",
-          "size": 12987184
+          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.16/oryxis-mcp-linux-x86_64",
+          "sha256": "41f75eca5d2599d5f917c1c5771abaa4d5dca2562ceb27da2322774c2320c91e",
+          "signature": "V8HeOen/IY0+4OlwqUBEEQJNSql64FXjE8DD27lbnwqwrhMYCk5eUzn5oTI41/xYQFzSmT5rwbYyNljFkfT1Cg==",
+          "size": 12955152
         },
         {
           "os": "macos",
           "arch": "aarch64",
-          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.15/oryxis-mcp-macos-aarch64",
-          "sha256": "1344326819ddd9c4226dbbb02a64477097a732e762190f112bb1c3f9c81c0d9e",
-          "signature": "ec4FAdlHRaZptzr99NtenwSlY7ziacO4joH/VBv9mwiOzpbF+aNhLNtwZsT41x1TpnfNAjqJPR+HgEnk/vDPDA==",
-          "size": 11143352
+          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.16/oryxis-mcp-macos-aarch64",
+          "sha256": "224387a3fdcc57b535e846d5477ddcf336980b515646306bef9ed9833e30b960",
+          "signature": "qOhOB9e12gk9b2/vv9EDhOKo5Pgba1yAMKYfbdN5holAUsbN8Y5KiDVD7w1ib4zvtG0ugL2g2UtQqRllaIBhBA==",
+          "size": 11210248
         },
         {
           "os": "windows",
           "arch": "aarch64",
-          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.15/oryxis-mcp-windows-aarch64.exe",
-          "sha256": "ce2997669676d77a1fddec50666b2fc07ae0cdf1862a3c5c5ac2ad0c5b01c79d",
-          "signature": "E4k9bbfv2h8x+VPop1LFQhT4z9GjLFYhcosJKgNq8tl2G7WZNbPaBYkGwG6TQYfD+uH9QJaHiW3XdeMNu21bCg==",
-          "size": 12307456
+          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.16/oryxis-mcp-windows-aarch64.exe",
+          "sha256": "7928331fe0b48a017fe76ddced7c62d4a9a198b5188fbd06f1b22f23d4095d40",
+          "signature": "oeJKfMsFOj1vhVApEBU8oZ4JzRHbutDZSQNAGpbQqhGfTfM/ulRmUwVYD8jPqLFSE55Km3PVySDInC3SfrkYCA==",
+          "size": 12363264
         },
         {
           "os": "windows",
           "arch": "x86_64",
-          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.15/oryxis-mcp-windows-x86_64.exe",
-          "sha256": "04efc29f7273972431173cb190c8ba4c206b6a73730898e374ef0665263e5591",
-          "signature": "VeXmDzjdA5He6N3+wmrAbyH5J2I1+7DDRJc6SyekqZv+1K1+khhf+lyRCxBqNPJj/0wXqQYHSCwk8CKNy2kPBg==",
-          "size": 13940736
+          "url": "https://github.com/wilsonglasser/oryxis/releases/download/mcp-v0.1.16/oryxis-mcp-windows-x86_64.exe",
+          "sha256": "bc7a13f20cc050e7486992a5601b80b2bea20a6377e1d6419570d380c9e32770",
+          "signature": "weDboDcRiUfs5B8wWOyQ74FFGd6CaW+JTY4hqaBzRO4rYZTb90pRpEGeN+eJztnf6k8rPpzmu69H93AIh6BmAQ==",
+          "size": 13967360
         }
       ]
     }
