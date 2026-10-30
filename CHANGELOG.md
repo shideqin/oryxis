@@ -31,7 +31,7 @@ A portable copy keeps its whole configuration in a `data` folder beside the prog
 ### Fixed
 - The UI no longer freezes when the screen shows `~/.` or `~//` (#273, reported by @AuriSolCorues).
 - Clicking a tab whose panes were merged no longer panics (#278, reported by @cesszlr).
-- A window restored maximized under a slow window manager (Openbox) is maximized again and resizable by its borders (#274, reported by @kibear).
+- On X11, a window restored maximized opens maximized from its first frame, without showing its floating size first (#274, reported by @kibear).
 - Shortcuts and the terminal's Ctrl bytes work under Russian, Greek, Hebrew, Arabic and other non-Latin layouts (#270, by @dgorpinchuk).
 
 ### Security
