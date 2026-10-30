@@ -10,8 +10,7 @@ use std::time::Duration;
 use crate::sftp_harness::HARNESS_HOST_KEY;
 use crate::{HostKeyCheckCallback, HostKeyStatus, SshEngine};
 use oryxis_core::models::connection::{AuthMethod, Connection};
-use russh::keys::PublicKey;
-use russh::server::{Auth, Response};
+use russh::server::{Auth, PublicKeyOffer, Response};
 
 const TEST_USER: &str = "root";
 const TEST_PASS: &str = "correct-horse";
@@ -67,7 +66,7 @@ impl russh::server::Handler for CountingHandler {
     async fn auth_publickey_offered(
         &mut self,
         _user: &str,
-        _public_key: &PublicKey,
+        _offer: PublicKeyOffer<'_>,
     ) -> Result<Auth, Self::Error> {
         self.seen.publickey.fetch_add(1, Ordering::SeqCst);
         Ok(Auth::reject())

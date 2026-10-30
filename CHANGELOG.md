@@ -36,6 +36,7 @@ A portable copy keeps its whole configuration in a `data` folder beside the prog
 
 ### Security
 - crypto-bigint 0.7.10 and ctutils 0.4.7 replace versions under RUSTSEC-2026-0387 and RUSTSEC-2026-0385 (constant-time arithmetic), in the app and MCP plugin 0.1.16.
+- russh 0.65.0: a malicious server can no longer grow the client's memory with EXT_INFO or stall a channel with a zero packet size (app and MCP 0.1.16).
 
 ## [0.22.0] - 2026-10-24
 
