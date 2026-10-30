@@ -68,7 +68,7 @@ jobs:
             ~/.cargo/registry/
             ~/.cargo/git/
             target/
-          key: aliyun-plugin-${{ matrix.label }}-${{ hashFiles('**/Cargo.lock') }}
+          key: aliyun-plugin-${{ matrix.label }}-${{ matrix.runner }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build plugin (release)
         run: cargo build --release -p oryxis-cloud-aliyun-plugin --target ${{ matrix.target }}

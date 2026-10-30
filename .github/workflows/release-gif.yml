@@ -75,7 +75,7 @@ jobs:
             ~/.cargo/registry/
             ~/.cargo/git/
             crates/oryxis-gif/target/
-          key: gif-plugin-${{ matrix.label }}-${{ hashFiles('crates/oryxis-gif/Cargo.lock') }}
+          key: gif-plugin-${{ matrix.label }}-${{ matrix.runner }}-${{ hashFiles('crates/oryxis-gif/Cargo.lock') }}
 
       - name: Build plugin (release)
         # --locked makes the committed Cargo.lock authoritative: agg is

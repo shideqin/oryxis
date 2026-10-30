@@ -69,7 +69,7 @@ jobs:
             ~/.cargo/registry/
             ~/.cargo/git/
             target/
-          key: linux-x86-nightly-${{ hashFiles('**/Cargo.lock') }}
+          key: linux-x86-nightly-ubuntu-22.04-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --locked --profile release-with-symbols -p oryxis-app
       # Split debuginfo out of the binary, then strip it. What ships
       # carries no more symbols than `strip = true` left it, plus one
@@ -122,7 +122,7 @@ jobs:
             ~/.cargo/registry/
             ~/.cargo/git/
             target/
-          key: linux-arm-nightly-${{ hashFiles('**/Cargo.lock') }}
+          key: linux-arm-nightly-ubuntu-22.04-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo build --locked --profile release-with-symbols -p oryxis-app
       # Same split as the x86_64 job above; see the comment there.
       - name: Split debug symbols
